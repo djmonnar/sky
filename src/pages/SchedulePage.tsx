@@ -4,6 +4,7 @@ import { Card, Badge } from "../components/ui";
 import {
   TODAY, TODAY_DOW, DOW_KO, weekDates, durationH,
 } from "../data";
+import { employmentLabel, isMonthlyEmployee, payBasisLabel } from "../lib/payroll";
 
 export default function SchedulePage() {
   const { shifts, handovers, showToast, currentEmployee, loading } = useStore();
@@ -28,6 +29,7 @@ export default function SchedulePage() {
   const totalH = myShifts.reduce(
     (a, s) => a + (s.off ? 0 : durationH(s.start!, s.end!, s.breakMin)), 0
   );
+  const fixedSalary = isMonthlyEmployee(me);
 
   return (
     <>
@@ -91,7 +93,11 @@ export default function SchedulePage() {
 
       <div className="grid grid-main-side">
         {/* 이번 주 리스트 */}
-        <Card title="이번 주 근무" icon="🗓️" action={<span className="bold">총 {totalH}시간</span>}>
+        <Card
+          title="이번 주 근무"
+          icon="🗓️"
+          action={<span className="bold">{fixedSalary ? "고정 월급" : `총 ${totalH}시간`}</span>}
+        >
           <div className="week-strip">
             {week.map((d, i) => {
               const s = myShifts.find((x) => x.day === i);
@@ -117,10 +123,20 @@ export default function SchedulePage() {
         <div className="stack side-panel">
           {/* 주간 요약 */}
           <Card title="주간 요약" icon="📊">
+            <div className="pay-line"><span className="k">고용형태</span><span className="v">{employmentLabel(me)}</span></div>
             <div className="pay-line"><span className="k">근무 일수</span><span className="v">{myShifts.filter((s) => !s.off).length}일</span></div>
-            <div className="pay-line"><span className="k">총 근무시간</span><span className="v">{totalH}시간</span></div>
-            <div className="pay-line"><span className="k">예상 주급</span><span className="v">{(totalH * me.hourly).toLocaleString()}원</span></div>
-            <div className="pay-line total"><span className="k">시급</span><span className="v">{me.hourly.toLocaleString()}원</span></div>
+            {fixedSalary ? (
+              <>
+                <div className="pay-line"><span className="k">근무시간</span><span className="v">급여 미집계</span></div>
+                <div className="pay-line total"><span className="k">급여기준</span><span className="v">{payBasisLabel(me)}</span></div>
+              </>
+            ) : (
+              <>
+                <div className="pay-line"><span className="k">총 근무시간</span><span className="v">{totalH}시간</span></div>
+                <div className="pay-line"><span className="k">예상 주급</span><span className="v">{(totalH * me.hourly).toLocaleString()}원</span></div>
+                <div className="pay-line total"><span className="k">시급</span><span className="v">{me.hourly.toLocaleString()}원</span></div>
+              </>
+            )}
           </Card>
 
           {/* 전달사항 */}

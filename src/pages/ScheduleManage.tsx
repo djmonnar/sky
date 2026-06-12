@@ -4,6 +4,8 @@ import { Card, ChipSelect, Badge } from "../components/ui";
 import {
   TODAY, DOW_KO, weekDates, durationH, minutes,
 } from "../data";
+import type { Employee } from "../data/types";
+import { employmentLabel, isMonthlyEmployee } from "../lib/payroll";
 
 const PRESETS = [
   { label: "오픈 (10–15)", start: "10:00", end: "15:00", breakMin: 30 },
@@ -28,10 +30,13 @@ export default function ScheduleManage() {
     : null;
   const selEmp = sel ? employees.find((e) => e.id === sel.empId) : null;
 
-  const empHours = (empId: number) =>
-    shifts
+  const empHours = (empId: number) => {
+    const emp = employees.find((e) => e.id === empId);
+    if (isMonthlyEmployee(emp)) return 0;
+    return shifts
       .filter((s) => s.empId === empId && !s.off)
       .reduce((a, s) => a + durationH(s.start!, s.end!, s.breakMin), 0);
+  };
 
   // 인원 부족 경고: 점심(11-14) 시간대에 2명 미만인 요일
   const lunchShort = Array.from({ length: 7 }, (_, day) => {
@@ -41,6 +46,9 @@ export default function ScheduleManage() {
     ).length;
     return { day, n };
   }).filter((x) => x.n < 2);
+  const overworkedPartTimers = employees
+    .filter((emp) => !isMonthlyEmployee(emp) && empHours(emp.id) > 40)
+    .map((emp) => ({ emp, hours: empHours(emp.id) }));
 
   const patch = (p: Partial<{ start: string; end: string; breakMin: number; off: boolean }>) => {
     if (!sel) return;
@@ -122,13 +130,15 @@ export default function ScheduleManage() {
                 </div>
               </div>
             ))}
-            <div className="alert-item danger">
-              <span>⏰</span>
-              <div>
-                김도현 — 주 {empHours(5)}시간 근무
-                <div className="desc">주 40시간 초과 여부를 확인해주세요</div>
+            {overworkedPartTimers.map(({ emp, hours }) => (
+              <div className="alert-item danger" key={emp.id}>
+                <span>⏰</span>
+                <div>
+                  {emp.name} — 주 {hours}시간 근무
+                  <div className="desc">아르바이트 주 40시간 초과 여부를 확인해주세요</div>
+                </div>
               </div>
-            </div>
+            ))}
           </Card>
 
           {/* 직원 합계 */}
@@ -136,8 +146,8 @@ export default function ScheduleManage() {
             <div className="grid grid-3" style={{ gap: 10 }}>
               {employees.map((e) => (
                 <div key={e.id} className="spread" style={{ background: "var(--card-alt)", borderRadius: 10, padding: "9px 13px" }}>
-                  <span className="bold small">{e.name} <span className="muted">({e.role})</span></span>
-                  <span className="bold num">{empHours(e.id)}h</span>
+                  <span className="bold small">{e.name} <span className="muted">({e.role} · {employmentLabel(e)})</span></span>
+                  <span className="bold num">{isMonthlyEmployee(e) ? "고정" : `${empHours(e.id)}h`}</span>
                 </div>
               ))}
             </div>
@@ -149,7 +159,7 @@ export default function ScheduleManage() {
           {sel && selEmp ? (
             <Card
               title={`${selEmp.name} · ${DOW_KO[sel.day]}요일`}
-              action={<Badge tone="gray">{selEmp.role}</Badge>}
+              action={<Badge tone="gray">{employmentLabel(selEmp)}</Badge>}
             >
               {selShift?.off ? (
                 <div className="alert-item warn" style={{ marginBottom: 14 }}>
@@ -229,7 +239,7 @@ export default function ScheduleManage() {
 function FragmentRow({
   emp, hours, shifts, sel, onSel,
 }: {
-  emp: { id: number; name: string; role: string };
+  emp: Employee;
   hours: number;
   shifts: { empId: number; day: number; start?: string; end?: string; breakMin: number; off?: boolean }[];
   sel: { empId: number; day: number } | null;
@@ -239,7 +249,7 @@ function FragmentRow({
     <>
       <div className="emp">
         {emp.name}
-        <span className="hours">{emp.role} · {hours}h</span>
+        <span className="hours">{emp.role} · {isMonthlyEmployee(emp) ? "정직원 고정" : `${hours}h`}</span>
       </div>
       {Array.from({ length: 7 }, (_, day) => {
         const s = shifts.find((x) => x.empId === emp.id && x.day === day);

@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
 import { TODAY_DOW } from "../data";
 import { seedFirestore } from "../dev/seedFirestore";
+import { finalPay, isMonthlyEmployee } from "../lib/payroll";
 
 export default function AdminDashboard() {
   const {
@@ -24,8 +25,15 @@ export default function AdminDashboard() {
 
   const activeResv = reservations.filter((r) => r.status !== "취소" && r.status !== "노쇼");
   const todayWorkers = shifts.filter((s) => s.day === TODAY_DOW && !s.off);
-  const pendingRecords = records.filter((r) => r.status === "승인대기" || r.status === "제출");
-  const totalPay = payroll.reduce((a, p) => a + p.base + p.extra - p.deduct, 0);
+  const pendingRecords = records.filter((r) => {
+    if (!(r.status === "승인대기" || r.status === "제출")) return false;
+    const emp = employees.find((e) => e.id === r.empId);
+    return !emp || !isMonthlyEmployee(emp);
+  });
+  const totalPay = payroll.reduce((a, p) => {
+    const emp = employees.find((e) => e.id === p.empId);
+    return a + finalPay(p, emp);
+  }, 0);
   const warnResv = reservations.filter((r) => r.status === "확인전화필요");
   const groupResv = reservations.filter((r) => r.status === "단체");
 

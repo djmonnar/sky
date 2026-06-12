@@ -8,12 +8,12 @@ import {
 export const CURRENT_STAFF_ID = 1; // 로그인 세션 스텁: 김민수
 
 export const EMPLOYEES: Employee[] = [
-  { id: 1, name: "김민수", role: "홀", hourly: 10500 },
-  { id: 2, name: "이영희", role: "주방", hourly: 11500 },
-  { id: 3, name: "박지훈", role: "홀", hourly: 10500 },
-  { id: 4, name: "최수연", role: "홀", hourly: 10030 },
-  { id: 5, name: "김도현", role: "주방", hourly: 11000 },
-  { id: 6, name: "정하늘", role: "매니저", hourly: 13000 },
+  { id: 1, name: "김민수", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10500 },
+  { id: 2, name: "이영희", role: "주방", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 2800000, standardStart: "09:00", standardEnd: "18:00" },
+  { id: 3, name: "박지훈", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10500 },
+  { id: 4, name: "최수연", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10030 },
+  { id: 5, name: "김도현", role: "주방", employmentType: "partTime", salaryType: "hourly", hourly: 11000 },
+  { id: 6, name: "정하늘", role: "매니저", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3200000, standardStart: "09:30", standardEnd: "18:30" },
 ];
 
 export const SEED_RESERVATIONS: Reservation[] = [
@@ -94,11 +94,11 @@ export const SEED_RECORDS: WorkRecord[] = [
 
 export const SEED_PAYROLL: PayrollRow[] = [
   { empId: 1, hours: 86.5, base: 908250, extra: 45000, deduct: 0, status: "승인대기", normalH: 80, overH: 4.5, holidayH: 2, nightH: 0, editedRecords: 1 },
-  { empId: 2, hours: 102, base: 1173000, extra: 80000, deduct: 0, status: "검토중", normalH: 92, overH: 6, holidayH: 4, nightH: 0, editedRecords: 0 },
+  { empId: 2, hours: 0, base: 2800000, extra: 80000, deduct: 0, status: "검토중", normalH: 0, overH: 0, holidayH: 0, nightH: 0, editedRecords: 0 },
   { empId: 3, hours: 96.5, base: 1013250, extra: 62000, deduct: 15000, status: "승인대기", normalH: 84, overH: 8.5, holidayH: 4, nightH: 6, editedRecords: 2 },
   { empId: 4, hours: 78, base: 782340, extra: 21000, deduct: 0, status: "승인완료", normalH: 76, overH: 2, holidayH: 0, nightH: 0, editedRecords: 0 },
   { empId: 5, hours: 118, base: 1298000, extra: 96000, deduct: 0, status: "검토중", normalH: 104, overH: 8, holidayH: 6, nightH: 12, editedRecords: 1 },
-  { empId: 6, hours: 168, base: 2184000, extra: 150000, deduct: 30000, status: "승인완료", normalH: 160, overH: 8, holidayH: 0, nightH: 0, editedRecords: 0 },
+  { empId: 6, hours: 0, base: 3200000, extra: 150000, deduct: 30000, status: "승인완료", normalH: 0, overH: 0, holidayH: 0, nightH: 0, editedRecords: 0 },
 ];
 
 export const SEED_NOTICES: Notice[] = [

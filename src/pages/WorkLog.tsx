@@ -5,6 +5,7 @@ import {
   TODAY_DOW, TODAY_STR, CHECKLIST_TEMPLATE,
   minutes, toTime, durationH,
 } from "../data";
+import { isMonthlyEmployee, payBasisLabel } from "../lib/payroll";
 
 export default function WorkLog() {
   const { shifts, records, addRecord, showToast, currentEmployee, loading } = useStore();
@@ -64,6 +65,34 @@ export default function WorkLog() {
             : "계정에 연결된 직원 정보가 없습니다. 관리자에게 문의해주세요."}
         </div>
       </Card>
+    );
+  }
+
+  if (isMonthlyEmployee(me)) {
+    return (
+      <div className="grid grid-main-side">
+        <div className="stack">
+          <Card title="정직원 고정 근무" icon="🕘">
+            <div className="alert-item info">
+              <span>💼</span>
+              <div>
+                정직원은 월급 기준으로 급여를 계산합니다
+                <div className="desc">매일 같은 시간 근무라 근무시간 기록을 급여에 반영하지 않습니다.</div>
+              </div>
+            </div>
+            <div className="pay-line"><span className="k">급여기준</span><span className="v">{payBasisLabel(me)}</span></div>
+            <div className="pay-line"><span className="k">기준 근무</span><span className="v">{me.standardStart ?? "고정"} ~ {me.standardEnd ?? "고정"}</span></div>
+            <div className="pay-line total"><span className="k">기록 방식</span><span className="v">예외만 관리자에게 전달</span></div>
+          </Card>
+        </div>
+        <div className="stack side-panel">
+          <Card title="예외 기록 안내" icon="📝">
+            <p className="muted small" style={{ margin: 0 }}>
+              지각, 조퇴, 결근, 추가수당, 차감처럼 급여에 반영할 예외가 있을 때만 관리자에게 전달하면 됩니다.
+            </p>
+          </Card>
+        </div>
+      </div>
     );
   }
 

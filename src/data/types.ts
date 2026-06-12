@@ -1,6 +1,8 @@
 /* 도메인 타입 정의 */
 
 export type Role = "staff" | "admin";
+export type EmploymentType = "fullTime" | "partTime";
+export type SalaryType = "monthly" | "hourly";
 
 export type ResvStatus =
   | "예약확정"
@@ -34,7 +36,12 @@ export interface Employee {
   id: number;
   name: string;
   role: string;
+  employmentType: EmploymentType;
+  salaryType: SalaryType;
   hourly: number; // 시급
+  monthlySalary?: number;
+  standardStart?: string;
+  standardEnd?: string;
 }
 
 export interface Shift {

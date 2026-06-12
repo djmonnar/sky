@@ -54,7 +54,12 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
       id: Number(d.id ?? id),
       name: d.name ?? "",
       role: d.role ?? "",
+      employmentType: d.employmentType ?? (d.salaryType === "monthly" || d.monthlySalary ? "fullTime" : "partTime"),
+      salaryType: d.salaryType ?? (d.monthlySalary ? "monthly" : "hourly"),
       hourly: d.hourly ?? 0,
+      monthlySalary: d.monthlySalary,
+      standardStart: d.standardStart,
+      standardEnd: d.standardEnd,
     }),
     (items) => cb(items.sort((a, b) => a.id - b.id)),
     onError

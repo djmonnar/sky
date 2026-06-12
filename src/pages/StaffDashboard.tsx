@@ -6,6 +6,7 @@ import {
   TODAY, TODAY_DOW, TODAY_STR, DOW_KO,
   weekDates, durationH, fmtH, minutes, toTime,
 } from "../data";
+import { isMonthlyEmployee, payBasisLabel } from "../lib/payroll";
 
 export default function StaffDashboard() {
   const {
@@ -17,6 +18,7 @@ export default function StaffDashboard() {
   const myShifts = shifts.filter((s) => s.empId === me?.id);
   const todayShift = myShifts.find((s) => s.day === TODAY_DOW);
   const hasWork = !!todayShift && !todayShift.off;
+  const fixedSalary = !!me && isMonthlyEmployee(me);
   const week = weekDates(TODAY);
   const todayResv = reservations
     .filter((r) => r.status !== "취소" && r.status !== "노쇼")
@@ -86,7 +88,7 @@ export default function StaffDashboard() {
                       {TODAY.getMonth() + 1}.{TODAY.getDate()} ({DOW_KO[TODAY_DOW]})
                     </Badge>
                   </div>
-                  {hasWork && punchBadge}
+                  {hasWork && !fixedSalary && punchBadge}
                 </div>
                 {hasWork ? (
                   <>
@@ -94,9 +96,15 @@ export default function StaffDashboard() {
                       {todayShift!.start} ~ {todayShift!.end}
                     </div>
                     <div className="muted small" style={{ marginTop: 2 }}>
-                      휴게 {todayShift!.breakMin}분 · 총 {fmtH(workH)} 근무 예정
-                      {punchInAt && ` · 출근 ${punchInAt}`}
-                      {punchOutAt && ` · 퇴근 ${punchOutAt}`}
+                      {fixedSalary ? (
+                        <>고정 근무 · {payBasisLabel(me)} · 근무시간 급여 미집계</>
+                      ) : (
+                        <>
+                          휴게 {todayShift!.breakMin}분 · 총 {fmtH(workH)} 근무 예정
+                          {punchInAt && ` · 출근 ${punchInAt}`}
+                          {punchOutAt && ` · 퇴근 ${punchOutAt}`}
+                        </>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -104,7 +112,7 @@ export default function StaffDashboard() {
                 )}
               </div>
             </div>
-            {hasWork && (
+            {hasWork && !fixedSalary && (
               <div className="punch-row">
                 <button
                   className="btn btn-primary btn-lg"
@@ -143,7 +151,7 @@ export default function StaffDashboard() {
           </Card>
 
           {/* 모바일 전용: 빠른 근무기록 */}
-          {hasWork && (
+          {hasWork && !fixedSalary && (
             <Card title="빠른 근무기록" icon="⚡" className="hide-desktop"
               action={<Link to="/worklog" className="card-link">상세 작성 ›</Link>}
             >
@@ -222,22 +230,33 @@ export default function StaffDashboard() {
             </div>
           </Card>
 
-          <Card title="근무기록 빠르게 작성" icon="✍️">
-            <p className="muted small" style={{ margin: "0 0 12px" }}>
-              오늘 근무가 끝나면 실제 출퇴근 시간을 기록해주세요.
-              버튼 한두 번이면 끝나요.
-            </p>
-            <Link to="/worklog" className="btn btn-primary btn-block">
-              ✍️ 기록 작성하러 가기
-            </Link>
-            <button
-              className="btn btn-soft btn-block"
-              style={{ marginTop: 8 }}
-              onClick={() => showToast("예정대로 근무한 것으로 임시 저장했습니다")}
-            >
-              ⚡ 예정대로 근무했어요 (원클릭 기록)
-            </button>
-          </Card>
+          {fixedSalary ? (
+            <Card title="정직원 급여 안내" icon="💼">
+              <p className="muted small" style={{ margin: "0 0 12px" }}>
+                월급 기준 직원이라 근무시간 기록을 급여에 반영하지 않습니다.
+              </p>
+              <Link to="/worklog" className="btn btn-outline btn-block">
+                예외 기록 안내 보기
+              </Link>
+            </Card>
+          ) : (
+            <Card title="근무기록 빠르게 작성" icon="✍️">
+              <p className="muted small" style={{ margin: "0 0 12px" }}>
+                오늘 근무가 끝나면 실제 출퇴근 시간을 기록해주세요.
+                버튼 한두 번이면 끝나요.
+              </p>
+              <Link to="/worklog" className="btn btn-primary btn-block">
+                ✍️ 기록 작성하러 가기
+              </Link>
+              <button
+                className="btn btn-soft btn-block"
+                style={{ marginTop: 8 }}
+                onClick={() => showToast("예정대로 근무한 것으로 임시 저장했습니다")}
+              >
+                ⚡ 예정대로 근무했어요 (원클릭 기록)
+              </button>
+            </Card>
+          )}
         </div>
       </div>
     </>
