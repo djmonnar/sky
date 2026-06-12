@@ -163,6 +163,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setError(null);
           setProfile(adminProfile);
           setRoleState("admin");
+          setAuthLoading(false);
           if (!p) {
             createUserProfile(u.uid, adminProfile).catch((e) => {
               console.warn("[auth] admin profile bootstrap skipped", e);
