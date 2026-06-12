@@ -41,7 +41,7 @@ function subscribe<T>(
   return onSnapshot(
     q,
     (snap) => cb(snap.docs.map((d) => map(d.data(), d.id))),
-    (e) => onError(e)
+    (e) => onError(new Error(`${name}: ${e.message}`))
   );
 }
 

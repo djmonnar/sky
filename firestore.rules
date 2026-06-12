@@ -30,10 +30,16 @@ service cloud.firestore {
     function isListedAdmin(storeId) {
       return signedIn()
         && storeId == "haneulttang"
-        && request.auth.token.email in [
-          "iu431214@gmail.com",
-          "djmonnar4@gmail.com"
-        ];
+        && (
+          request.auth.uid in [
+            "E8HlEC6QH3YcAHqaBLgtvuc0Ab02",
+            "Hnu9dItMJ9WICgrOSeBntMN1Y993"
+          ]
+          || request.auth.token.email in [
+            "iu431214@gmail.com",
+            "djmonnar4@gmail.com"
+          ]
+        );
     }
 
     function hasProfileInStore(storeId) {
@@ -78,10 +84,16 @@ service cloud.firestore {
           )
           || (
             request.resource.data.role == "admin"
-            && request.auth.token.email in [
-              "iu431214@gmail.com",
-              "djmonnar4@gmail.com"
-            ]
+            && (
+              request.auth.uid in [
+                "E8HlEC6QH3YcAHqaBLgtvuc0Ab02",
+                "Hnu9dItMJ9WICgrOSeBntMN1Y993"
+              ]
+              || request.auth.token.email in [
+                "iu431214@gmail.com",
+                "djmonnar4@gmail.com"
+              ]
+            )
           )
         );
 
