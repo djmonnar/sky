@@ -439,6 +439,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .login-card { width: 100%; max-width: 380px; padding: 28px 26px; }
 .login-brand { text-align: center; margin-bottom: 22px; }
 .login-brand .brand-logo { margin: 0 auto; }
+.remember-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--text-sub);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.remember-login input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green-700);
+}
 .auth-link {
   color: var(--green-700); font-weight: 700; text-decoration: underline;
   text-underline-offset: 3px;

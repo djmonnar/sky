@@ -4,12 +4,14 @@ import { useStore } from "../store";
 import { authErrorMessage } from "../services/auth";
 
 export default function Login() {
-  const { login, loginWithGoogle } = useStore();
+  const { login } = useStore();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberLogin, setRememberLogin] = useState(
+    () => window.localStorage.getItem("rememberLogin") !== "false"
+  );
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [googleBusy, setGoogleBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -20,23 +22,12 @@ export default function Login() {
     setBusy(true);
     setErr(null);
     try {
-      await login(email, password);
+      window.localStorage.setItem("rememberLogin", rememberLogin ? "true" : "false");
+      await login(email, password, rememberLogin);
     } catch (ex) {
       setErr(authErrorMessage(ex));
     } finally {
       setBusy(false);
-    }
-  };
-
-  const autoLogin = async () => {
-    setGoogleBusy(true);
-    setErr(null);
-    try {
-      await loginWithGoogle();
-    } catch (ex) {
-      setErr(authErrorMessage(ex));
-    } finally {
-      setGoogleBusy(false);
     }
   };
 
@@ -71,6 +62,15 @@ export default function Login() {
           onChange={(e) => setPassword(e.target.value)}
         />
 
+        <label className="remember-login">
+          <input
+            type="checkbox"
+            checked={rememberLogin}
+            onChange={(e) => setRememberLogin(e.target.checked)}
+          />
+          <span>자동 로그인</span>
+        </label>
+
         {err && (
           <div className="alert-item danger" style={{ marginTop: 14 }}>
             <span>⚠️</span>
@@ -81,20 +81,10 @@ export default function Login() {
         <button
           className="btn btn-primary btn-lg btn-block"
           style={{ marginTop: 18 }}
-          disabled={busy || googleBusy}
+          disabled={busy}
           type="submit"
         >
           {busy ? "로그인 중..." : "로그인"}
-        </button>
-
-        <button
-          className="btn btn-outline btn-lg btn-block"
-          style={{ marginTop: 10 }}
-          disabled={busy || googleBusy}
-          type="button"
-          onClick={autoLogin}
-        >
-          {googleBusy ? "자동 로그인 중..." : "Google 자동 로그인"}
         </button>
 
         <p className="muted small" style={{ margin: "16px 0 0", textAlign: "center" }}>

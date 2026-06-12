@@ -12,7 +12,7 @@ import { repository } from "./data/repository";
 import { firebaseConfigured, STORE_ID } from "./lib/firebase";
 import { adminProfileForEmail, isAdminEmail } from "./config/admins";
 import {
-  subscribeAuth, fetchUserProfile, signInEmail, signInGoogle, signUpEmail,
+  subscribeAuth, fetchUserProfile, signInEmail, signUpEmail,
   createUserProfile, signOutUser,
   type AuthUser,
 } from "./services/auth";
@@ -44,8 +44,7 @@ interface Store {
   authUser: AuthUser | null;
   profile: UserProfile | null;
   authLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
+  login: (email: string, password: string, rememberLogin?: boolean) => Promise<void>;
   signup: (name: string, email: string, password: string, employeeId: number) => Promise<void>;
   logout: () => Promise<void>;
 
@@ -343,12 +342,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setRoleState(r);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    await signInEmail(email, password);
-  }, []);
-
-  const loginWithGoogle = useCallback(async () => {
-    await signInGoogle();
+  const login = useCallback(async (
+    email: string,
+    password: string,
+    rememberLogin = true
+  ) => {
+    await signInEmail(email, password, rememberLogin);
   }, []);
 
   const signup = useCallback(
@@ -394,7 +393,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       mode: APP_MODE, demoReason,
       role, setRole,
-      authUser, profile, authLoading, login, loginWithGoogle, signup, logout,
+      authUser, profile, authLoading, login, signup, logout,
       loading, error,
       employees, currentEmployee,
       reservations, upsertReservation,
@@ -405,7 +404,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
-    [demoReason, role, setRole, authUser, profile, authLoading, login, loginWithGoogle, signup, logout,
+    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, logout,
      loading, error, employees, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,
