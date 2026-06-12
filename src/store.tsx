@@ -10,6 +10,7 @@ import { EMPLOYEES, CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
 import { repository } from "./data/repository";
 import { firebaseConfigured, STORE_ID } from "./lib/firebase";
+import { adminProfileForEmail, isAdminEmail } from "./config/admins";
 import {
   subscribeAuth, fetchUserProfile, signInEmail, signUpEmail,
   createUserProfile, signOutUser,
@@ -155,6 +156,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setAuthUser({ uid: u.uid, email: u.email });
       try {
         const p = await fetchUserProfile(u.uid);
+        const adminProfile = isAdminEmail(u.email)
+          ? { ...adminProfileForEmail(u.email ?? "관리자"), ...(p ?? {}), role: "admin" as const, active: true }
+          : null;
+        if (adminProfile) {
+          setError(null);
+          setProfile(adminProfile);
+          setRoleState("admin");
+          if (!p) {
+            createUserProfile(u.uid, adminProfile).catch((e) => {
+              console.warn("[auth] admin profile bootstrap skipped", e);
+            });
+          }
+          return;
+        }
         if (!p) {
           setError(
             `users/${u.uid} 문서가 없습니다. Firebase 콘솔에서 사용자 프로필(role, storeId, employeeId)을 등록해주세요.`
@@ -163,8 +178,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setError("비활성화된 계정입니다. 관리자에게 문의해주세요.");
         } else {
           setError(null);
-          setProfile(p);
-          setRoleState(p.role);
+          setProfile(adminProfile ?? p);
+          setRoleState(adminProfile ? "admin" : p.role);
         }
       } catch (e) {
         setError(`사용자 프로필을 불러오지 못했습니다: ${(e as Error).message}`);

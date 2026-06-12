@@ -27,14 +27,27 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function inStore(storeId) {
+    function isListedAdmin(storeId) {
+      return signedIn()
+        && storeId == "haneulttang"
+        && request.auth.token.email in [
+          "iu431214@gmail.com",
+          "djmonnar4@gmail.com"
+        ];
+    }
+
+    function hasProfileInStore(storeId) {
       return signedIn()
         && me().storeId == storeId
         && me().active == true;
     }
 
+    function inStore(storeId) {
+      return isListedAdmin(storeId) || hasProfileInStore(storeId);
+    }
+
     function isAdmin(storeId) {
-      return inStore(storeId) && me().role == 'admin';
+      return isListedAdmin(storeId) || (hasProfileInStore(storeId) && me().role == 'admin');
     }
 
     function isStaff(storeId) {
@@ -54,12 +67,23 @@ service cloud.firestore {
       // (관리자 승격은 Firebase 콘솔 또는 추후 관리자 화면에서)
       allow create: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.role == "staff"
         && request.resource.data.storeId == "haneulttang"
         && request.resource.data.active == true
-        && request.resource.data.employeeId is number
         && request.resource.data.name is string
-        && request.resource.data.name.size() > 0;
+        && request.resource.data.name.size() > 0
+        && (
+          (
+            request.resource.data.role == "staff"
+            && request.resource.data.employeeId is number
+          )
+          || (
+            request.resource.data.role == "admin"
+            && request.auth.token.email in [
+              "iu431214@gmail.com",
+              "djmonnar4@gmail.com"
+            ]
+          )
+        );
 
       // 기존 문서 수정/삭제는 콘솔 또는 Admin SDK로만
       allow update, delete: if false;
