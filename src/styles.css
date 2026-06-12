@@ -371,6 +371,184 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .sched-cell.sel { border-color: var(--green-700); background: var(--green-50); box-shadow: 0 0 0 1.5px var(--green-700); }
 .sched-cell .brk { font-size: 10px; color: var(--text-muted); font-weight: 500; }
 
+/* ============ Slot schedule board ============ */
+.schedule-toolbar { flex-wrap: wrap; }
+.schedule-actions { flex-wrap: wrap; justify-content: flex-end; }
+.day-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(56px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.day-tabs.compact { margin-bottom: 0; }
+.day-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-height: 52px; border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--card-alt);
+  color: var(--text-sub); font-weight: 700;
+}
+.day-tab strong { font-size: 16px; }
+.day-tab.on {
+  background: var(--green-700); border-color: var(--green-700); color: #fff;
+}
+.slot-board {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(174px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.day-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-soft);
+  padding: 10px;
+  display: flex; flex-direction: column; gap: 10px;
+  min-width: 0;
+}
+.day-card.selected {
+  border-color: var(--green-600);
+  box-shadow: 0 0 0 1px var(--green-600);
+}
+.day-card-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  min-height: 44px;
+}
+.period-box {
+  border-top: 1px dashed var(--border);
+  padding-top: 9px;
+}
+.period-title {
+  font-size: 12px; font-weight: 800; color: var(--green-700);
+  margin-bottom: 7px;
+}
+.dept-lane {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 7px;
+  margin-bottom: 7px;
+  min-height: 70px;
+}
+.dept-lane.active {
+  border-color: var(--green-700);
+  background: var(--green-50);
+}
+.dept-label {
+  font-size: 11px; font-weight: 800; color: var(--text-muted);
+}
+.staff-chip-list {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.staff-chip {
+  display: inline-flex; align-items: center;
+  border-radius: 999px;
+  background: var(--green-100);
+  color: var(--green-800);
+  border: 1px solid rgba(62, 82, 55, 0.18);
+  overflow: hidden;
+  font-size: 12px; font-weight: 800;
+  max-width: 100%;
+}
+.staff-chip.selected {
+  background: var(--green-700);
+  color: #fff;
+}
+.staff-chip-main {
+  padding: 5px 7px 5px 9px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.staff-chip-main em {
+  font-style: normal;
+  font-weight: 700;
+  opacity: 0.8;
+  margin-left: 2px;
+}
+.staff-chip-remove {
+  padding: 5px 7px;
+  background: rgba(255,255,255,0.4);
+  color: inherit;
+  font-weight: 900;
+}
+.empty-slot {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.slot-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+}
+.slot-summary-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.segmented.fill { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+.segmented.fill button { width: 100%; }
+.slot-hero { letter-spacing: 0; }
+.staff-slot-list { display: flex; flex-direction: column; gap: 10px; }
+.staff-slot-item {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 14px;
+}
+.slot-record-title {
+  font-size: 28px;
+  letter-spacing: 0;
+}
+.slot-checks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.slot-check {
+  min-height: 76px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-alt);
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px;
+  text-align: left;
+  font-weight: 800;
+}
+.slot-check em {
+  display: block;
+  font-style: normal;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.slot-check.done {
+  background: var(--green-50);
+  border-color: var(--green-600);
+  color: var(--green-800);
+}
+.slot-check:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.slot-check.off.done {
+  background: var(--amber-bg);
+  border-color: rgba(161, 106, 22, 0.28);
+  color: var(--amber-tx);
+}
+.advanced-time summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--text-sub);
+}
+.payroll-table { min-width: 1100px; }
+
 /* ============ Week strip (실무자 대시보드) ============ */
 .week-strip { display: flex; flex-direction: column; gap: 5px; }
 .week-day {
@@ -611,6 +789,26 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .table-wrap { overflow-x: auto; }
   .sched-grid { min-width: 660px; }
   .sched-wrap { overflow-x: auto; }
+  .schedule-toolbar { align-items: stretch; }
+  .schedule-toolbar > .row,
+  .schedule-actions { width: 100%; }
+  .schedule-actions .btn { flex: 1 1 42%; min-height: 42px; }
+  .day-tabs {
+    display: flex; overflow-x: auto; gap: 7px; padding-bottom: 2px;
+  }
+  .day-tab { min-width: 58px; min-height: 48px; }
+  .slot-board {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+  .day-card {
+    min-width: min(82vw, 330px);
+    scroll-snap-align: start;
+  }
+  .slot-summary-grid { grid-template-columns: 1fr; }
+  .slot-checks { grid-template-columns: 1fr; }
+  .slot-record-title { font-size: 25px; }
   .stat-value { font-size: 20px; }
   .toast { bottom: calc(86px + env(safe-area-inset-bottom)); width: max-content; max-width: 90vw; }
 

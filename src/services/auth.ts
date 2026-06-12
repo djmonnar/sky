@@ -78,6 +78,7 @@ export function authErrorMessage(e: unknown): string {
     case "auth/email-already-in-use": return "이미 가입된 이메일입니다. 로그인해주세요.";
     case "auth/weak-password": return "비밀번호는 6자 이상이어야 합니다.";
     case "auth/operation-not-allowed": return "Firebase Console에서 이메일/비밀번호 로그인을 켜주세요.";
+    case "profile-create-failed": return "계정은 생성되었지만 직원 프로필 생성에 실패했습니다. 관리자에게 문의해주세요.";
     case "permission-denied": return "프로필 생성 권한이 없습니다. 관리자에게 문의해주세요.";
     default: return "요청에 실패했습니다. 잠시 후 다시 시도해주세요.";
   }

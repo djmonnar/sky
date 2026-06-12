@@ -6,7 +6,7 @@
 
    - 문서 ID 규칙
      reservations / workRecords / notices : String(도메인 숫자 id)
-     shifts  : `${empId}_${day}`
+     shifts  : `${date}_${period}_${department}_${employeeId}_${order}`
      payroll : String(empId)
      handovers / attendanceLogs : 자동 ID (addDoc)
    - 정렬은 클라이언트에서 수행 (복합 인덱스 불필요)
@@ -14,14 +14,15 @@
 
 import {
   collection, doc, query, where, onSnapshot,
-  setDoc, updateDoc, addDoc, serverTimestamp,
+  setDoc, updateDoc, addDoc, deleteDoc, serverTimestamp,
   type QueryConstraint, type DocumentData,
 } from "firebase/firestore";
 import { requireDb, STORE_ID } from "../lib/firebase";
 import type {
-  Reservation, Employee, Shift, WorkRecord, PayrollRow, Notice,
+  Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice,
 } from "../data/types";
 import type { AttendanceLogDoc } from "../types/firestore";
+import { PERIOD_TIME, sortShifts } from "../lib/shifts";
 
 function col(name: string) {
   return collection(requireDb(), "stores", STORE_ID, name);
@@ -54,10 +55,12 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
       id: Number(d.id ?? id),
       name: d.name ?? "",
       role: d.role ?? "",
+      roleLabel: d.roleLabel,
       employmentType: d.employmentType ?? (d.salaryType === "monthly" || d.monthlySalary ? "fullTime" : "partTime"),
-      salaryType: d.salaryType ?? (d.monthlySalary ? "monthly" : "hourly"),
+      salaryType: d.salaryType ?? (d.monthlySalary ? "monthly" : d.slotRate ? "perSlot" : "hourly"),
       hourly: d.hourly ?? 0,
       monthlySalary: d.monthlySalary,
+      slotRate: d.slotRate,
       standardStart: d.standardStart,
       standardEnd: d.standardEnd,
     }),
@@ -91,19 +94,72 @@ export function subscribeReservations(cb: (v: Reservation[]) => void, onError: E
   );
 }
 
+function inferPeriod(d: DocumentData): ShiftPeriod {
+  if (d.period === "morning" || d.period === "afternoon") return d.period;
+  return typeof d.start === "string" && d.start >= "15:00" ? "afternoon" : "morning";
+}
+
+function normalizeShift(d: DocumentData, id: string): Shift {
+  const period = inferPeriod(d);
+  const employeeId = Number(d.employeeId ?? d.empId ?? 0);
+  const dayIndex = Number(d.dayIndex ?? d.day ?? 0);
+  return {
+    id: String(d.id ?? id),
+    date: d.date ?? "",
+    dayIndex,
+    day: dayIndex,
+    period,
+    department: (d.department === "kitchen" ? "kitchen" : "hall") as Department,
+    employeeId,
+    empId: employeeId,
+    employeeName: d.employeeName ?? "",
+    roleLabel: d.roleLabel,
+    order: Number(d.order ?? 0),
+    start: d.start ?? PERIOD_TIME[period].start,
+    end: d.end ?? PERIOD_TIME[period].end,
+    breakMin: d.breakMin ?? PERIOD_TIME[period].breakMin,
+    off: d.off ?? false,
+  };
+}
+
 /** empId를 주면 본인 것만 구독 (staff), 없으면 전체 (admin) */
 export function subscribeShifts(
   empId: number | undefined,
   cb: (v: Shift[]) => void,
   onError: ErrCb
 ): Unsub {
-  const cons = empId !== undefined ? [where("empId", "==", empId)] : [];
+  if (empId !== undefined) {
+    const byEmployeeId = new Map<string, Shift>();
+    const byEmpId = new Map<string, Shift>();
+    const emit = () => {
+      const merged = new Map<string, Shift>([...byEmpId, ...byEmployeeId]);
+      cb([...merged.values()].sort(sortShifts));
+    };
+    const makeListener = (field: "employeeId" | "empId") =>
+      onSnapshot(
+        query(col("shifts"), where(field, "==", empId)),
+        (snap) => {
+          const target = field === "employeeId" ? byEmployeeId : byEmpId;
+          target.clear();
+          snap.docs.forEach((d) => target.set(d.id, normalizeShift(d.data(), d.id)));
+          emit();
+        },
+        (e) => onError(new Error(`shifts: ${e.message}`))
+      );
+
+    const unsubEmployeeId = makeListener("employeeId");
+    const unsubEmpId = makeListener("empId");
+    return () => {
+      unsubEmployeeId();
+      unsubEmpId();
+    };
+  }
+
   return subscribe(
     "shifts",
-    (d) => d as Shift,
-    (items) => cb(items.sort((a, b) => a.empId - b.empId || a.day - b.day)),
+    normalizeShift,
+    (items) => cb(items.sort(sortShifts)),
     onError,
-    ...cons
   );
 }
 
@@ -161,10 +217,14 @@ export async function fsUpsertReservation(r: Reservation): Promise<void> {
 
 export async function fsSetShift(s: Shift): Promise<void> {
   await setDoc(
-    doc(col("shifts"), `${s.empId}_${s.day}`),
-    { ...s, updatedAt: serverTimestamp() },
+    doc(col("shifts"), s.id),
+    { ...s, empId: s.employeeId, day: s.dayIndex, updatedAt: serverTimestamp() },
     { merge: true }
   );
+}
+
+export async function fsDeleteShift(id: string): Promise<void> {
+  await deleteDoc(doc(col("shifts"), id));
 }
 
 export async function fsAddRecord(r: WorkRecord): Promise<void> {

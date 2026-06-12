@@ -3,11 +3,13 @@ import { useStore } from "../store";
 import { Card, StatCard, Badge } from "../components/ui";
 import { won } from "../data";
 import type { Employee, PayrollRow } from "../data/types";
+import { countSlots } from "../lib/shifts";
 import {
   basePay,
   employmentLabel,
   finalPay,
   isMonthlyEmployee,
+  isSlotPaidEmployee,
   payBasisLabel,
   salaryTypeLabel,
   workHoursLabel,
@@ -26,15 +28,26 @@ interface PayrollViewRow {
   pay: PayrollRow;
 }
 
-function defaultPayroll(emp: Employee): PayrollRow {
+function defaultPayroll(emp: Employee, counts: ReturnType<typeof countSlots>): PayrollRow {
+  const hours = emp.salaryType === "hourly" ? counts.slotCount * 5 : 0;
   return {
     empId: emp.id,
-    hours: 0,
-    base: isMonthlyEmployee(emp) ? emp.monthlySalary ?? 0 : 0,
+    morningCount: counts.morningCount,
+    afternoonCount: counts.afternoonCount,
+    slotCount: counts.slotCount,
+    slotRate: emp.slotRate,
+    manualAdjust: 0,
+    payMode: emp.salaryType,
+    hours,
+    base: isMonthlyEmployee(emp)
+      ? emp.monthlySalary ?? 0
+      : isSlotPaidEmployee(emp)
+        ? counts.slotCount * (emp.slotRate ?? 0)
+        : hours * emp.hourly,
     extra: 0,
     deduct: 0,
     status: "승인대기",
-    normalH: 0,
+    normalH: hours,
     overH: 0,
     holidayH: 0,
     nightH: 0,
@@ -42,8 +55,22 @@ function defaultPayroll(emp: Employee): PayrollRow {
   };
 }
 
+function hydratePayroll(emp: Employee, pay: PayrollRow | undefined, counts: ReturnType<typeof countSlots>): PayrollRow {
+  const base = defaultPayroll(emp, counts);
+  return {
+    ...base,
+    ...(pay ?? {}),
+    morningCount: counts.morningCount,
+    afternoonCount: counts.afternoonCount,
+    slotCount: counts.slotCount,
+    slotRate: pay?.slotRate ?? emp.slotRate,
+    payMode: pay?.payMode ?? emp.salaryType,
+    hours: emp.salaryType === "hourly" ? pay?.hours ?? counts.slotCount * 5 : 0,
+  };
+}
+
 export default function Payroll() {
-  const { payroll, records, updatePayroll, approveRecord, showToast, employees } = useStore();
+  const { payroll, records, shifts, updatePayroll, approveRecord, showToast, employees } = useStore();
   const [filter, setFilter] = useState<PayFilter>("all");
   const [selId, setSelId] = useState<number | null>(null);
   const [extraInput, setExtraInput] = useState("");
@@ -51,11 +78,14 @@ export default function Payroll() {
 
   const rows = useMemo<PayrollViewRow[]>(() => {
     const byEmp = new Map(payroll.map((p) => [p.empId, p]));
-    return employees.map((emp) => ({
-      emp,
-      pay: byEmp.get(emp.id) ?? defaultPayroll(emp),
-    }));
-  }, [employees, payroll]);
+    return employees.map((emp) => {
+      const counts = countSlots(shifts, emp.id);
+      return {
+        emp,
+        pay: hydratePayroll(emp, byEmp.get(emp.id), counts),
+      };
+    });
+  }, [employees, payroll, shifts]);
 
   const filteredRows = rows.filter(({ emp }) => {
     if (filter === "fullTime") return isMonthlyEmployee(emp);
@@ -74,18 +104,16 @@ export default function Payroll() {
   const totalExtra = rows.reduce((a, { pay }) => a + pay.extra, 0);
   const totalDeduct = rows.reduce((a, { pay }) => a + pay.deduct, 0);
   const monthlyCount = rows.filter(({ emp }) => isMonthlyEmployee(emp)).length;
-  const hourlyCount = rows.length - monthlyCount;
-  const pendingRecords = records.filter((r) => {
-    if (!(r.status === "승인대기" || r.status === "제출")) return false;
-    const emp = employees.find((e) => e.id === r.empId);
-    return !emp || !isMonthlyEmployee(emp);
-  });
+  const slotPaidCount = rows.filter(({ emp }) => isSlotPaidEmployee(emp)).length;
+  const partTimeCount = rows.length - monthlyCount;
+  const totalSlots = rows.reduce((a, { pay }) => a + (pay.slotCount ?? 0), 0);
+  const pendingRecords = records.filter((r) => r.status === "승인대기" || r.status === "제출");
 
   const persistPayroll = (emp: Employee, pay: PayrollRow, patch: Partial<PayrollRow>) => {
+    const next = { ...pay, ...patch };
     updatePayroll(emp.id, {
-      ...pay,
-      base: basePay(pay, emp),
-      ...patch,
+      ...next,
+      base: basePay(next, emp),
     });
   };
 
@@ -122,10 +150,10 @@ export default function Payroll() {
       </div>
 
       <div className="grid grid-4">
-        <StatCard label="이번달 총 급여 예상" value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="월급+시급 합산" trendUp icon="💰" />
+        <StatCard label="이번달 총 급여 예상" value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="월급+시급+건별수당" trendUp icon="💰" />
+        <StatCard label="총 근무 슬롯" value={totalSlots} unit="개" trend="오전/오후 합산" trendUp icon="🗓️" tone="blue" />
         <StatCard label="정직원" value={monthlyCount} unit="명" trend="월급 고정" trendUp icon="🧑‍💼" tone="blue" />
-        <StatCard label="아르바이트" value={hourlyCount} unit="명" trend="승인 근무시간 기준" trendUp icon="👥" tone="amber" />
-        <StatCard label="차감/수당 합계" value={Math.round((totalExtra - totalDeduct) / 10000).toLocaleString()} unit="만원" icon="🧾" tone="green" />
+        <StatCard label="알바/건별" value={`${partTimeCount}/${slotPaidCount}`} unit="명" trend="시급/건별수당" trendUp icon="👥" tone="amber" />
       </div>
 
       <div className="grid grid-main-side">
@@ -155,14 +183,17 @@ export default function Payroll() {
               ))}
             </div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table payroll-table">
                 <thead>
                   <tr>
                     <th>직원</th>
                     <th>고용형태</th>
                     <th>직무</th>
                     <th>급여기준</th>
-                    <th>근무시간</th>
+                    <th>오전 근무</th>
+                    <th>오후 근무</th>
+                    <th>총 슬롯</th>
+                    <th>기본급</th>
                     <th>추가수당</th>
                     <th>차감</th>
                     <th>최종지급액</th>
@@ -176,11 +207,17 @@ export default function Payroll() {
                       className={sel?.emp.id === emp.id ? "sel" : ""}
                       onClick={() => setSelId(emp.id)}
                     >
-                      <td className="bold">{emp.name}</td>
+                      <td className="bold">
+                        {emp.name}
+                        {emp.roleLabel && <span className="muted small">({emp.roleLabel})</span>}
+                      </td>
                       <td><Badge tone={isMonthlyEmployee(emp) ? "blue" : "amber"}>{employmentLabel(emp)}</Badge></td>
                       <td className="muted">{emp.role}</td>
                       <td className="num">{payBasisLabel(emp)}</td>
-                      <td className="num">{workHoursLabel(pay, emp)}</td>
+                      <td className="num">{pay.morningCount ?? 0}</td>
+                      <td className="num">{pay.afternoonCount ?? 0}</td>
+                      <td className="num bold">{pay.slotCount ?? 0}</td>
+                      <td className="num">{basePay(pay, emp).toLocaleString()}</td>
                       <td className="num" style={{ color: "var(--green-700)" }}>+{pay.extra.toLocaleString()}</td>
                       <td className="num" style={{ color: pay.deduct ? "var(--red-tx)" : undefined }}>
                         {pay.deduct ? `-${pay.deduct.toLocaleString()}` : "-"}
@@ -191,7 +228,7 @@ export default function Payroll() {
                   ))}
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                      <td colSpan={12} className="muted" style={{ textAlign: "center", padding: 24 }}>
                         표시할 직원이 없습니다
                       </td>
                     </tr>
@@ -205,7 +242,7 @@ export default function Payroll() {
             <div className="table-wrap">
               <table className="table">
                 <thead>
-                  <tr><th>날짜</th><th>직원</th><th>예정</th><th>실제</th><th>메모</th><th></th></tr>
+                  <tr><th>날짜</th><th>직원</th><th>근무</th><th>실제</th><th>메모</th><th></th></tr>
                 </thead>
                 <tbody>
                   {pendingRecords.map((r) => {
@@ -215,12 +252,12 @@ export default function Payroll() {
                       <tr key={r.id} style={{ cursor: "default" }}>
                         <td className="num">{r.date.slice(5).replace("-", "/")}</td>
                         <td className="bold">{e.name}</td>
-                        <td className="muted num">{r.planStart}-{r.planEnd}</td>
-                        <td className="num bold">{r.actualStart}-{r.actualEnd}</td>
+                        <td className="muted">{r.slotSummary ?? `${r.planStart}-${r.planEnd}`}</td>
+                        <td className="num bold">{r.actualStart ?? "-"}-{r.actualEnd ?? "-"}</td>
                         <td className="muted small">{r.note ?? "-"}</td>
                         <td>
                           <button className="btn btn-soft btn-sm" onClick={() => { approveRecord(r.id); showToast("근무기록을 승인했습니다"); }}>
-                            ✓ 승인
+                            승인
                           </button>
                         </td>
                       </tr>
@@ -250,27 +287,21 @@ export default function Payroll() {
                 {employmentLabel(sel.emp)} · {sel.emp.role} · {payBasisLabel(sel.emp)}
               </div>
 
+              <div className="pay-line"><span className="k">급여 방식</span><span className="v">{salaryTypeLabel(sel.emp)}</span></div>
+              <div className="pay-line"><span className="k">오전 근무</span><span className="v">{sel.pay.morningCount ?? 0}회</span></div>
+              <div className="pay-line"><span className="k">오후 근무</span><span className="v">{sel.pay.afternoonCount ?? 0}회</span></div>
+              <div className="pay-line"><span className="k">총 슬롯</span><span className="v">{sel.pay.slotCount ?? 0}회</span></div>
+
               {isMonthlyEmployee(sel.emp) ? (
-                <>
-                  <div className="alert-item info" style={{ marginBottom: 12 }}>
-                    <span>🕘</span>
-                    <div>
-                      고정 근무 직원
-                      <div className="desc">
-                        근무시간은 급여에 반영하지 않고 예외 수당/차감만 관리합니다
-                      </div>
-                    </div>
+                <div className="alert-item info" style={{ marginTop: 10 }}>
+                  <span>🕘</span>
+                  <div>
+                    월급 고정 직원
+                    <div className="desc">근무시간은 급여에 반영하지 않고 예외 수당/차감만 관리합니다</div>
                   </div>
-                  <div className="pay-line"><span className="k">기준 근무</span><span className="v">{sel.emp.standardStart ?? "고정"}-{sel.emp.standardEnd ?? "고정"}</span></div>
-                </>
+                </div>
               ) : (
-                <>
-                  <div className="pay-line"><span className="k">정상근무</span><span className="v">{sel.pay.normalH}시간</span></div>
-                  <div className="pay-line"><span className="k">연장근무</span><span className="v">{sel.pay.overH}시간</span></div>
-                  <div className="pay-line"><span className="k">휴일근무</span><span className="v">{sel.pay.holidayH}시간</span></div>
-                  <div className="pay-line"><span className="k">야간근무</span><span className="v">{sel.pay.nightH}시간</span></div>
-                  <div className="pay-line"><span className="k">수정된 근무기록</span><span className="v">{sel.pay.editedRecords}건</span></div>
-                </>
+                <div className="pay-line"><span className="k">시간/건수 기준</span><span className="v">{workHoursLabel(sel.pay, sel.emp)}</span></div>
               )}
 
               <div className="pay-line" style={{ marginTop: 8 }}>
@@ -301,7 +332,7 @@ export default function Payroll() {
                   수정반영
                 </button>
                 <button className="btn btn-primary" style={{ flex: 1 }} disabled={sel.pay.status === "승인완료"} onClick={approve}>
-                  ✓ 확정
+                  확정
                 </button>
               </div>
             </Card>

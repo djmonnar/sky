@@ -1,15 +1,23 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { Card, Badge } from "../components/ui";
+import { TODAY, TODAY_DOW, DOW_KO, weekDates } from "../data";
 import {
-  TODAY, TODAY_DOW, DOW_KO, weekDates, durationH,
-} from "../data";
+  DEPARTMENT_LABEL,
+  PERIOD_LABEL,
+  PERIODS,
+  countSlots,
+  planTimesForShifts,
+  shiftDateForDay,
+  shiftsForEmployeeDay,
+  slotLongSummary,
+  slotSummary,
+} from "../lib/shifts";
 import { employmentLabel, isMonthlyEmployee, payBasisLabel } from "../lib/payroll";
 
 export default function SchedulePage() {
   const { shifts, handovers, showToast, currentEmployee, loading } = useStore();
   const me = currentEmployee;
-  const myShifts = shifts.filter((s) => s.empId === me?.id);
   const week = weekDates(TODAY);
   const [selDay, setSelDay] = useState(TODAY_DOW);
 
@@ -19,21 +27,23 @@ export default function SchedulePage() {
         <div className="muted" style={{ textAlign: "center", padding: "30px 0" }}>
           {loading
             ? "직원 정보를 불러오는 중..."
-            : "계정에 연결된 직원 정보가 없습니다. 관리자에게 문의해주세요."}
+            : "직원번호에 연결된 직원 정보가 없습니다. 관리자에게 employeeId를 확인해주세요."}
         </div>
       </Card>
     );
   }
 
-  const selShift = myShifts.find((s) => s.day === selDay);
-  const totalH = myShifts.reduce(
-    (a, s) => a + (s.off ? 0 : durationH(s.start!, s.end!, s.breakMin)), 0
-  );
+  const weekSlots = week.map((_, dayIndex) => {
+    const date = shiftDateForDay(week, dayIndex);
+    return shiftsForEmployeeDay(shifts, me.id, date, dayIndex);
+  });
+  const selSlots = weekSlots[selDay];
+  const plan = planTimesForShifts(selSlots);
+  const counts = countSlots(weekSlots.flat());
   const fixedSalary = isMonthlyEmployee(me);
 
   return (
     <>
-      {/* 주간 날짜 칩 */}
       <Card>
         <div className="spread" style={{ marginBottom: 12 }}>
           <button className="icon-btn" style={{ width: 30, height: 30 }} aria-label="이전 주">‹</button>
@@ -42,27 +52,20 @@ export default function SchedulePage() {
           </span>
           <button className="icon-btn" style={{ width: 30, height: 30 }} aria-label="다음 주">›</button>
         </div>
-        <div className="row" style={{ justifyContent: "space-between", gap: 5 }}>
+        <div className="day-tabs compact">
           {week.map((d, i) => (
             <button
               key={i}
+              className={`day-tab ${selDay === i ? "on" : ""}`}
               onClick={() => setSelDay(i)}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-                gap: 3, padding: "9px 2px", borderRadius: 11,
-                background: selDay === i ? "var(--green-700)" : "transparent",
-                color: selDay === i ? "#fff" : i === TODAY_DOW ? "var(--green-700)" : "var(--text-sub)",
-                fontWeight: 700,
-              }}
             >
-              <span style={{ fontSize: 12 }}>{DOW_KO[i]}</span>
-              <span style={{ fontSize: 14 }}>{d.getDate()}</span>
+              <span>{DOW_KO[i]}</span>
+              <strong>{d.getDate()}</strong>
             </button>
           ))}
         </div>
       </Card>
 
-      {/* 선택일 근무 요약 */}
       <Card>
         <div className="spread" style={{ flexWrap: "wrap", gap: 10 }}>
           <div>
@@ -72,13 +75,13 @@ export default function SchedulePage() {
               </span>
               {selDay === TODAY_DOW && <Badge tone="green">오늘</Badge>}
             </div>
-            {selShift && !selShift.off ? (
+            {selSlots.length > 0 ? (
               <>
-                <div className="hero-time" style={{ marginTop: 4 }}>
-                  {selShift.start} ~ {selShift.end}
+                <div className="hero-time slot-hero" style={{ marginTop: 4 }}>
+                  {slotSummary(selSlots)}
                 </div>
                 <div className="muted small">
-                  휴게 {selShift.breakMin}분 · 총 {durationH(selShift.start!, selShift.end!, selShift.breakMin)}시간
+                  {slotLongSummary(selSlots)} · 예정 {plan.start}~{plan.end}
                 </div>
               </>
             ) : (
@@ -92,54 +95,72 @@ export default function SchedulePage() {
       </Card>
 
       <div className="grid grid-main-side">
-        {/* 이번 주 리스트 */}
         <Card
-          title="이번 주 근무"
+          title="선택일 근무"
           icon="🗓️"
-          action={<span className="bold">{fixedSalary ? "고정 월급" : `총 ${totalH}시간`}</span>}
+          action={<span className="bold">{selSlots.length > 0 ? `${selSlots.length}슬롯` : "휴무"}</span>}
         >
-          <div className="week-strip">
-            {week.map((d, i) => {
-              const s = myShifts.find((x) => x.day === i);
-              const h = s && !s.off ? durationH(s.start!, s.end!, s.breakMin) : 0;
-              return (
-                <div className={`week-day ${i === TODAY_DOW ? "today" : ""}`} key={i} style={{ padding: "11px 14px" }}>
-                  <span className="dow">{DOW_KO[i]}</span>
-                  <span className="dt">{d.getMonth() + 1}/{d.getDate()}</span>
-                  {s && !s.off ? (
-                    <>
-                      <span className="tm">{s.start} – {s.end}</span>
-                      <span className="muted small" style={{ width: 52, textAlign: "right" }}>{h}시간</span>
-                    </>
-                  ) : (
-                    <span className="tm off">휴무</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {selSlots.length > 0 ? (
+            <div className="staff-slot-list">
+              {PERIODS.map((period) => {
+                const periodSlots = selSlots.filter((s) => s.period === period);
+                if (periodSlots.length === 0) return null;
+                return (
+                  <div className="staff-slot-item" key={period}>
+                    <div>
+                      <div className="bold">{PERIOD_LABEL[period]} 근무</div>
+                      <div className="muted small">
+                        {periodSlots.map((s) => DEPARTMENT_LABEL[s.department]).join(", ")}
+                      </div>
+                    </div>
+                    <Badge tone={period === "morning" ? "blue" : "amber"}>
+                      {periodSlots.length}칸
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="muted" style={{ textAlign: "center", padding: "24px 0" }}>
+              선택한 날짜에는 배정된 근무가 없습니다
+            </div>
+          )}
         </Card>
 
         <div className="stack side-panel">
-          {/* 주간 요약 */}
           <Card title="주간 요약" icon="📊">
             <div className="pay-line"><span className="k">고용형태</span><span className="v">{employmentLabel(me)}</span></div>
-            <div className="pay-line"><span className="k">근무 일수</span><span className="v">{myShifts.filter((s) => !s.off).length}일</span></div>
+            <div className="pay-line"><span className="k">오전 근무</span><span className="v">{counts.morningCount}회</span></div>
+            <div className="pay-line"><span className="k">오후 근무</span><span className="v">{counts.afternoonCount}회</span></div>
+            <div className="pay-line"><span className="k">근무 일수</span><span className="v">{weekSlots.filter((day) => day.length > 0).length}일</span></div>
             {fixedSalary ? (
-              <>
-                <div className="pay-line"><span className="k">근무시간</span><span className="v">급여 미집계</span></div>
-                <div className="pay-line total"><span className="k">급여기준</span><span className="v">{payBasisLabel(me)}</span></div>
-              </>
+              <div className="pay-line total"><span className="k">급여기준</span><span className="v">{payBasisLabel(me)}</span></div>
             ) : (
-              <>
-                <div className="pay-line"><span className="k">총 근무시간</span><span className="v">{totalH}시간</span></div>
-                <div className="pay-line"><span className="k">예상 주급</span><span className="v">{(totalH * me.hourly).toLocaleString()}원</span></div>
-                <div className="pay-line total"><span className="k">시급</span><span className="v">{me.hourly.toLocaleString()}원</span></div>
-              </>
+              <div className="pay-line total"><span className="k">총 슬롯</span><span className="v">{counts.slotCount}회</span></div>
             )}
           </Card>
 
-          {/* 전달사항 */}
+          <Card title="이번 주 한눈에 보기" icon="👀">
+            <div className="week-strip">
+              {week.map((d, i) => {
+                const daySlots = weekSlots[i];
+                return (
+                  <button
+                    className={`week-day ${i === selDay ? "today" : ""}`}
+                    key={i}
+                    onClick={() => setSelDay(i)}
+                  >
+                    <span className="dow">{DOW_KO[i]}</span>
+                    <span className="dt">{d.getMonth() + 1}/{d.getDate()}</span>
+                    <span className={`tm ${daySlots.length === 0 ? "off" : ""}`}>
+                      {daySlots.length > 0 ? slotSummary(daySlots) : "휴무"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
           <Card title="전달사항" icon="💬">
             {handovers.slice(0, 3).map((h) => (
               <div className="notice-item" key={h.id}>

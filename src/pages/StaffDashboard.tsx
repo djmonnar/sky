@@ -1,11 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
-import { Card, StatusBadge, Badge, TimeQuick } from "../components/ui";
+import { Card, StatusBadge, Badge } from "../components/ui";
+import { TODAY, TODAY_DOW, TODAY_STR, DOW_KO, weekDates } from "../data";
 import {
-  TODAY, TODAY_DOW, TODAY_STR, DOW_KO,
-  weekDates, durationH, fmtH, minutes, toTime,
-} from "../data";
+  countSlots,
+  planTimesForShifts,
+  shiftDateForDay,
+  shiftsForEmployeeDay,
+  slotLongSummary,
+  slotSummary,
+} from "../lib/shifts";
 import { isMonthlyEmployee, payBasisLabel } from "../lib/payroll";
 
 export default function StaffDashboard() {
@@ -15,41 +20,42 @@ export default function StaffDashboard() {
   } = useStore();
 
   const me = currentEmployee;
-  const myShifts = shifts.filter((s) => s.empId === me?.id);
-  const todayShift = myShifts.find((s) => s.day === TODAY_DOW);
-  const hasWork = !!todayShift && !todayShift.off;
-  const fixedSalary = !!me && isMonthlyEmployee(me);
   const week = weekDates(TODAY);
+  const todaySlots = shiftsForEmployeeDay(shifts, me?.id, TODAY_STR, TODAY_DOW);
+  const hasWork = todaySlots.length > 0;
+  const fixedSalary = !!me && isMonthlyEmployee(me);
+  const plan = planTimesForShifts(todaySlots);
+  const [quickSaved, setQuickSaved] = useState(false);
+
+  const myWeekSlots = week.map((_, dayIndex) => {
+    const date = shiftDateForDay(week, dayIndex);
+    return shiftsForEmployeeDay(shifts, me?.id, date, dayIndex);
+  });
+  const weekCounts = countSlots(myWeekSlots.flat());
+
   const todayResv = reservations
     .filter((r) => r.status !== "취소" && r.status !== "노쇼")
     .slice(0, 4);
 
-  const workH = hasWork
-    ? durationH(todayShift!.start!, todayShift!.end!, todayShift!.breakMin)
-    : 0;
-
-  // 모바일 빠른 근무기록
-  const planStart = hasWork ? todayShift!.start! : "10:00";
-  const [quickStart, setQuickStart] = useState(planStart);
-  const [quickTouched, setQuickTouched] = useState(false);
-  const [quickSaved, setQuickSaved] = useState(false);
-  const quickPresets = [-30, 0, 30, 60].map((d) => toTime(minutes(planStart) + d));
-
-  // 비동기 로드(Firestore) 후 예정 시간이 도착하면 기본값 동기화
-  useEffect(() => {
-    if (!quickTouched) setQuickStart(planStart);
-  }, [planStart, quickTouched]);
-
   const saveQuick = () => {
     if (!me) return;
     addRecord({
-      id: Date.now(), empId: me.id, date: TODAY_STR,
-      planStart, planEnd: hasWork ? todayShift!.end! : "15:00",
-      actualStart: quickStart, actualEnd: hasWork ? todayShift!.end! : "15:00",
-      breakMin: todayShift?.breakMin ?? 30, status: "미작성",
+      id: Date.now(),
+      empId: me.id,
+      date: TODAY_STR,
+      periods: Array.from(new Set(todaySlots.map((s) => s.period))),
+      departments: Array.from(new Set(todaySlots.map((s) => s.department))),
+      slotSummary: slotSummary(todaySlots),
+      workType: "slot",
+      planStart: plan.start,
+      planEnd: plan.end,
+      actualStart: plan.start,
+      actualEnd: plan.end,
+      breakMin: plan.breakMin,
+      status: "승인대기",
     });
     setQuickSaved(true);
-    showToast("근무기록이 임시 저장되었습니다");
+    showToast("오늘 슬롯 완료로 근무기록을 저장했습니다");
   };
 
   if (!me) {
@@ -58,7 +64,7 @@ export default function StaffDashboard() {
         <div className="muted" style={{ textAlign: "center", padding: "30px 0" }}>
           {loading
             ? "직원 정보를 불러오는 중..."
-            : "계정에 연결된 직원 정보가 없습니다. 관리자에게 문의해주세요."}
+            : "직원번호에 연결된 직원 정보가 없습니다. 관리자에게 employeeId를 확인해주세요."}
         </div>
       </Card>
     );
@@ -66,8 +72,8 @@ export default function StaffDashboard() {
 
   const punchBadge =
     punchStatus === "before" ? <Badge tone="gray">출근 전</Badge>
-    : punchStatus === "working" ? <Badge tone="solid">근무중</Badge>
-    : <Badge tone="green">퇴근 완료</Badge>;
+      : punchStatus === "working" ? <Badge tone="solid">근무중</Badge>
+        : <Badge tone="green">퇴근 완료</Badge>;
 
   return (
     <>
@@ -77,7 +83,6 @@ export default function StaffDashboard() {
 
       <div className="grid grid-main-side">
         <div className="stack">
-          {/* 오늘 근무 */}
           <Card>
             <div className="spread">
               <div style={{ width: "100%" }}>
@@ -88,23 +93,19 @@ export default function StaffDashboard() {
                       {TODAY.getMonth() + 1}.{TODAY.getDate()} ({DOW_KO[TODAY_DOW]})
                     </Badge>
                   </div>
-                  {hasWork && !fixedSalary && punchBadge}
+                  {hasWork && punchBadge}
                 </div>
+
                 {hasWork ? (
                   <>
-                    <div className="hero-time" style={{ marginTop: 6 }}>
-                      {todayShift!.start} ~ {todayShift!.end}
+                    <div className="hero-time slot-hero" style={{ marginTop: 6 }}>
+                      {slotSummary(todaySlots)}
                     </div>
                     <div className="muted small" style={{ marginTop: 2 }}>
-                      {fixedSalary ? (
-                        <>고정 근무 · {payBasisLabel(me)} · 근무시간 급여 미집계</>
-                      ) : (
-                        <>
-                          휴게 {todayShift!.breakMin}분 · 총 {fmtH(workH)} 근무 예정
-                          {punchInAt && ` · 출근 ${punchInAt}`}
-                          {punchOutAt && ` · 퇴근 ${punchOutAt}`}
-                        </>
-                      )}
+                      {slotLongSummary(todaySlots)} · 예정 {plan.start}~{plan.end}
+                      {fixedSalary && ` · ${payBasisLabel(me)}`}
+                      {punchInAt && ` · 출근 ${punchInAt}`}
+                      {punchOutAt && ` · 퇴근 ${punchOutAt}`}
                     </div>
                   </>
                 ) : (
@@ -112,7 +113,8 @@ export default function StaffDashboard() {
                 )}
               </div>
             </div>
-            {hasWork && !fixedSalary && (
+
+            {hasWork && (
               <div className="punch-row">
                 <button
                   className="btn btn-primary btn-lg"
@@ -132,7 +134,6 @@ export default function StaffDashboard() {
             )}
           </Card>
 
-          {/* 오늘 예약 */}
           <Card
             title="오늘 예약"
             icon="📋"
@@ -150,30 +151,31 @@ export default function StaffDashboard() {
             ))}
           </Card>
 
-          {/* 모바일 전용: 빠른 근무기록 */}
-          {hasWork && !fixedSalary && (
-            <Card title="빠른 근무기록" icon="⚡" className="hide-desktop"
+          {hasWork && (
+            <Card
+              title="빠른 근무기록"
+              icon="⚡"
+              className="hide-desktop"
               action={<Link to="/worklog" className="card-link">상세 작성 ›</Link>}
             >
-              <TimeQuick
-                label="실제 출근 시간"
-                value={quickStart}
-                onChange={(v) => { setQuickTouched(true); setQuickStart(v); }}
-                presets={quickPresets}
-              />
+              <div className="alert-item info">
+                <span>✅</span>
+                <div>
+                  {slotSummary(todaySlots)} 완료로 저장
+                  <div className="desc">세부 메모가 있으면 상세 작성에서 남길 수 있습니다</div>
+                </div>
+              </div>
               <button
                 className="btn btn-primary btn-block btn-lg"
-                style={{ marginTop: 14 }}
                 disabled={quickSaved}
                 onClick={saveQuick}
               >
-                {quickSaved ? "✓ 저장됨" : "기록 저장"}
+                {quickSaved ? "저장됨" : "오늘 슬롯 완료 저장"}
               </button>
             </Card>
           )}
 
           <div className="grid grid-2">
-            {/* 전달사항 */}
             <Card title="오늘 전달사항" icon="💬">
               {handovers.slice(0, 4).map((h) => (
                 <div className="notice-item" key={h.id}>
@@ -183,7 +185,7 @@ export default function StaffDashboard() {
                 </div>
               ))}
             </Card>
-            {/* 공지사항 */}
+
             <Card
               title="공지사항"
               icon="📢"
@@ -199,13 +201,11 @@ export default function StaffDashboard() {
             </Card>
           </div>
 
-          {/* 모바일 전용: 근무표 바로가기 */}
           <Link to="/schedule" className="btn btn-outline btn-lg btn-block hide-desktop">
             🗓️ 이번 주 근무표 보기
           </Link>
         </div>
 
-        {/* 우측: 이번 주 근무표 + 빠른 기록 (데스크톱) */}
         <div className="stack side-panel hide-mobile">
           <Card
             title="이번 주 근무표"
@@ -214,13 +214,13 @@ export default function StaffDashboard() {
           >
             <div className="week-strip">
               {week.map((d, i) => {
-                const s = myShifts.find((x) => x.day === i);
+                const daySlots = myWeekSlots[i];
                 return (
                   <div className={`week-day ${i === TODAY_DOW ? "today" : ""}`} key={i}>
                     <span className="dow">{DOW_KO[i]}</span>
                     <span className="dt">{d.getMonth() + 1}/{d.getDate()}</span>
-                    {s && !s.off ? (
-                      <span className="tm">{s.start}–{s.end}</span>
+                    {daySlots.length > 0 ? (
+                      <span className="tm">{slotSummary(daySlots)}</span>
                     ) : (
                       <span className="tm off">휴무</span>
                     )}
@@ -230,33 +230,24 @@ export default function StaffDashboard() {
             </div>
           </Card>
 
-          {fixedSalary ? (
-            <Card title="정직원 급여 안내" icon="💼">
-              <p className="muted small" style={{ margin: "0 0 12px" }}>
-                월급 기준 직원이라 근무시간 기록을 급여에 반영하지 않습니다.
-              </p>
-              <Link to="/worklog" className="btn btn-outline btn-block">
-                예외 기록 안내 보기
-              </Link>
-            </Card>
-          ) : (
-            <Card title="근무기록 빠르게 작성" icon="✍️">
-              <p className="muted small" style={{ margin: "0 0 12px" }}>
-                오늘 근무가 끝나면 실제 출퇴근 시간을 기록해주세요.
-                버튼 한두 번이면 끝나요.
-              </p>
-              <Link to="/worklog" className="btn btn-primary btn-block">
-                ✍️ 기록 작성하러 가기
-              </Link>
+          <Card title="주간 슬롯 요약" icon="📊">
+            <div className="pay-line"><span className="k">오전 근무</span><span className="v">{weekCounts.morningCount}회</span></div>
+            <div className="pay-line"><span className="k">오후 근무</span><span className="v">{weekCounts.afternoonCount}회</span></div>
+            <div className="pay-line total"><span className="k">총 슬롯</span><span className="v">{weekCounts.slotCount}회</span></div>
+            <Link to="/worklog" className="btn btn-primary btn-block" style={{ marginTop: 12 }}>
+              근무기록 작성
+            </Link>
+            {hasWork && (
               <button
                 className="btn btn-soft btn-block"
                 style={{ marginTop: 8 }}
-                onClick={() => showToast("예정대로 근무한 것으로 임시 저장했습니다")}
+                disabled={quickSaved}
+                onClick={saveQuick}
               >
-                ⚡ 예정대로 근무했어요 (원클릭 기록)
+                오늘 슬롯 완료 저장
               </button>
-            </Card>
-          )}
+            )}
+          </Card>
         </div>
       </div>
     </>

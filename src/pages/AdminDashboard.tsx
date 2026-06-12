@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
-import { TODAY_DOW } from "../data";
+import { TODAY_DOW, TODAY_STR } from "../data";
 import { seedFirestore } from "../dev/seedFirestore";
 import { finalPay, isMonthlyEmployee } from "../lib/payroll";
+import { planTimesForShifts, shiftsForDay, slotSummary } from "../lib/shifts";
 
 export default function AdminDashboard() {
   const {
@@ -24,7 +25,12 @@ export default function AdminDashboard() {
   };
 
   const activeResv = reservations.filter((r) => r.status !== "취소" && r.status !== "노쇼");
-  const todayWorkers = shifts.filter((s) => s.day === TODAY_DOW && !s.off);
+  const todayShifts = shiftsForDay(shifts, TODAY_STR, TODAY_DOW);
+  const todayWorkers = Array.from(new Set(todayShifts.map((s) => s.employeeId)))
+    .map((employeeId) => ({
+      employeeId,
+      shifts: todayShifts.filter((s) => s.employeeId === employeeId),
+    }));
   const pendingRecords = records.filter((r) => {
     if (!(r.status === "승인대기" || r.status === "제출")) return false;
     const emp = employees.find((e) => e.id === r.empId);
@@ -57,7 +63,7 @@ export default function AdminDashboard() {
       {/* KPI */}
       <div className="grid grid-4">
         <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="전일 대비 4건" trendUp icon="📋" />
-        <StatCard label="오늘 근무 직원" value={todayWorkers.length} unit="명" trend="근무표 기준" trendUp icon="👥" tone="blue" />
+        <StatCard label="오늘 근무 직원" value={todayWorkers.length} unit="명" trend="슬롯 배치 기준" trendUp icon="👥" tone="blue" />
         <StatCard label="미확인 근무기록" value={pendingRecords.length} unit="건" trend="승인 대기 중" trendUp={false} icon="🗂️" tone="amber" />
         <StatCard label="이번달 급여 예상" value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="전월 대비 8.2%" trendUp icon="💰" />
       </div>
@@ -85,18 +91,19 @@ export default function AdminDashboard() {
           {/* 직원 출근 현황 */}
           <Card title="직원 출근 현황" icon="👥" action={<Link to="/schedule-manage" className="card-link">근무표 ›</Link>}>
             <div className="grid grid-3" style={{ gap: 10 }}>
-              {todayWorkers.map((s) => {
-                const emp = employees.find((e) => e.id === s.empId);
+              {todayWorkers.map(({ employeeId, shifts: workerShifts }) => {
+                const emp = employees.find((e) => e.id === employeeId);
                 if (!emp) return null;
-                const started = s.start! <= "10:30";
+                const plan = planTimesForShifts(workerShifts);
+                const started = plan.start <= "10:30";
                 return (
-                  <div key={s.empId} className="row" style={{
+                  <div key={employeeId} className="row" style={{
                     background: "var(--card-alt)", borderRadius: 11, padding: "10px 12px",
                   }}>
                     <span className="avatar">{emp.name[0]}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="bold small">{emp.name}</div>
-                      <div className="muted small num">{s.start}–{s.end}</div>
+                      <div className="muted small">{slotSummary(workerShifts)} · {plan.start}–{plan.end}</div>
                     </div>
                     <Badge tone={started ? "green" : "gray"}>{started ? "근무중" : "출근전"}</Badge>
                   </div>

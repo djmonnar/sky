@@ -20,9 +20,10 @@ import type { UserProfile } from "./types/firestore";
 import {
   subscribeEmployees, subscribeReservations, subscribeShifts,
   subscribeRecords, subscribePayroll, subscribeNotices, subscribeHandovers,
-  fsUpsertReservation, fsSetShift, fsAddRecord, fsApproveRecord,
+  fsUpsertReservation, fsSetShift, fsDeleteShift, fsAddRecord, fsApproveRecord,
   fsUpdatePayroll, fsAddHandover, fsAddAttendanceLog,
 } from "./services/firestore";
+import { sortShifts } from "./lib/shifts";
 
 export type AppMode = "demo" | "live";
 
@@ -59,6 +60,7 @@ interface Store {
   upsertReservation: (r: Reservation) => void;
   shifts: Shift[];
   setShift: (s: Shift) => void;
+  deleteShift: (id: string) => void;
   records: WorkRecord[];
   addRecord: (r: WorkRecord) => void;
   approveRecord: (id: number) => void;
@@ -265,12 +267,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     void repository.saveShift(s);
     setShifts((prev) => {
-      const i = prev.findIndex((x) => x.empId === s.empId && x.day === s.day);
-      if (i === -1) return [...prev, s];
+      const i = prev.findIndex((x) => x.id === s.id);
+      if (i === -1) return [...prev, s].sort(sortShifts);
       const next = [...prev];
       next[i] = s;
-      return next;
+      return next.sort(sortShifts);
     });
+  }, [fail]);
+
+  const deleteShift = useCallback((id: string) => {
+    if (APP_MODE === "live") {
+      fsDeleteShift(id).catch(fail("근무표 삭제"));
+      return;
+    }
+    void repository.deleteShift(id);
+    setShifts((prev) => prev.filter((s) => s.id !== id));
   }, [fail]);
 
   const addRecord = useCallback((r: WorkRecord) => {
@@ -363,7 +374,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           employeeId,
           active: true,
         };
-        await createUserProfile(uid, newProfile);
+        try {
+          await createUserProfile(uid, newProfile);
+        } catch (profileError) {
+          console.error("[signup] profile create failed", profileError);
+          await signOutUser().catch(() => undefined);
+          setAuthUser(null);
+          setProfile(null);
+          setError("계정은 생성되었지만 직원 프로필 생성에 실패했습니다. 관리자에게 문의해주세요.");
+          throw { code: "profile-create-failed" };
+        }
         setProfile(newProfile);
         setRoleState("staff");
         setError(null);
@@ -399,6 +419,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       employees, currentEmployee,
       reservations, upsertReservation,
       shifts, setShift,
+      deleteShift,
       records, addRecord, approveRecord,
       payroll, updatePayroll,
       notices, handovers, addHandover,
@@ -409,7 +430,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      loading, error, employees, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,
-     upsertReservation, setShift, addRecord, approveRecord, updatePayroll,
+     upsertReservation, setShift, deleteShift, addRecord, approveRecord, updatePayroll,
      addHandover, punchIn, punchOut, showToast]
   );
 

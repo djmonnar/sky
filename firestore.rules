@@ -90,9 +90,11 @@ service cloud.firestore {
       }
 
       match /shifts/{id} {
-        // staff는 본인 근무표만 (클라이언트는 where empId == 본인 으로 쿼리)
+        // staff는 본인 근무표만 (slot 모델은 employeeId, 기존 문서는 empId)
         allow read: if isAdmin(storeId)
-                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+                    || (isStaff(storeId)
+                        && (resource.data.employeeId == myEmpId()
+                            || resource.data.empId == myEmpId()));
         allow write: if isAdmin(storeId);
       }
 

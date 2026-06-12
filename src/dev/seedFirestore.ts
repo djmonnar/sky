@@ -42,7 +42,7 @@ export async function seedFirestore(): Promise<string> {
     batch.set(doc(colRef("reservations"), String(r.id)), { ...r, updatedAt: serverTimestamp() })
   );
   SEED_SHIFTS.forEach((s) =>
-    batch.set(doc(colRef("shifts"), `${s.empId}_${s.day}`), { ...s, ...ts() })
+    batch.set(doc(colRef("shifts"), s.id), { ...s, empId: s.employeeId, day: s.dayIndex, ...ts() })
   );
   SEED_RECORDS.forEach((r) =>
     batch.set(doc(colRef("workRecords"), String(r.id)), { ...r, ...ts() })

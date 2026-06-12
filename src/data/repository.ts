@@ -21,6 +21,7 @@ export interface Repository {
 
   listShifts(): Promise<Shift[]>;
   saveShift(s: Shift): Promise<void>;
+  deleteShift(id: string): Promise<void>;
 
   listRecords(): Promise<WorkRecord[]>;
   addRecord(r: WorkRecord): Promise<void>;
@@ -55,9 +56,13 @@ export function createMockRepository(): Repository {
 
     async listShifts() { return [...db.shifts]; },
     async saveShift(s) {
-      const i = db.shifts.findIndex((x) => x.empId === s.empId && x.day === s.day);
+      const i = db.shifts.findIndex((x) => x.id === s.id);
       if (i === -1) db.shifts.push(s);
       else db.shifts[i] = s;
+    },
+    async deleteShift(id) {
+      const i = db.shifts.findIndex((x) => x.id === id);
+      if (i !== -1) db.shifts.splice(i, 1);
     },
 
     async listRecords() { return [...db.records]; },

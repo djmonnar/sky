@@ -2,7 +2,9 @@
 
 export type Role = "staff" | "admin";
 export type EmploymentType = "fullTime" | "partTime";
-export type SalaryType = "monthly" | "hourly";
+export type SalaryType = "monthly" | "hourly" | "perSlot";
+export type ShiftPeriod = "morning" | "afternoon";
+export type Department = "hall" | "kitchen";
 
 export type ResvStatus =
   | "예약확정"
@@ -36,20 +38,36 @@ export interface Employee {
   id: number;
   name: string;
   role: string;
+  roleLabel?: string;
   employmentType: EmploymentType;
   salaryType: SalaryType;
   hourly: number; // 시급
   monthlySalary?: number;
+  slotRate?: number; // 오전/오후 슬롯 1회당 수당
   standardStart?: string;
   standardEnd?: string;
 }
 
-export interface Shift {
-  empId: number;
-  day: number; // 0=월 ... 6=일
+export interface ShiftAssignment {
+  id: string;
+  date: string; // YYYY-MM-DD
+  dayIndex: number; // 0=월 ... 6=일
+  period: ShiftPeriod;
+  department: Department;
+  employeeId: number;
+  employeeName: string;
+  roleLabel?: string; // 사장, 점장, 팀장, 실장 등
+  order: number; // 같은 칸 안 표시 순서
   start?: string;
   end?: string;
-  breakMin: number;
+  breakMin?: number;
+}
+
+export interface Shift extends ShiftAssignment {
+  /** 기존 데이터/규칙 호환용 alias */
+  empId: number;
+  /** 기존 화면 호환용 alias */
+  day: number; // 0=월 ... 6=일
   off?: boolean;
 }
 
@@ -57,6 +75,10 @@ export interface WorkRecord {
   id: number;
   empId: number;
   date: string;
+  periods?: ShiftPeriod[];
+  departments?: Department[];
+  slotSummary?: string;
+  workType?: "slot" | "time";
   planStart: string;
   planEnd: string;
   actualStart?: string;
@@ -71,6 +93,12 @@ export interface WorkRecord {
 export interface PayrollRow {
   empId: number;
   month?: string; // YYYY-MM
+  morningCount?: number;
+  afternoonCount?: number;
+  slotCount?: number;
+  slotRate?: number;
+  manualAdjust?: number;
+  payMode?: SalaryType;
   hours: number;
   base: number;
   extra: number;

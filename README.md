@@ -26,18 +26,18 @@ npm run dev
 ## Firebase 설정 방법
 
 1. **웹 앱 등록**: Firebase 콘솔 → 프로젝트 설정 → 일반 → 내 앱 → 웹 앱 추가 → SDK 구성값을 `.env`에 복사
-2. **Authentication**: 빌드 → Authentication → 로그인 방법 → **이메일/비밀번호** 사용 설정 → 사용자 추가
+2. **Authentication**: 빌드 → Authentication → 로그인 방법 → **이메일/비밀번호** 사용 설정
 3. **Firestore**: 빌드 → Firestore Database → 데이터베이스 만들기 (프로덕션 모드)
 4. **보안 규칙 배포**: 콘솔의 규칙 탭에 [firestore.rules](firestore.rules) 내용을 붙여넣거나
    ```bash
    firebase deploy --only firestore:rules
    ```
-5. **사용자 프로필 등록**: Firestore에 `users/{uid}` 문서를 직접 생성 (uid는 Authentication 탭에서 복사)
+5. **회원가입/사용자 프로필**: 직원은 `/signup`에서 직접 가입할 수 있습니다. 가입 계정은 항상 `staff`로 생성되고, 관리자 승격은 Firebase 콘솔에서 `users/{uid}.role`을 `admin`으로 바꿔 처리합니다.
    ```
-   name: "정하늘"
-   role: "admin"          // "admin" | "staff"
+   name: "김현지"
+   role: "staff"          // 회원가입은 staff만 생성
    storeId: "haneulttang"
-   employeeId: 6          // employees 문서의 id와 연결
+   employeeId: 5          // employees 문서의 id와 연결
    active: true
    ```
 6. **초기 데이터**: admin 계정으로 로그인하면 관리자 대시보드에 **"데모 데이터로 시작하기"** 버튼이 나타납니다 (개발 모드에서는 콘솔에서 `seedFirestore()` 실행도 가능). 직원 데이터가 이미 있으면 중복 생성하지 않습니다.
@@ -67,12 +67,18 @@ CLI로도 가능: `npx vercel env add VITE_FIREBASE_API_KEY production`
 
 ```
 stores/{storeId}                      # 기본 storeId: haneulttang
-  ├─ employees/{empId}                # name, role, hourly, active
+  ├─ employees/{empId}                # name, role, roleLabel, employmentType,
+  │                                   # salaryType(monthly|hourly|perSlot), hourly,
+  │                                   # monthlySalary, slotRate, active
   ├─ reservations/{id}                # date, time, name, phone, people, seat,
   │                                   # request, status, memo, writer
-  ├─ shifts/{empId_day}               # empId, day(0=월), start, end, breakMin, off
-  ├─ workRecords/{id}                 # empId, date, plan/actual 시간, breakMin,
-  │                                   # note, handover, checklist, status
+  ├─ shifts/{date_period_department_employeeId_order}
+  │                                   # date, dayIndex(0=월), period(morning|afternoon),
+  │                                   # department(hall|kitchen), employeeId, employeeName,
+  │                                   # roleLabel, order, optional start/end/breakMin
+  ├─ workRecords/{id}                 # empId, date, periods, departments, slotSummary,
+  │                                   # optional plan/actual 시간, note, handover,
+  │                                   # checklist, status
   ├─ attendanceLogs/{auto}            # empId, date, type(in|out), time — 수정 불가
   ├─ payroll/{empId}                  # month, hours, base, extra, deduct, status...
   ├─ notices/{id}                     # text, date, pinned
@@ -86,7 +92,8 @@ users/{uid}                           # name, role, storeId, employeeId, active
 ## 보안 규칙 요약 ([firestore.rules](firestore.rules))
 
 - 비로그인: 전체 차단
-- `users/{uid}`: 본인만 읽기, 쓰기는 콘솔/Admin SDK로만
+- `users/{uid}`: 본인만 읽기, 회원가입 직후 본인 문서 `create`만 허용
+  (`role=staff`, `storeId=haneulttang`, `active=true`, `employeeId` 숫자)
 - **admin**: 자기 storeId 전체 읽기/쓰기
 - **staff**: 예약·공지·전달사항·직원목록 읽기 / 본인 근무표·근무기록만 읽기 /
   예약 등록·상태변경·메모, 본인 근무기록 작성, 전달사항 등록 가능
@@ -110,5 +117,5 @@ src/
 
 ## 역할
 
-- **실무자**: 오늘 근무 확인, 출/퇴근(attendanceLogs 기록), 예약 확인·상태 변경, 근무기록 작성(버튼형 빠른 시간 입력), 전달사항
-- **관리자**: 대시보드 KPI, 예약 등록/수정, 주간 근무표 편집(프리셋/충돌 경고), 근무기록 승인, 급여 승인/확정
+- **실무자**: 오늘 오전/오후 슬롯 확인, 출/퇴근(attendanceLogs 기록), 예약 확인·상태 변경, 슬롯 기준 근무기록 작성, 전달사항
+- **관리자**: 대시보드 KPI, 예약 등록/수정, 주간 슬롯 근무표 편집(요일별 오전/오후·홀/주방), 근무기록 승인, 급여 승인/확정

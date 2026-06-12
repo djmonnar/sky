@@ -33,11 +33,11 @@ export default function Layout({ children }: { children: ReactNode }) {
   const userName =
     mode === "live"
       ? profile?.name ?? authUser?.email ?? "사용자"
-      : role === "admin" ? "정하늘" : "김민수";
+      : role === "admin" ? "김지현" : currentEmployee?.name ?? "직원";
   const userRole =
     mode === "live"
       ? role === "admin" ? "매장 관리자" : currentEmployee?.role ?? "직원"
-      : role === "admin" ? "매장 관리자" : "홀 직원";
+      : role === "admin" ? "매장 관리자" : currentEmployee?.role ?? "직원";
 
   const switchRole = () => setRole(role === "admin" ? "staff" : "admin");
   const handleLogout = () => {
