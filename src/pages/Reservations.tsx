@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useStore } from "../store";
-import { Card, StatusBadge, ChipSelect } from "../components/ui";
+import { Card, StatusBadge, ChipSelect, Badge } from "../components/ui";
 import {
   Reservation, ResvStatus, RESV_STATUSES, SEATS, Seat,
   TODAY_STR, DOW_KO, TODAY_DOW,
@@ -207,43 +207,64 @@ export default function Reservations() {
         </Card>
 
         {/* 모바일 아코디언 리스트 */}
-        <div className="stack hide-desktop">
-          {list.map((r) => (
-            <div key={r.id} className={`resv-card ${isWarn(r) ? "hl" : ""}`}>
-              <button className="resv-card-head" onClick={() => setOpenId(openId === r.id ? null : r.id)}>
-                <span className="list-time">{r.time}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="bold">{r.name} <span className="muted small">· {r.people}명</span></div>
-                  <div className="muted small">{r.seat}</div>
-                </div>
-                <StatusBadge status={r.status} />
-                <span className="muted">{openId === r.id ? "▴" : "▾"}</span>
-              </button>
-              {openId === r.id && (
-                <div className="resv-card-body">
-                  <div className="detail-line"><span className="k">연락처</span><span className="v">{r.phone}</span></div>
-                  <div className="detail-line"><span className="k">요청사항</span><span className="v">{r.request ?? "—"}</span></div>
-                  <div className="detail-line"><span className="k">작성자</span><span className="v">{r.writer}</span></div>
-                  <div className="row" style={{ marginTop: 12 }}>
-                    {QUICK_STATUS.map((q) => (
-                      <button key={q.s} className={`btn btn-sm ${q.cls}`} style={{ flex: 1 }} onClick={() => changeStatus(r, q.s)}>
-                        {q.ic} {q.s}
-                      </button>
-                    ))}
+        <div className="stack hide-desktop" style={{ gap: 10 }}>
+          {list.map((r) => {
+            const open = openId === r.id;
+            return (
+              <div key={r.id} className={`resv-card ${isWarn(r) ? "hl" : ""}`}>
+                <button className="resv-card-head" onClick={() => setOpenId(open ? null : r.id)}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="spread">
+                      <span className="list-time" style={{ fontSize: 17 }}>{r.time}</span>
+                      <span className="row" style={{ gap: 6 }}>
+                        {r.people >= 6 && r.status !== "단체" && <Badge tone="orange">{r.people}명</Badge>}
+                        <StatusBadge status={r.status} />
+                      </span>
+                    </div>
+                    <div className="bold" style={{ fontSize: 15, marginTop: 5 }}>
+                      {r.name} <span className="muted small" style={{ fontWeight: 500 }}>· {r.people}명 · {r.seat}</span>
+                    </div>
+                    {r.request && <div className="muted small" style={{ marginTop: 1 }}>{r.request}</div>}
                   </div>
-                  <textarea
-                    className="textarea" style={{ marginTop: 10, minHeight: 56 }}
-                    placeholder="메모 입력"
-                    defaultValue={r.memo}
-                    onBlur={(e) => upsertReservation({ ...r, memo: e.target.value })}
-                  />
-                  <button className="btn btn-soft btn-block btn-sm" style={{ marginTop: 8 }} onClick={() => showToast("메모가 저장되었습니다")}>
-                    메모 저장
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                  <span className={`chev ${open ? "open" : ""}`}>▾</span>
+                </button>
+                {open && (
+                  <div className="resv-card-body">
+                    <div className="detail-line">
+                      <span className="k">연락처</span>
+                      <a className="v" href={`tel:${r.phone}`} style={{ color: "var(--green-700)" }}>
+                        📞 {r.phone}
+                      </a>
+                    </div>
+                    <div className="detail-line"><span className="k">인원</span><span className="v">{r.people}명</span></div>
+                    <div className="detail-line"><span className="k">좌석</span><span className="v">{r.seat}</span></div>
+                    <div className="detail-line"><span className="k">요청사항</span><span className="v">{r.request ?? "—"}</span></div>
+                    <div className="detail-line"><span className="k">작성자</span><span className="v">{r.writer}</span></div>
+                    <div className="detail-line"><span className="k">접수일시</span><span className="v small">{r.createdAt}</span></div>
+                    <div className="resv-actions">
+                      {QUICK_STATUS.map((q) => (
+                        <button key={q.s} className={`btn ${q.cls}`} onClick={() => changeStatus(r, q.s)}>
+                          {q.ic} {q.s}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      className="textarea" style={{ marginTop: 10, minHeight: 56 }}
+                      placeholder="메모 입력 (선결제, 변동사항 등)"
+                      defaultValue={r.memo}
+                      onBlur={(e) => upsertReservation({ ...r, memo: e.target.value })}
+                    />
+                    <button className="btn btn-soft btn-block" style={{ marginTop: 8 }} onClick={() => showToast("메모가 저장되었습니다")}>
+                      💾 메모 저장
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {list.length === 0 && (
+            <Card><div className="muted" style={{ textAlign: "center", padding: "20px 0" }}>조건에 맞는 예약이 없습니다</div></Card>
+          )}
         </div>
 
         {/* 데스크톱 상세 패널 */}

@@ -57,6 +57,11 @@ export default function ScheduleManage() {
 
   return (
     <>
+      <div className="alert-item info hide-desktop">
+        <span>🖥️</span>
+        <div>근무표 편집은 데스크톱 화면에 최적화되어 있어요<div className="desc">모바일에서는 표를 좌우로 스크롤할 수 있습니다</div></div>
+      </div>
+
       {/* 툴바 */}
       <div className="spread" style={{ flexWrap: "wrap", gap: 10 }}>
         <div className="row">

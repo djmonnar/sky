@@ -405,15 +405,30 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .detail-line .v { font-weight: 600; }
 
 .resv-card {
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--card); overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card); overflow: hidden; box-shadow: var(--shadow);
 }
 .resv-card.hl { border-color: var(--orange-tx); }
 .resv-card-head {
   width: 100%; display: flex; align-items: center; gap: 12px;
-  padding: 13px 14px; text-align: left;
+  padding: 14px 15px; text-align: left;
 }
-.resv-card-body { padding: 0 14px 14px; border-top: 1px dashed var(--border); }
+.resv-card-body { padding: 4px 15px 15px; border-top: 1px dashed var(--border); }
+.resv-actions {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 8px; margin-top: 13px;
+}
+.resv-actions .btn { min-height: 48px; padding: 10px 6px; font-size: 13.5px; }
+.chev {
+  color: var(--text-muted); font-size: 13px; flex-shrink: 0;
+  transition: transform 0.15s; align-self: flex-start; margin-top: 4px;
+}
+.chev.open { transform: rotate(180deg); }
+
+/* 인사말 */
+.greeting {
+  margin: 0; font-size: 13.5px; color: var(--text-sub); font-weight: 500;
+}
 
 /* ============ Checklist ============ */
 .check-item {
@@ -555,6 +570,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .sched-wrap { overflow-x: auto; }
   .stat-value { font-size: 20px; }
   .toast { bottom: calc(86px + env(safe-area-inset-bottom)); width: max-content; max-width: 90vw; }
+
+  /* 실무자 모바일 우선: 터치 타겟 확대 (최소 44~48px) */
+  .chip { padding: 12px 16px; min-height: 48px; font-size: 14px; flex: 1 0 auto; }
+  .step-btn { padding: 12px 16px; min-height: 48px; font-size: 14px; }
+  .punch-row .btn { min-height: 54px; }
+  .check-item { padding: 13px 14px; min-height: 48px; }
+  .fchip { padding: 10px 16px; min-height: 42px; }
+  .time-display { font-size: 34px; }
+  .week-day { padding: 12px 14px; min-height: 46px; }
+  .bnav-item { padding: 6px 10px; min-width: 60px; }
+  .input, .select { min-height: 46px; }
 }
 @media (min-width: 721px) {
   .hide-desktop { display: none !important; }

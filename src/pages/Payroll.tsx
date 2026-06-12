@@ -47,6 +47,11 @@ export default function Payroll() {
 
   return (
     <>
+      <div className="alert-item info hide-desktop">
+        <span>🖥️</span>
+        <div>급여 관리는 데스크톱 화면에 최적화되어 있어요<div className="desc">모바일에서는 표를 좌우로 스크롤할 수 있습니다</div></div>
+      </div>
+
       {/* KPI */}
       <div className="grid grid-4">
         <StatCard label="이번달 총 급여 예상" value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="전월 대비 8.2%" trendUp icon="💰" />

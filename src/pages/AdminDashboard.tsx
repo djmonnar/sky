@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
-import { EMPLOYEES, TODAY_DOW, won } from "../data";
+import { EMPLOYEES, TODAY_DOW } from "../data";
 
 export default function AdminDashboard() {
   const { reservations, shifts, records, payroll } = useStore();
@@ -15,6 +15,8 @@ export default function AdminDashboard() {
 
   return (
     <>
+      <p className="greeting hide-desktop">정하늘 관리자님, 오늘도 파이팅! 💪</p>
+
       {/* KPI */}
       <div className="grid grid-4">
         <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="전일 대비 4건" trendUp icon="📋" />
