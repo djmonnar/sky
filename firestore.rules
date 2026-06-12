@@ -66,21 +66,8 @@ service cloud.firestore {
         && request.resource.data.active == true
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
-        && (
-          (
-            request.resource.data.role == "staff"
-            && request.resource.data.employeeId is number
-          )
-          || (
-            request.resource.data.role == "admin"
-            && (
-              request.auth.uid == "E8HlEC6QH3YcAHqaBLgtvuc0Ab02"
-              || request.auth.uid == "Hnu9dItMJ9WICgrOSeBntMN1Y993"
-              || request.auth.token.email == "iu431214@gmail.com"
-              || request.auth.token.email == "djmonnar4@gmail.com"
-            )
-          )
-        );
+        && request.resource.data.role == "staff"
+        && request.resource.data.employeeId is number;
 
       allow update, delete: if false;
     }
