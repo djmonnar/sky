@@ -21,15 +21,28 @@ const ADMIN_NAV: NavDef[] = [
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { role, setRole, toast } = useStore();
+  const {
+    mode, demoReason, role, setRole, toast, loading, error,
+    profile, authUser, logout, currentEmployee,
+  } = useStore();
   const loc = useLocation();
   const nav = role === "admin" ? ADMIN_NAV : STAFF_NAV;
   const current = nav.find((n) => n.to === loc.pathname);
   const title = current?.title ?? "하늘땅 매장관리";
-  const userName = role === "admin" ? "정하늘" : "김민수";
-  const userRole = role === "admin" ? "매장 관리자" : "홀 직원";
+
+  const userName =
+    mode === "live"
+      ? profile?.name ?? authUser?.email ?? "사용자"
+      : role === "admin" ? "정하늘" : "김민수";
+  const userRole =
+    mode === "live"
+      ? role === "admin" ? "매장 관리자" : currentEmployee?.role ?? "직원"
+      : role === "admin" ? "매장 관리자" : "홀 직원";
 
   const switchRole = () => setRole(role === "admin" ? "staff" : "admin");
+  const handleLogout = () => {
+    if (window.confirm("로그아웃 하시겠어요?")) void logout();
+  };
 
   return (
     <div className="shell">
@@ -56,10 +69,16 @@ export default function Layout({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <button className="role-switch" onClick={switchRole}>
-            <span>🔄</span>
-            {role === "admin" ? "실무자 화면으로" : "관리자 화면으로"}
-          </button>
+          {mode === "demo" ? (
+            <button className="role-switch" onClick={switchRole}>
+              <span>🔄</span>
+              {role === "admin" ? "실무자 화면으로" : "관리자 화면으로"}
+            </button>
+          ) : (
+            <button className="role-switch" onClick={handleLogout}>
+              <span>🚪</span> 로그아웃
+            </button>
+          )}
         </div>
       </aside>
 
@@ -74,15 +93,27 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
           <div className="topbar-right">
             <button className="icon-btn" aria-label="알림">🔔<span className="dot" /></button>
-            <button className="avatar" onClick={switchRole} title="역할 전환">
+            <button
+              className="avatar"
+              onClick={mode === "demo" ? switchRole : handleLogout}
+              title={mode === "demo" ? "역할 전환" : "로그아웃"}
+            >
               {userName[0]}
             </button>
           </div>
         </header>
 
+        {/* 데모 모드 배너 */}
+        {demoReason && (
+          <div className="demo-banner">🔌 {demoReason}</div>
+        )}
+        {error && (
+          <div className="demo-banner danger">⚠️ {error}</div>
+        )}
+
         {/* 데스크톱 톱바 */}
         <div className="topbar">
-          <h1>{title}</h1>
+          <h1>{title}{loading && <span className="muted small" style={{ marginLeft: 10, fontWeight: 500 }}>불러오는 중...</span>}</h1>
           <div className="topbar-right hide-mobile">
             <button className="icon-btn" aria-label="알림">🔔<span className="dot" /></button>
             <div className="user-chip">

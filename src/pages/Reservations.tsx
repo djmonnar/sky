@@ -21,7 +21,9 @@ const EMPTY_FORM: Omit<Reservation, "id"> = {
 };
 
 export default function Reservations() {
-  const { reservations, upsertReservation, showToast, role } = useStore();
+  const { reservations, upsertReservation, showToast, mode, profile, currentEmployee } = useStore();
+  const writerName =
+    mode === "live" ? profile?.name ?? "직원" : currentEmployee?.name ?? "김민수";
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("전체");
   const [selId, setSelId] = useState<number | null>(null);
@@ -65,7 +67,7 @@ export default function Reservations() {
 
   const submitForm = () => {
     if (!form.name || !form.phone) { showToast("예약자명과 연락처를 입력해주세요"); return; }
-    upsertReservation({ ...form, id: Date.now() });
+    upsertReservation({ ...form, id: Date.now(), writer: writerName });
     setShowForm(false);
     setForm(EMPTY_FORM);
     showToast("예약이 등록되었습니다");

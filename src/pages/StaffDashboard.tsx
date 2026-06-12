@@ -1,20 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, StatusBadge, Badge, TimeQuick } from "../components/ui";
 import {
-  CURRENT_STAFF_ID, EMPLOYEES, TODAY, TODAY_DOW, TODAY_STR, DOW_KO,
+  TODAY, TODAY_DOW, TODAY_STR, DOW_KO,
   weekDates, durationH, fmtH, minutes, toTime,
 } from "../data";
 
 export default function StaffDashboard() {
   const {
-    reservations, shifts, notices, handovers, addRecord,
-    punchStatus, punchInAt, punchOutAt, punchIn, punchOut, showToast,
+    reservations, shifts, notices, handovers, addRecord, currentEmployee,
+    punchStatus, punchInAt, punchOutAt, punchIn, punchOut, showToast, loading,
   } = useStore();
 
-  const me = EMPLOYEES.find((e) => e.id === CURRENT_STAFF_ID)!;
-  const myShifts = shifts.filter((s) => s.empId === me.id);
+  const me = currentEmployee;
+  const myShifts = shifts.filter((s) => s.empId === me?.id);
   const todayShift = myShifts.find((s) => s.day === TODAY_DOW);
   const hasWork = !!todayShift && !todayShift.off;
   const week = weekDates(TODAY);
@@ -29,10 +29,17 @@ export default function StaffDashboard() {
   // 모바일 빠른 근무기록
   const planStart = hasWork ? todayShift!.start! : "10:00";
   const [quickStart, setQuickStart] = useState(planStart);
+  const [quickTouched, setQuickTouched] = useState(false);
   const [quickSaved, setQuickSaved] = useState(false);
   const quickPresets = [-30, 0, 30, 60].map((d) => toTime(minutes(planStart) + d));
 
+  // 비동기 로드(Firestore) 후 예정 시간이 도착하면 기본값 동기화
+  useEffect(() => {
+    if (!quickTouched) setQuickStart(planStart);
+  }, [planStart, quickTouched]);
+
   const saveQuick = () => {
+    if (!me) return;
     addRecord({
       id: Date.now(), empId: me.id, date: TODAY_STR,
       planStart, planEnd: hasWork ? todayShift!.end! : "15:00",
@@ -42,6 +49,18 @@ export default function StaffDashboard() {
     setQuickSaved(true);
     showToast("근무기록이 임시 저장되었습니다");
   };
+
+  if (!me) {
+    return (
+      <Card>
+        <div className="muted" style={{ textAlign: "center", padding: "30px 0" }}>
+          {loading
+            ? "직원 정보를 불러오는 중..."
+            : "계정에 연결된 직원 정보가 없습니다. 관리자에게 문의해주세요."}
+        </div>
+      </Card>
+    );
+  }
 
   const punchBadge =
     punchStatus === "before" ? <Badge tone="gray">출근 전</Badge>
@@ -131,7 +150,7 @@ export default function StaffDashboard() {
               <TimeQuick
                 label="실제 출근 시간"
                 value={quickStart}
-                onChange={setQuickStart}
+                onChange={(v) => { setQuickTouched(true); setQuickStart(v); }}
                 presets={quickPresets}
               />
               <button

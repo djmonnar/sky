@@ -1,0 +1,116 @@
+rules_version = '2';
+
+// ============================================================
+// 하늘땅 매장관리 — Firestore Security Rules
+//
+// 원칙:
+// - 비로그인 사용자는 모든 읽기/쓰기 불가
+// - users/{uid}는 본인만 읽기 가능, 쓰기는 콘솔/Admin SDK로만
+// - admin: 자기 storeId 전체 읽기/쓰기
+// - staff: 예약/공지/전달사항/직원목록 읽기, 본인 근무표·근무기록 읽기,
+//          예약 등록·상태변경·메모, 본인 근무기록 작성, 전달사항 등록
+// - 급여: admin 전체, staff는 본인 문서만 읽기 가능하도록 구조만
+//         열어둠 (현재 staff 화면에서는 조회하지 않음)
+//
+// 배포: firebase deploy --only firestore:rules
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // 호출자의 users/{uid} 프로필
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function inStore(storeId) {
+      return signedIn()
+        && me().storeId == storeId
+        && me().active == true;
+    }
+
+    function isAdmin(storeId) {
+      return inStore(storeId) && me().role == 'admin';
+    }
+
+    function isStaff(storeId) {
+      return inStore(storeId) && me().role == 'staff';
+    }
+
+    function myEmpId() {
+      return me().employeeId;
+    }
+
+    // ---------- 사용자 프로필 ----------
+    match /users/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow write: if false; // Firebase 콘솔 또는 Admin SDK로만 관리
+    }
+
+    // ---------- 매장 ----------
+    match /stores/{storeId} {
+      allow read: if inStore(storeId);
+      allow write: if isAdmin(storeId);
+
+      match /employees/{id} {
+        allow read: if inStore(storeId);
+        allow write: if isAdmin(storeId);
+      }
+
+      match /reservations/{id} {
+        allow read: if inStore(storeId);
+        // 전화예약 입력/상태 변경/메모는 staff도 가능
+        allow create, update: if inStore(storeId);
+        allow delete: if isAdmin(storeId);
+      }
+
+      match /shifts/{id} {
+        // staff는 본인 근무표만 (클라이언트는 where empId == 본인 으로 쿼리)
+        allow read: if isAdmin(storeId)
+                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+        allow write: if isAdmin(storeId);
+      }
+
+      match /workRecords/{id} {
+        allow read: if isAdmin(storeId)
+                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+        // staff는 본인 근무기록만 작성 가능
+        allow create: if isAdmin(storeId)
+                      || (isStaff(storeId) && request.resource.data.empId == myEmpId());
+        // 승인/수정은 관리자만
+        allow update, delete: if isAdmin(storeId);
+      }
+
+      match /attendanceLogs/{id} {
+        allow read: if isAdmin(storeId)
+                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+        allow create: if isAdmin(storeId)
+                      || (isStaff(storeId) && request.resource.data.empId == myEmpId());
+        allow update, delete: if false; // 출퇴근 로그는 수정 불가
+      }
+
+      match /payroll/{id} {
+        // 급여: 관리자 전체. staff는 본인 문서만 — 추후 "내 급여" 화면용
+        allow read: if isAdmin(storeId)
+                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+        allow write: if isAdmin(storeId);
+      }
+
+      match /notices/{id} {
+        allow read: if inStore(storeId);
+        allow write: if isAdmin(storeId);
+      }
+
+      match /handovers/{id} {
+        allow read: if inStore(storeId);
+        allow create: if inStore(storeId); // 전달사항은 누구나 남길 수 있음
+        allow update, delete: if isAdmin(storeId);
+      }
+    }
+  }
+}

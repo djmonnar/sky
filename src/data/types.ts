@@ -57,11 +57,13 @@ export interface WorkRecord {
   breakMin: number;
   note?: string;
   handover?: string;
+  checklist?: boolean[];
   status: "미작성" | "제출" | "승인대기" | "승인완료";
 }
 
 export interface PayrollRow {
   empId: number;
+  month?: string; // YYYY-MM
   hours: number;
   base: number;
   extra: number;

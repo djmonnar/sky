@@ -1,10 +1,26 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
-import { EMPLOYEES, TODAY_DOW } from "../data";
+import { TODAY_DOW } from "../data";
+import { seedFirestore } from "../dev/seedFirestore";
 
 export default function AdminDashboard() {
-  const { reservations, shifts, records, payroll } = useStore();
+  const {
+    reservations, shifts, records, payroll, employees, mode, loading, showToast,
+  } = useStore();
+  const [seeding, setSeeding] = useState(false);
+
+  const runSeed = async () => {
+    setSeeding(true);
+    try {
+      showToast(await seedFirestore());
+    } catch (e) {
+      showToast(`seed 실패: ${(e as Error).message}`);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const activeResv = reservations.filter((r) => r.status !== "취소" && r.status !== "노쇼");
   const todayWorkers = shifts.filter((s) => s.day === TODAY_DOW && !s.off);
@@ -16,6 +32,19 @@ export default function AdminDashboard() {
   return (
     <>
       <p className="greeting hide-desktop">정하늘 관리자님, 오늘도 파이팅! 💪</p>
+
+      {/* 라이브 모드 + 빈 DB: 초기 seed 안내 */}
+      {mode === "live" && !loading && employees.length === 0 && (
+        <Card title="초기 데이터 설정" icon="🌱">
+          <p className="muted small" style={{ margin: "0 0 12px" }}>
+            Firestore에 아직 매장 데이터가 없습니다. 데모 데이터를 넣어 시작하거나,
+            Firebase 콘솔에서 직접 직원/근무표를 등록할 수 있습니다.
+          </p>
+          <button className="btn btn-primary" disabled={seeding} onClick={runSeed}>
+            {seeding ? "넣는 중..." : "🌱 데모 데이터로 시작하기"}
+          </button>
+        </Card>
+      )}
 
       {/* KPI */}
       <div className="grid grid-4">
@@ -49,7 +78,8 @@ export default function AdminDashboard() {
           <Card title="직원 출근 현황" icon="👥" action={<Link to="/schedule-manage" className="card-link">근무표 ›</Link>}>
             <div className="grid grid-3" style={{ gap: 10 }}>
               {todayWorkers.map((s) => {
-                const emp = EMPLOYEES.find((e) => e.id === s.empId)!;
+                const emp = employees.find((e) => e.id === s.empId);
+                if (!emp) return null;
                 const started = s.start! <= "10:30";
                 return (
                   <div key={s.empId} className="row" style={{
@@ -111,7 +141,8 @@ export default function AdminDashboard() {
           {/* 승인 대기 */}
           <Card title="근무기록 승인 대기" icon="🗂️" action={<Link to="/payroll" className="card-link">급여 관리 ›</Link>}>
             {pendingRecords.slice(0, 4).map((r) => {
-              const emp = EMPLOYEES.find((e) => e.id === r.empId)!;
+              const emp = employees.find((e) => e.id === r.empId);
+              if (!emp) return null;
               return (
                 <div className="list-row" key={r.id}>
                   <span className="avatar">{emp.name[0]}</span>

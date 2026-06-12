@@ -1,20 +1,20 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { Card, StatCard, Badge } from "../components/ui";
-import { EMPLOYEES, won } from "../data";
+import { won } from "../data";
 
 const PAY_BADGE: Record<string, string> = {
   승인대기: "amber", 검토중: "blue", 승인완료: "green",
 };
 
 export default function Payroll() {
-  const { payroll, records, updatePayroll, approveRecord, showToast } = useStore();
-  const [selId, setSelId] = useState<number | null>(payroll[0]?.empId ?? null);
+  const { payroll, records, updatePayroll, approveRecord, showToast, employees } = useStore();
+  const [selId, setSelId] = useState<number | null>(null);
   const [extraInput, setExtraInput] = useState("");
   const [deductInput, setDeductInput] = useState("");
 
-  const sel = payroll.find((p) => p.empId === selId) ?? null;
-  const selEmp = sel ? EMPLOYEES.find((e) => e.id === sel.empId)! : null;
+  const sel = payroll.find((p) => p.empId === (selId ?? payroll[0]?.empId)) ?? null;
+  const selEmp = sel ? employees.find((e) => e.id === sel.empId) ?? null : null;
 
   const totalPay = payroll.reduce((a, p) => a + p.base + p.extra - p.deduct, 0);
   const totalExtra = payroll.reduce((a, p) => a + p.extra, 0);
@@ -78,7 +78,8 @@ export default function Payroll() {
                 </thead>
                 <tbody>
                   {payroll.map((p) => {
-                    const e = EMPLOYEES.find((x) => x.id === p.empId)!;
+                    const e = employees.find((x) => x.id === p.empId);
+                    if (!e) return null;
                     return (
                       <tr key={p.empId} className={selId === p.empId ? "sel" : ""} onClick={() => setSelId(p.empId)}>
                         <td className="bold">{e.name}</td>
@@ -110,7 +111,8 @@ export default function Payroll() {
                 </thead>
                 <tbody>
                   {pendingRecords.map((r) => {
-                    const e = EMPLOYEES.find((x) => x.id === r.empId)!;
+                    const e = employees.find((x) => x.id === r.empId);
+                    if (!e) return null;
                     return (
                       <tr key={r.id} style={{ cursor: "default" }}>
                         <td className="num">{r.date.slice(5).replace("-", "/")}</td>

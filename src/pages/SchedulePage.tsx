@@ -2,16 +2,27 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { Card, Badge } from "../components/ui";
 import {
-  CURRENT_STAFF_ID, EMPLOYEES, TODAY, TODAY_DOW, DOW_KO,
-  weekDates, durationH,
+  TODAY, TODAY_DOW, DOW_KO, weekDates, durationH,
 } from "../data";
 
 export default function SchedulePage() {
-  const { shifts, handovers, showToast } = useStore();
-  const me = EMPLOYEES.find((e) => e.id === CURRENT_STAFF_ID)!;
-  const myShifts = shifts.filter((s) => s.empId === me.id);
+  const { shifts, handovers, showToast, currentEmployee, loading } = useStore();
+  const me = currentEmployee;
+  const myShifts = shifts.filter((s) => s.empId === me?.id);
   const week = weekDates(TODAY);
   const [selDay, setSelDay] = useState(TODAY_DOW);
+
+  if (!me) {
+    return (
+      <Card>
+        <div className="muted" style={{ textAlign: "center", padding: "30px 0" }}>
+          {loading
+            ? "직원 정보를 불러오는 중..."
+            : "계정에 연결된 직원 정보가 없습니다. 관리자에게 문의해주세요."}
+        </div>
+      </Card>
+    );
+  }
 
   const selShift = myShifts.find((s) => s.day === selDay);
   const totalH = myShifts.reduce(

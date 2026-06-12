@@ -1,25 +1,40 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStore } from "../store";
 import { Card, TimeQuick, ChipSelect, Badge } from "../components/ui";
 import {
-  CURRENT_STAFF_ID, EMPLOYEES, TODAY_DOW, TODAY_STR,
-  CHECKLIST_TEMPLATE, minutes, toTime, durationH,
+  TODAY_DOW, TODAY_STR, CHECKLIST_TEMPLATE,
+  minutes, toTime, durationH,
 } from "../data";
 
 export default function WorkLog() {
-  const { shifts, records, addRecord, showToast } = useStore();
-  const me = EMPLOYEES.find((e) => e.id === CURRENT_STAFF_ID)!;
-  const plan = shifts.find((s) => s.empId === me.id && s.day === TODAY_DOW);
+  const { shifts, records, addRecord, showToast, currentEmployee, loading } = useStore();
+  const me = currentEmployee;
+  const plan = shifts.find((s) => s.empId === me?.id && s.day === TODAY_DOW);
   const planStart = plan && !plan.off ? plan.start! : "10:00";
   const planEnd = plan && !plan.off ? plan.end! : "15:00";
 
   const [start, setStart] = useState(planStart);
   const [end, setEnd] = useState(planEnd);
   const [breakMin, setBreakMin] = useState(plan?.breakMin ?? 30);
+  const [touched, setTouched] = useState(false);
   const [note, setNote] = useState("");
   const [handover, setHandover] = useState("");
   const [checks, setChecks] = useState<boolean[]>(CHECKLIST_TEMPLATE.map(() => false));
   const [submitted, setSubmitted] = useState(false);
+
+  // Firestore에서 근무표가 늦게 도착해도, 사용자가 건드리기 전이면 기본값 동기화
+  useEffect(() => {
+    if (!touched) {
+      setStart(planStart);
+      setEnd(planEnd);
+      setBreakMin(plan?.breakMin ?? 30);
+    }
+  }, [planStart, planEnd, plan?.breakMin, touched]);
+
+  const touch = <T,>(setter: (v: T) => void) => (v: T) => {
+    setTouched(true);
+    setter(v);
+  };
 
   const startDiff = minutes(start) - minutes(planStart);
   const endDiff = minutes(end) - minutes(planEnd);
@@ -36,15 +51,27 @@ export default function WorkLog() {
       : <Badge tone="blue">{diff}분</Badge>;
 
   const myRecent = records
-    .filter((r) => r.empId === me.id)
+    .filter((r) => r.empId === me?.id)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4);
+
+  if (!me) {
+    return (
+      <Card>
+        <div className="muted" style={{ textAlign: "center", padding: "30px 0" }}>
+          {loading
+            ? "직원 정보를 불러오는 중..."
+            : "계정에 연결된 직원 정보가 없습니다. 관리자에게 문의해주세요."}
+        </div>
+      </Card>
+    );
+  }
 
   const submit = (asDraft: boolean) => {
     addRecord({
       id: Date.now(), empId: me.id, date: TODAY_STR,
       planStart, planEnd, actualStart: start, actualEnd: end,
-      breakMin, note, handover,
+      breakMin, note, handover, checklist: checks,
       status: asDraft ? "미작성" : "승인대기",
     });
     if (!asDraft) setSubmitted(true);
@@ -85,7 +112,7 @@ export default function WorkLog() {
               <TimeQuick
                 label="출근 시간"
                 value={start}
-                onChange={setStart}
+                onChange={touch(setStart)}
                 presets={startPresets}
                 presetLabels={startLabels}
                 badge={diffBadge(startDiff)}
@@ -93,7 +120,7 @@ export default function WorkLog() {
               <TimeQuick
                 label="퇴근 시간"
                 value={end}
-                onChange={setEnd}
+                onChange={touch(setEnd)}
                 presets={endPresets}
                 presetLabels={endLabels}
                 badge={diffBadge(endDiff)}
@@ -103,7 +130,7 @@ export default function WorkLog() {
                 <ChipSelect
                   options={[0, 30, 60, 90]}
                   value={breakMin}
-                  onChange={setBreakMin}
+                  onChange={touch(setBreakMin)}
                   format={(m) => (m === 0 ? "없음" : `${m}분`)}
                 />
                 <p className="muted small" style={{ margin: "8px 0 0" }}>
@@ -167,6 +194,11 @@ export default function WorkLog() {
                 </Badge>
               </div>
             ))}
+            {myRecent.length === 0 && (
+              <div className="muted small" style={{ textAlign: "center", padding: "12px 0" }}>
+                아직 근무기록이 없습니다
+              </div>
+            )}
           </Card>
         </div>
       </div>

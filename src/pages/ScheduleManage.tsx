@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { Card, ChipSelect, Badge } from "../components/ui";
 import {
-  EMPLOYEES, TODAY, DOW_KO, weekDates, durationH, minutes,
+  TODAY, DOW_KO, weekDates, durationH, minutes,
 } from "../data";
 
 const PRESETS = [
@@ -19,14 +19,14 @@ const TIME_OPTIONS = [
 ];
 
 export default function ScheduleManage() {
-  const { shifts, setShift, showToast } = useStore();
+  const { shifts, setShift, showToast, employees } = useStore();
   const week = weekDates(TODAY);
   const [sel, setSel] = useState<{ empId: number; day: number } | null>(null);
 
   const selShift = sel
     ? shifts.find((s) => s.empId === sel.empId && s.day === sel.day)
     : null;
-  const selEmp = sel ? EMPLOYEES.find((e) => e.id === sel.empId) : null;
+  const selEmp = sel ? employees.find((e) => e.id === sel.empId) : null;
 
   const empHours = (empId: number) =>
     shifts
@@ -94,7 +94,7 @@ export default function ScheduleManage() {
                 {week.map((d, i) => (
                   <div className="head" key={i}>{DOW_KO[i]}<br /><span style={{ fontWeight: 500 }}>{d.getMonth() + 1}/{d.getDate()}</span></div>
                 ))}
-                {EMPLOYEES.map((emp) => (
+                {employees.map((emp) => (
                   <FragmentRow
                     key={emp.id}
                     emp={emp}
@@ -134,7 +134,7 @@ export default function ScheduleManage() {
           {/* 직원 합계 */}
           <Card title="직원별 주간 합계" icon="📊">
             <div className="grid grid-3" style={{ gap: 10 }}>
-              {EMPLOYEES.map((e) => (
+              {employees.map((e) => (
                 <div key={e.id} className="spread" style={{ background: "var(--card-alt)", borderRadius: 10, padding: "9px 13px" }}>
                   <span className="bold small">{e.name} <span className="muted">({e.role})</span></span>
                   <span className="bold num">{empHours(e.id)}h</span>
