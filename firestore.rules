@@ -49,7 +49,20 @@ service cloud.firestore {
     match /users/{uid} {
       allow get: if signedIn() && request.auth.uid == uid;
       allow list: if false;
-      allow write: if false; // Firebase 콘솔 또는 Admin SDK로만 관리
+
+      // 회원가입: 본인 uid 문서를 staff로만 생성 가능
+      // (관리자 승격은 Firebase 콘솔 또는 추후 관리자 화면에서)
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.role == "staff"
+        && request.resource.data.storeId == "haneulttang"
+        && request.resource.data.active == true
+        && request.resource.data.employeeId is number
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0;
+
+      // 기존 문서 수정/삭제는 콘솔 또는 Admin SDK로만
+      allow update, delete: if false;
     }
 
     // ---------- 매장 ----------

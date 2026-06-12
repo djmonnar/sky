@@ -1,7 +1,8 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import { useStore } from "./store";
 import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import StaffDashboard from "./pages/StaffDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import Reservations from "./pages/Reservations";
@@ -24,11 +25,15 @@ function Splash({ text }: { text: string }) {
 
 export default function App() {
   const { mode, role, authLoading, authUser, error, profile } = useStore();
+  const location = useLocation();
 
   // 라이브 모드: 인증 게이트
   if (mode === "live") {
     if (authLoading) return <Splash text="로그인 상태를 확인하는 중..." />;
-    if (!authUser) return <Login />;
+    // 비로그인: /signup은 회원가입, 그 외는 로그인
+    if (!authUser) {
+      return location.pathname === "/signup" ? <Signup /> : <Login />;
+    }
     if (!profile && error) {
       return (
         <div className="login-wrap">
@@ -55,6 +60,8 @@ export default function App() {
         <Route path="/schedule-manage" element={role === "admin" ? <ScheduleManage /> : <Navigate to="/schedule" replace />} />
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />
         <Route path="/notices" element={<Notices />} />
+        {/* 로그인 상태(또는 데모 모드)에서 /signup 접근 시 홈으로 */}
+        <Route path="/signup" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

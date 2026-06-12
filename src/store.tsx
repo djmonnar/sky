@@ -1,6 +1,6 @@
 import {
   createContext, useContext, useMemo, useState, useCallback,
-  useEffect, ReactNode,
+  useEffect, useRef, ReactNode,
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
@@ -9,9 +9,10 @@ import {
 import { EMPLOYEES, CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
 import { repository } from "./data/repository";
-import { firebaseConfigured } from "./lib/firebase";
+import { firebaseConfigured, STORE_ID } from "./lib/firebase";
 import {
-  subscribeAuth, fetchUserProfile, signInEmail, signOutUser,
+  subscribeAuth, fetchUserProfile, signInEmail, signUpEmail,
+  createUserProfile, signOutUser,
   type AuthUser,
 } from "./services/auth";
 import type { UserProfile } from "./types/firestore";
@@ -43,6 +44,7 @@ interface Store {
   profile: UserProfile | null;
   authLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  signup: (name: string, email: string, password: string, employeeId: number) => Promise<void>;
   logout: () => Promise<void>;
 
   loading: boolean;
@@ -102,6 +104,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [punchInAt, setPunchInAt] = useState<string | null>(null);
   const [punchOutAt, setPunchOutAt] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // 회원가입 중에는 auth 리스너가 프로필을 먼저 조회하지 않도록 막음
+  // (계정 생성 → users 문서 생성 사이의 레이스 방지)
+  const signupInProgress = useRef(false);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -140,6 +145,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setAuthLoading(false);
         setLoading(true);
+        return;
+      }
+      if (signupInProgress.current) {
+        // 프로필은 signup()이 직접 생성·설정함
+        setAuthLoading(false);
         return;
       }
       setAuthUser({ uid: u.uid, email: u.email });
@@ -321,6 +331,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await signInEmail(email, password);
   }, []);
 
+  const signup = useCallback(
+    async (name: string, email: string, password: string, employeeId: number) => {
+      signupInProgress.current = true;
+      try {
+        const { uid, email: createdEmail } = await signUpEmail(email, password);
+        const newProfile: UserProfile = {
+          name,
+          role: "staff", // 회원가입은 무조건 실무자 — 관리자 승격은 콘솔/관리자 화면에서
+          storeId: STORE_ID,
+          employeeId,
+          active: true,
+        };
+        await createUserProfile(uid, newProfile);
+        setProfile(newProfile);
+        setRoleState("staff");
+        setError(null);
+        setAuthUser({ uid, email: createdEmail });
+        showToast("회원가입이 완료되었습니다.");
+      } finally {
+        signupInProgress.current = false;
+      }
+    },
+    [showToast]
+  );
+
   const logout = useCallback(async () => {
     await signOutUser();
     setProfile(null);
@@ -339,7 +374,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       mode: APP_MODE, demoReason,
       role, setRole,
-      authUser, profile, authLoading, login, logout,
+      authUser, profile, authLoading, login, signup, logout,
       loading, error,
       employees, currentEmployee,
       reservations, upsertReservation,
@@ -350,7 +385,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
-    [demoReason, role, setRole, authUser, profile, authLoading, login, logout,
+    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, logout,
      loading, error, employees, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,

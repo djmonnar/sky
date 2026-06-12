@@ -1,4 +1,5 @@
 import { useState, FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { authErrorMessage } from "../services/auth";
 
@@ -74,7 +75,8 @@ export default function Login() {
         </button>
 
         <p className="muted small" style={{ margin: "16px 0 0", textAlign: "center" }}>
-          계정이 없거나 비밀번호를 잊으셨다면 매장 관리자에게 문의해주세요.
+          계정이 없으신가요?{" "}
+          <Link to="/signup" className="auth-link">회원가입</Link>
         </p>
       </form>
     </div>
