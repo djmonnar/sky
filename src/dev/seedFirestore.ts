@@ -38,7 +38,8 @@ export async function seedFirestore(): Promise<string> {
     batch.set(doc(colRef("employees"), String(e.id)), { ...e, active: true, ...ts() })
   );
   SEED_RESERVATIONS.forEach((r) =>
-    batch.set(doc(colRef("reservations"), String(r.id)), { ...r, ...ts() })
+    // 도메인 createdAt(접수일시 문자열)은 유지하고 updatedAt만 타임스탬프
+    batch.set(doc(colRef("reservations"), String(r.id)), { ...r, updatedAt: serverTimestamp() })
   );
   SEED_SHIFTS.forEach((s) =>
     batch.set(doc(colRef("shifts"), `${s.empId}_${s.day}`), { ...s, ...ts() })

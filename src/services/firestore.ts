@@ -61,10 +61,26 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
   );
 }
 
+/** Firestore Timestamp 등 비문자열 값을 표시용 문자열로 정규화 */
+function asDisplayDate(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  const maybe = raw as { toDate?: () => Date } | null | undefined;
+  if (maybe && typeof maybe.toDate === "function") {
+    const dt = maybe.toDate();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
+  }
+  return "";
+}
+
 export function subscribeReservations(cb: (v: Reservation[]) => void, onError: ErrCb): Unsub {
   return subscribe(
     "reservations",
-    (d, id) => ({ ...(d as Reservation), id: Number(d.id ?? id) }),
+    (d, id) => ({
+      ...(d as Reservation),
+      id: Number(d.id ?? id),
+      createdAt: asDisplayDate(d.createdAt),
+    }),
     (items) => cb(items.sort((a, b) => a.time.localeCompare(b.time))),
     onError
   );
