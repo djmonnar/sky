@@ -12,7 +12,7 @@ import { repository } from "./data/repository";
 import { firebaseConfigured, STORE_ID } from "./lib/firebase";
 import { adminProfileForEmail, isAdminEmail } from "./config/admins";
 import {
-  subscribeAuth, fetchUserProfile, signInEmail, signUpEmail,
+  subscribeAuth, fetchUserProfile, signInEmail, signInGoogle, signUpEmail,
   createUserProfile, signOutUser,
   type AuthUser,
 } from "./services/auth";
@@ -45,6 +45,7 @@ interface Store {
   profile: UserProfile | null;
   authLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   signup: (name: string, email: string, password: string, employeeId: number) => Promise<void>;
   logout: () => Promise<void>;
 
@@ -346,6 +347,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await signInEmail(email, password);
   }, []);
 
+  const loginWithGoogle = useCallback(async () => {
+    await signInGoogle();
+  }, []);
+
   const signup = useCallback(
     async (name: string, email: string, password: string, employeeId: number) => {
       signupInProgress.current = true;
@@ -389,7 +394,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       mode: APP_MODE, demoReason,
       role, setRole,
-      authUser, profile, authLoading, login, signup, logout,
+      authUser, profile, authLoading, login, loginWithGoogle, signup, logout,
       loading, error,
       employees, currentEmployee,
       reservations, upsertReservation,
@@ -400,7 +405,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
-    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, logout,
+    [demoReason, role, setRole, authUser, profile, authLoading, login, loginWithGoogle, signup, logout,
      loading, error, employees, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,

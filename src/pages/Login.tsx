@@ -4,11 +4,12 @@ import { useStore } from "../store";
 import { authErrorMessage } from "../services/auth";
 
 export default function Login() {
-  const { login } = useStore();
+  const { login, loginWithGoogle } = useStore();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -24,6 +25,18 @@ export default function Login() {
       setErr(authErrorMessage(ex));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const autoLogin = async () => {
+    setGoogleBusy(true);
+    setErr(null);
+    try {
+      await loginWithGoogle();
+    } catch (ex) {
+      setErr(authErrorMessage(ex));
+    } finally {
+      setGoogleBusy(false);
     }
   };
 
@@ -68,10 +81,20 @@ export default function Login() {
         <button
           className="btn btn-primary btn-lg btn-block"
           style={{ marginTop: 18 }}
-          disabled={busy}
+          disabled={busy || googleBusy}
           type="submit"
         >
           {busy ? "로그인 중..." : "로그인"}
+        </button>
+
+        <button
+          className="btn btn-outline btn-lg btn-block"
+          style={{ marginTop: 10 }}
+          disabled={busy || googleBusy}
+          type="button"
+          onClick={autoLogin}
+        >
+          {googleBusy ? "자동 로그인 중..." : "Google 자동 로그인"}
         </button>
 
         <p className="muted small" style={{ margin: "16px 0 0", textAlign: "center" }}>
