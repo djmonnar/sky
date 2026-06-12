@@ -1,18 +1,9 @@
 rules_version = '2';
 
 // ============================================================
-// 하늘땅 매장관리 — Firestore Security Rules
+// Haneulttang store manager - Firestore Security Rules
 //
-// 원칙:
-// - 비로그인 사용자는 모든 읽기/쓰기 불가
-// - users/{uid}는 본인만 읽기 가능, 쓰기는 콘솔/Admin SDK로만
-// - admin: 자기 storeId 전체 읽기/쓰기
-// - staff: 예약/공지/전달사항/직원목록 읽기, 본인 근무표·근무기록 읽기,
-//          예약 등록·상태변경·메모, 본인 근무기록 작성, 전달사항 등록
-// - 급여: admin 전체, staff는 본인 문서만 읽기 가능하도록 구조만
-//         열어둠 (현재 staff 화면에서는 조회하지 않음)
-//
-// 배포: firebase deploy --only firestore:rules
+// Deploy: firebase deploy --only firestore:rules
 // ============================================================
 
 service cloud.firestore {
@@ -22,42 +13,42 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 호출자의 users/{uid} 프로필
     function me() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isListedAdmin(storeId) {
+    function hasUserProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isConfiguredAdmin(storeId) {
       return signedIn()
         && storeId == "haneulttang"
         && (
-          request.auth.uid in [
-            "E8HlEC6QH3YcAHqaBLgtvuc0Ab02",
-            "Hnu9dItMJ9WICgrOSeBntMN1Y993"
-          ]
-          || request.auth.token.email in [
-            "iu431214@gmail.com",
-            "djmonnar4@gmail.com"
-          ]
+          request.auth.uid == "E8HlEC6QH3YcAHqaBLgtvuc0Ab02"
+          || request.auth.uid == "Hnu9dItMJ9WICgrOSeBntMN1Y993"
+          || request.auth.token.email == "iu431214@gmail.com"
+          || request.auth.token.email == "djmonnar4@gmail.com"
         );
     }
 
     function hasProfileInStore(storeId) {
-      return signedIn()
+      return hasUserProfile()
         && me().storeId == storeId
         && me().active == true;
     }
 
     function inStore(storeId) {
-      return isListedAdmin(storeId) || hasProfileInStore(storeId);
+      return isConfiguredAdmin(storeId) || hasProfileInStore(storeId);
     }
 
     function isAdmin(storeId) {
-      return isListedAdmin(storeId) || (hasProfileInStore(storeId) && me().role == 'admin');
+      return isConfiguredAdmin(storeId) || (hasProfileInStore(storeId) && me().role == 'admin');
     }
 
     function isStaff(storeId) {
-      return inStore(storeId) && me().role == 'staff';
+      return hasProfileInStore(storeId) && me().role == 'staff';
     }
 
     function myEmpId() {
@@ -69,8 +60,6 @@ service cloud.firestore {
       allow get: if signedIn() && request.auth.uid == uid;
       allow list: if false;
 
-      // 회원가입: 본인 uid 문서를 staff로만 생성 가능
-      // (관리자 승격은 Firebase 콘솔 또는 추후 관리자 화면에서)
       allow create: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.storeId == "haneulttang"
@@ -85,19 +74,14 @@ service cloud.firestore {
           || (
             request.resource.data.role == "admin"
             && (
-              request.auth.uid in [
-                "E8HlEC6QH3YcAHqaBLgtvuc0Ab02",
-                "Hnu9dItMJ9WICgrOSeBntMN1Y993"
-              ]
-              || request.auth.token.email in [
-                "iu431214@gmail.com",
-                "djmonnar4@gmail.com"
-              ]
+              request.auth.uid == "E8HlEC6QH3YcAHqaBLgtvuc0Ab02"
+              || request.auth.uid == "Hnu9dItMJ9WICgrOSeBntMN1Y993"
+              || request.auth.token.email == "iu431214@gmail.com"
+              || request.auth.token.email == "djmonnar4@gmail.com"
             )
           )
         );
 
-      // 기존 문서 수정/삭제는 콘솔 또는 Admin SDK로만
       allow update, delete: if false;
     }
 
@@ -126,12 +110,10 @@ service cloud.firestore {
       }
 
       match /workRecords/{id} {
-        allow read: if isAdmin(storeId)
-                    || (isStaff(storeId) && resource.data.empId == myEmpId());
-        // staff는 본인 근무기록만 작성 가능
-        allow create: if isAdmin(storeId)
-                      || (isStaff(storeId) && request.resource.data.empId == myEmpId());
-        // 승인/수정은 관리자만
+        allow read: if isConfiguredAdmin(storeId);
+        allow read: if isStaff(storeId) && resource.data.empId == myEmpId();
+        allow create: if isConfiguredAdmin(storeId);
+        allow create: if isStaff(storeId) && request.resource.data.empId == myEmpId();
         allow update, delete: if isAdmin(storeId);
       }
 
@@ -144,9 +126,8 @@ service cloud.firestore {
       }
 
       match /payroll/{id} {
-        // 급여: 관리자 전체. staff는 본인 문서만 — 추후 "내 급여" 화면용
-        allow read: if isAdmin(storeId)
-                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+        allow read: if isConfiguredAdmin(storeId);
+        allow read: if isStaff(storeId) && resource.data.empId == myEmpId();
         allow write: if isAdmin(storeId);
       }
 
