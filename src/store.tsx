@@ -384,7 +384,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           await signOutUser().catch(() => undefined);
           setAuthUser(null);
           setProfile(null);
-          setError("계정은 생성되었지만 직원 프로필 생성에 실패했습니다. 관리자에게 문의해주세요.");
+          setError("프로필 저장 중 오류가 발생했습니다. 같은 이메일로 로그인하면 복구 화면이 나타납니다.");
           throw { code: "profile-create-failed" };
         }
       } finally {

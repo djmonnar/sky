@@ -63,6 +63,10 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
       slotRate: d.slotRate,
       standardStart: d.standardStart,
       standardEnd: d.standardEnd,
+      phone: d.phone,
+      bank: d.bank,
+      account: d.account,
+      uid: d.uid,
     }),
     (items) => cb(items.sort((a, b) => a.id - b.id)),
     onError
