@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import { useStore } from "./store";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import CompleteProfile from "./pages/CompleteProfile";
 import StaffDashboard from "./pages/StaffDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import Reservations from "./pages/Reservations";
@@ -24,7 +25,7 @@ function Splash({ text }: { text: string }) {
 }
 
 export default function App() {
-  const { mode, role, authLoading, authUser, error, profile } = useStore();
+  const { mode, role, authLoading, authUser, profile } = useStore();
   const location = useLocation();
 
   // 라이브 모드: 인증 게이트
@@ -34,20 +35,8 @@ export default function App() {
     if (!authUser) {
       return location.pathname === "/signup" ? <Signup /> : <Login />;
     }
-    if (!profile && error) {
-      return (
-        <div className="login-wrap">
-          <div className="card login-card">
-            <div className="alert-item danger"><span>⚠️</span><div>{error}</div></div>
-            <p className="muted small" style={{ marginTop: 12 }}>
-              Firebase 콘솔 → Firestore → <b>users</b> 컬렉션에서 이 계정의
-              프로필 문서(name, role, storeId, employeeId, active)를 확인해주세요.
-            </p>
-          </div>
-        </div>
-      );
-    }
-    if (!profile) return <Splash text="사용자 정보를 불러오는 중..." />;
+    // 로그인됐지만 프로필이 없으면 (가입 트랜잭션 실패 등) 프로필 완성 화면으로 복구
+    if (!profile) return <CompleteProfile />;
   }
 
   return (

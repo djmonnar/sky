@@ -47,6 +47,8 @@ interface Store {
   authLoading: boolean;
   login: (email: string, password: string, rememberLogin?: boolean) => Promise<void>;
   signup: (data: { name: string; email: string; password: string; phone: string; bank: string; account: string }) => Promise<void>;
+  /** 로그인됐지만 프로필이 없는 계정의 프로필을 완성 (가입 트랜잭션 실패 복구) */
+  completeProfile: (data: { name: string; phone: string; bank: string; account: string }) => Promise<void>;
   logout: () => Promise<void>;
 
   loading: boolean;
@@ -156,6 +158,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       setAuthUser({ uid: u.uid, email: u.email });
+      setAuthLoading(true); // 프로필 조회 동안 스플래시 유지 (복구화면 깜빡임 방지)
       try {
         const p = await fetchUserProfile(u.uid);
         const adminProfile = isAdminEmail(u.email)
@@ -391,6 +394,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [showToast]
   );
 
+  const completeProfile = useCallback(
+    async (data: { name: string; phone: string; bank: string; account: string }) => {
+      if (!authUser) throw new Error("로그인이 필요합니다.");
+      const { profile: newProfile } = await createStaffProfile(authUser.uid, data);
+      setProfile(newProfile);
+      setRoleState("staff");
+      setError(null);
+      showToast("프로필이 완성되었습니다.");
+    },
+    [authUser, showToast]
+  );
+
   const logout = useCallback(async () => {
     await signOutUser();
     setProfile(null);
@@ -409,7 +424,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       mode: APP_MODE, demoReason,
       role, setRole,
-      authUser, profile, authLoading, login, signup, logout,
+      authUser, profile, authLoading, login, signup, completeProfile, logout,
       loading, error,
       employees, currentEmployee,
       reservations, upsertReservation,
@@ -421,7 +436,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
-    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, logout,
+    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, logout,
      loading, error, employees, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,
