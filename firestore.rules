@@ -77,9 +77,21 @@ service cloud.firestore {
       allow read: if inStore(storeId);
       allow write: if isAdmin(storeId);
 
+      // 직원번호 카운터 등 메타: 회원가입 트랜잭션에서 증가시켜야 하므로
+      // (아직 프로필이 없는) 로그인 사용자도 읽기/쓰기 허용. 카운터 1개뿐.
+      match /meta/{docId} {
+        allow read, write: if signedIn() && storeId == "haneulttang";
+      }
+
       match /employees/{id} {
         allow read: if inStore(storeId);
-        allow write: if isAdmin(storeId);
+        // 관리자는 자유, 회원가입 시엔 본인 uid로 연결된 직원 문서만 자가 생성
+        allow create: if isAdmin(storeId)
+                      || (signedIn() && storeId == "haneulttang"
+                          && request.resource.data.uid == request.auth.uid
+                          && request.resource.data.active == true
+                          && request.resource.data.id is number);
+        allow update, delete: if isAdmin(storeId);
       }
 
       match /reservations/{id} {
@@ -99,10 +111,10 @@ service cloud.firestore {
       }
 
       match /workRecords/{id} {
-        allow read: if isConfiguredAdmin(storeId);
-        allow read: if isStaff(storeId) && resource.data.empId == myEmpId();
-        allow create: if isConfiguredAdmin(storeId);
-        allow create: if isStaff(storeId) && request.resource.data.empId == myEmpId();
+        allow read: if isAdmin(storeId)
+                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+        allow create: if isAdmin(storeId)
+                      || (isStaff(storeId) && request.resource.data.empId == myEmpId());
         allow update, delete: if isAdmin(storeId);
       }
 
@@ -115,8 +127,8 @@ service cloud.firestore {
       }
 
       match /payroll/{id} {
-        allow read: if isConfiguredAdmin(storeId);
-        allow read: if isStaff(storeId) && resource.data.empId == myEmpId();
+        allow read: if isAdmin(storeId)
+                    || (isStaff(storeId) && resource.data.empId == myEmpId());
         allow write: if isAdmin(storeId);
       }
 

@@ -9,7 +9,7 @@
    ============================================================ */
 
 import { initializeApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { initializeFirestore, type Firestore } from "firebase/firestore";
 import { getAuth, type Auth } from "firebase/auth";
 
 const env = import.meta.env;
@@ -44,7 +44,8 @@ if (firebaseConfigured) {
     messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
     appId: env.VITE_FIREBASE_APP_ID,
   });
-  db = getFirestore(app);
+  // ignoreUndefinedProperties: 선택 필드(roleLabel 등)가 undefined여도 쓰기 허용
+  db = initializeFirestore(app, { ignoreUndefinedProperties: true });
   auth = getAuth(app);
 } else {
   // 개발자가 원인을 바로 알 수 있도록 명확히 안내

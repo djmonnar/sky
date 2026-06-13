@@ -13,7 +13,7 @@ import { firebaseConfigured, STORE_ID } from "./lib/firebase";
 import { adminProfileForEmail, isAdminEmail } from "./config/admins";
 import {
   subscribeAuth, fetchUserProfile, signInEmail, signUpEmail,
-  createUserProfile, signOutUser,
+  createUserProfile, createStaffProfile, signOutUser,
   type AuthUser,
 } from "./services/auth";
 import type { UserProfile } from "./types/firestore";
@@ -46,7 +46,7 @@ interface Store {
   profile: UserProfile | null;
   authLoading: boolean;
   login: (email: string, password: string, rememberLogin?: boolean) => Promise<void>;
-  signup: (name: string, email: string, password: string, employeeId: number) => Promise<void>;
+  signup: (data: { name: string; email: string; password: string; phone: string; bank: string; account: string }) => Promise<void>;
   logout: () => Promise<void>;
 
   loading: boolean;
@@ -363,19 +363,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signup = useCallback(
-    async (name: string, email: string, password: string, employeeId: number) => {
+    async (data: { name: string; email: string; password: string; phone: string; bank: string; account: string }) => {
       signupInProgress.current = true;
       try {
-        const { uid, email: createdEmail } = await signUpEmail(email, password);
-        const newProfile: UserProfile = {
-          name,
-          role: "staff", // 회원가입은 무조건 실무자 — 관리자 승격은 콘솔/관리자 화면에서
-          storeId: STORE_ID,
-          employeeId,
-          active: true,
-        };
+        const { uid, email: createdEmail } = await signUpEmail(data.email, data.password);
         try {
-          await createUserProfile(uid, newProfile);
+          const { profile: newProfile } = await createStaffProfile(uid, {
+            name: data.name, phone: data.phone, bank: data.bank, account: data.account,
+          });
+          setProfile(newProfile);
+          setRoleState("staff");
+          setError(null);
+          setAuthUser({ uid, email: createdEmail });
+          showToast("회원가입이 완료되었습니다.");
         } catch (profileError) {
           console.error("[signup] profile create failed", profileError);
           await signOutUser().catch(() => undefined);
@@ -384,11 +384,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setError("계정은 생성되었지만 직원 프로필 생성에 실패했습니다. 관리자에게 문의해주세요.");
           throw { code: "profile-create-failed" };
         }
-        setProfile(newProfile);
-        setRoleState("staff");
-        setError(null);
-        setAuthUser({ uid, email: createdEmail });
-        showToast("회원가입이 완료되었습니다.");
       } finally {
         signupInProgress.current = false;
       }

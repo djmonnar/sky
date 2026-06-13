@@ -392,92 +392,68 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .day-tab.on {
   background: var(--green-700); border-color: var(--green-700); color: #fff;
 }
-.slot-board {
+/* 슬롯 매트릭스 (행=오전/오후·홀/주방, 열=요일) */
+.smx-wrap { overflow-x: auto; }
+.smx {
   display: grid;
-  grid-template-columns: repeat(7, minmax(174px, 1fr));
-  gap: 10px;
-  align-items: stretch;
+  grid-template-columns: 66px repeat(7, minmax(80px, 1fr));
+  gap: 5px;
+  min-width: 640px;
 }
-.day-card {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-soft);
-  padding: 10px;
-  display: flex; flex-direction: column; gap: 10px;
-  min-width: 0;
+.smx-corner { }
+.smx-dayhead {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; padding: 7px 0; border-radius: 9px;
+  background: var(--card-alt); color: var(--text-sub);
 }
-.day-card.selected {
-  border-color: var(--green-600);
-  box-shadow: 0 0 0 1px var(--green-600);
+.smx-dayhead .dow { font-size: 11.5px; font-weight: 700; }
+.smx-dayhead strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.smx-dayhead.today { background: var(--green-700); color: #fff; }
+.smx-rowlabel {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 6px 8px; border-radius: 9px;
+  background: var(--card-alt);
 }
-.day-card-head {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
-  min-height: 44px;
+.smx-rowlabel .period { font-size: 11px; font-weight: 800; color: var(--green-700); }
+.smx-rowlabel .dept { font-size: 12.5px; font-weight: 700; }
+.smx-rowlabel.afternoon .period { color: var(--orange-tx); }
+.smx-cell {
+  display: flex; flex-direction: column; gap: 3px;
+  align-items: stretch; justify-content: flex-start;
+  min-height: 50px; max-height: 158px; overflow-y: auto; padding: 5px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--card); text-align: left;
 }
-.period-box {
-  border-top: 1px dashed var(--border);
-  padding-top: 9px;
+.smx-cell::-webkit-scrollbar { width: 4px; }
+.smx-cell::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+.smx-cell:hover { border-color: var(--green-600); }
+.smx-cell.sel { border-color: var(--green-700); box-shadow: 0 0 0 1.5px var(--green-700); background: var(--green-50); }
+.smx-cell.empty { align-items: center; justify-content: center; }
+.smx-add { color: var(--text-muted); font-size: 16px; font-weight: 700; }
+.smx-chip {
+  display: block; padding: 2px 6px; border-radius: 6px;
+  background: var(--green-100); color: var(--green-800);
+  font-size: 11px; font-weight: 700; line-height: 1.45;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.period-title {
-  font-size: 12px; font-weight: 800; color: var(--green-700);
-  margin-bottom: 7px;
+
+/* 편집 패널 배치 목록 */
+.assign-list { display: flex; flex-direction: column; gap: 7px; }
+.assign-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px; background: var(--card-alt);
 }
-.dept-lane {
-  width: 100%;
-  text-align: left;
-  border: 1px solid var(--border);
-  background: var(--card);
-  border-radius: 10px;
-  padding: 8px;
-  display: flex; flex-direction: column; gap: 7px;
-  margin-bottom: 7px;
-  min-height: 70px;
+
+/* 관리자 데이터 도구 */
+.reset-tool {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow);
 }
-.dept-lane.active {
-  border-color: var(--green-700);
-  background: var(--green-50);
+.reset-tool summary {
+  cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--text-sub);
+  list-style: none;
 }
-.dept-label {
-  font-size: 11px; font-weight: 800; color: var(--text-muted);
-}
-.staff-chip-list {
-  display: flex; flex-wrap: wrap; gap: 6px;
-}
-.staff-chip {
-  display: inline-flex; align-items: center;
-  border-radius: 999px;
-  background: var(--green-100);
-  color: var(--green-800);
-  border: 1px solid rgba(62, 82, 55, 0.18);
-  overflow: hidden;
-  font-size: 12px; font-weight: 800;
-  max-width: 100%;
-}
-.staff-chip.selected {
-  background: var(--green-700);
-  color: #fff;
-}
-.staff-chip-main {
-  padding: 5px 7px 5px 9px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.staff-chip-main em {
-  font-style: normal;
-  font-weight: 700;
-  opacity: 0.8;
-  margin-left: 2px;
-}
-.staff-chip-remove {
-  padding: 5px 7px;
-  background: rgba(255,255,255,0.4);
-  color: inherit;
-  font-weight: 900;
-}
-.empty-slot {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
+.reset-tool summary::-webkit-details-marker { display: none; }
 .slot-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -797,15 +773,6 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
     display: flex; overflow-x: auto; gap: 7px; padding-bottom: 2px;
   }
   .day-tab { min-width: 58px; min-height: 48px; }
-  .slot-board {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-  }
-  .day-card {
-    min-width: min(82vw, 330px);
-    scroll-snap-align: start;
-  }
   .slot-summary-grid { grid-template-columns: 1fr; }
   .slot-checks { grid-template-columns: 1fr; }
   .slot-record-title { font-size: 25px; }

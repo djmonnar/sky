@@ -46,6 +46,11 @@ export interface Employee {
   slotRate?: number; // 오전/오후 슬롯 1회당 수당
   standardStart?: string;
   standardEnd?: string;
+  // 회원가입(자가 등록) 직원 정보
+  phone?: string;
+  bank?: string;
+  account?: string; // 계좌번호
+  uid?: string; // 연결된 Firebase Auth uid
 }
 
 export interface ShiftAssignment {

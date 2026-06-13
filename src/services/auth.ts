@@ -10,8 +10,8 @@ import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { requireAuth, requireDb } from "../lib/firebase";
+import { doc, getDoc, setDoc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type { UserProfile } from "../types/firestore";
 
 export type AuthUser = { uid: string; email: string | null };
@@ -38,7 +38,7 @@ export async function signUpEmail(
   return { uid: cred.user.uid, email: cred.user.email };
 }
 
-/** 회원가입 직후 본인 users/{uid} 프로필 생성 (rules가 staff 생성만 허용) */
+/** 회원가입 직후 본인 users/{uid} 프로필 생성 (admin 부트스트랩 등) */
 export async function createUserProfile(
   uid: string,
   profile: UserProfile
@@ -47,6 +47,77 @@ export async function createUserProfile(
     ...profile,
     createdAt: serverTimestamp(),
   });
+}
+
+export interface StaffSignupData {
+  name: string;
+  phone: string;
+  bank: string;
+  account: string;
+}
+
+/**
+ * 직원 자가 회원가입:
+ * 트랜잭션으로 직원번호 카운터를 1 증가시켜 새 employeeId를 발급하고,
+ * employees/{id} 와 users/{uid} 문서를 함께 생성한다.
+ * 가입자는 항상 staff. 관리자 승격은 콘솔/관리자 화면에서 별도 처리.
+ */
+export async function createStaffProfile(
+  uid: string,
+  data: StaffSignupData
+): Promise<{ employeeId: number; profile: UserProfile }> {
+  const db = requireDb();
+  const counterRef = doc(db, "stores", STORE_ID, "meta", "employeeCounter");
+
+  const employeeId = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(counterRef);
+    const current = snap.exists() ? Number(snap.data().value ?? 0) : 0;
+    const next = current + 1;
+
+    tx.set(counterRef, { value: next, updatedAt: serverTimestamp() }, { merge: true });
+
+    tx.set(doc(db, "stores", STORE_ID, "employees", String(next)), {
+      id: next,
+      name: data.name,
+      role: "홀",
+      employmentType: "partTime",
+      salaryType: "hourly",
+      hourly: 0,
+      phone: data.phone,
+      bank: data.bank,
+      account: data.account,
+      uid,
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    tx.set(doc(db, "users", uid), {
+      name: data.name,
+      role: "staff",
+      storeId: STORE_ID,
+      employeeId: next,
+      phone: data.phone,
+      bank: data.bank,
+      account: data.account,
+      active: true,
+      createdAt: serverTimestamp(),
+    });
+
+    return next;
+  });
+
+  const profile: UserProfile = {
+    name: data.name,
+    role: "staff",
+    storeId: STORE_ID,
+    employeeId,
+    active: true,
+    phone: data.phone,
+    bank: data.bank,
+    account: data.account,
+  };
+  return { employeeId, profile };
 }
 
 export async function signOutUser(): Promise<void> {

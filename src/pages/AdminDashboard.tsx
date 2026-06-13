@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
 import { TODAY_DOW, TODAY_STR } from "../data";
-import { seedFirestore } from "../dev/seedFirestore";
+import { seedFirestore, resetFirestore } from "../dev/seedFirestore";
 import { finalPay, isMonthlyEmployee } from "../lib/payroll";
 import { planTimesForShifts, shiftsForDay, slotSummary } from "../lib/shifts";
 
@@ -19,6 +19,18 @@ export default function AdminDashboard() {
       showToast(await seedFirestore());
     } catch (e) {
       showToast(`seed 실패: ${(e as Error).message}`);
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  const runReset = async () => {
+    if (!window.confirm("기존 근무표·직원·예약·급여 데이터를 모두 지우고 슬롯 모델 샘플 데이터로 다시 채웁니다.\n(로그인 계정은 유지됩니다)\n계속할까요?")) return;
+    setSeeding(true);
+    try {
+      showToast(await resetFirestore());
+    } catch (e) {
+      showToast(`재설정 실패: ${(e as Error).message}`);
     } finally {
       setSeeding(false);
     }
@@ -58,6 +70,19 @@ export default function AdminDashboard() {
             {seeding ? "넣는 중..." : "🌱 데모 데이터로 시작하기"}
           </button>
         </Card>
+      )}
+
+      {/* 라이브 모드: 슬롯 모델 데이터 재설정 (관리자 도구) */}
+      {mode === "live" && !loading && employees.length > 0 && (
+        <details className="reset-tool">
+          <summary>🛠️ 관리자 데이터 도구</summary>
+          <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+            <button className="btn btn-outline btn-sm" disabled={seeding} onClick={runReset}>
+              {seeding ? "처리 중..." : "♻️ 슬롯 모델 샘플로 재설정"}
+            </button>
+            <span className="muted small">기존 근무표가 옛 형식이거나 비어 있을 때 사용</span>
+          </div>
+        </details>
       )}
 
       {/* KPI */}

@@ -32,4 +32,7 @@ export interface UserProfile {
   storeId: string;
   employeeId?: number;
   active: boolean;
+  phone?: string;
+  bank?: string;
+  account?: string;
 }
