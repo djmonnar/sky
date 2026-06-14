@@ -1,6 +1,13 @@
 /* 날짜·시간 유틸 (도메인 독립) */
 
-export const TODAY = new Date("2026-06-12T10:30:00"); // 데모 기준일 (금요일)
+// Firebase env가 설정돼 있고 VITE_DEMO_MODE가 아니면 실제 오늘을 사용
+// 데모 모드는 목업 데이터 기준일(2026-06-12 금요일)로 고정
+const _live = !!(
+  import.meta.env.VITE_FIREBASE_API_KEY &&
+  import.meta.env.VITE_FIREBASE_PROJECT_ID
+) && import.meta.env.VITE_DEMO_MODE !== "true";
+
+export const TODAY = _live ? new Date() : new Date("2026-06-12T10:30:00");
 export const DOW_KO = ["월", "화", "수", "목", "금", "토", "일"];
 
 export function fmtDate(d: Date): string {

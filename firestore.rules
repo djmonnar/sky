@@ -77,20 +77,43 @@ service cloud.firestore {
       allow read: if inStore(storeId);
       allow write: if isAdmin(storeId);
 
-      // 직원번호 카운터 등 메타: 회원가입 트랜잭션에서 증가시켜야 하므로
-      // (아직 프로필이 없는) 로그인 사용자도 읽기/쓰기 허용. 카운터 1개뿐.
+      // 직원번호 카운터: 회원가입 트랜잭션에서 증가시켜야 하므로
+      // 아직 프로필이 없는 로그인 사용자도 읽기 허용. employeeCounter 문서 1개만.
       match /meta/{docId} {
-        allow read, write: if signedIn() && storeId == "haneulttang";
+        allow read: if signedIn()
+                    && storeId == "haneulttang"
+                    && docId == "employeeCounter";
+        allow write: if signedIn()
+                     && storeId == "haneulttang"
+                     && docId == "employeeCounter"
+                     && request.resource.data.value is number
+                     && request.resource.data.value > 0;
       }
 
       match /employees/{id} {
         allow read: if inStore(storeId);
         // 관리자는 자유, 회원가입 시엔 본인 uid로 연결된 직원 문서만 자가 생성
         allow create: if isAdmin(storeId)
-                      || (signedIn() && storeId == "haneulttang"
-                          && request.resource.data.uid == request.auth.uid
-                          && request.resource.data.active == true
-                          && request.resource.data.id is number);
+                      || (
+                        signedIn()
+                        && storeId == "haneulttang"
+                        && request.resource.data.uid == request.auth.uid
+                        && request.resource.data.active == true
+                        && request.resource.data.id is number
+                        && request.resource.data.name is string
+                        && request.resource.data.name.size() > 0
+                        && request.resource.data.phone is string
+                        && request.resource.data.bank is string
+                        && request.resource.data.account is string
+                        && (request.resource.data.role == "홀" || request.resource.data.role == "주방")
+                        && request.resource.data.employmentType == "partTime"
+                        && request.resource.data.salaryType == "hourly"
+                        && request.resource.data.hourly is number
+                        && request.resource.data.keys().hasOnly([
+                          "id", "name", "role", "employmentType", "salaryType", "hourly",
+                          "phone", "bank", "account", "uid", "active", "createdAt", "updatedAt"
+                        ])
+                      );
         allow update, delete: if isAdmin(storeId);
       }
 

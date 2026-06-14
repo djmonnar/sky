@@ -40,7 +40,11 @@ export function sortShifts(a: Shift, b: Shift): number {
 
 export function shiftsForDay(shifts: Shift[], date: string, dayIndex: number): Shift[] {
   return shifts
-    .filter((s) => !s.off && ((s.date && s.date === date) || (!s.date && s.day === dayIndex) || s.dayIndex === dayIndex))
+    .filter((s) =>
+      !s.off &&
+      // date 필드가 있는 최신 슬롯 문서는 date를 우선 비교, 없는 옛 문서만 dayIndex fallback
+      (s.date ? s.date === date : (s.day === dayIndex || s.dayIndex === dayIndex))
+    )
     .sort(sortShifts);
 }
 

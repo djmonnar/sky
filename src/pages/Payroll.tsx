@@ -4,6 +4,7 @@ import { Card, StatCard, Badge } from "../components/ui";
 import { won } from "../data";
 import type { Employee, PayrollRow } from "../data/types";
 import { countSlots } from "../lib/shifts";
+import { TODAY_STR } from "../lib/time";
 import {
   basePay,
   employmentLabel,
@@ -75,17 +76,23 @@ export default function Payroll() {
   const [selId, setSelId] = useState<number | null>(null);
   const [extraInput, setExtraInput] = useState("");
   const [deductInput, setDeductInput] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(TODAY_STR.slice(0, 7));
+
+  const monthShifts = useMemo(
+    () => shifts.filter((s) => s.date?.startsWith(selectedMonth)),
+    [shifts, selectedMonth]
+  );
 
   const rows = useMemo<PayrollViewRow[]>(() => {
     const byEmp = new Map(payroll.map((p) => [p.empId, p]));
     return employees.map((emp) => {
-      const counts = countSlots(shifts, emp.id);
+      const counts = countSlots(monthShifts, emp.id);
       return {
         emp,
         pay: hydratePayroll(emp, byEmp.get(emp.id), counts),
       };
     });
-  }, [employees, payroll, shifts]);
+  }, [employees, payroll, monthShifts]);
 
   const filteredRows = rows.filter(({ emp }) => {
     if (filter === "fullTime") return isMonthlyEmployee(emp);
@@ -107,7 +114,9 @@ export default function Payroll() {
   const slotPaidCount = rows.filter(({ emp }) => isSlotPaidEmployee(emp)).length;
   const partTimeCount = rows.length - monthlyCount;
   const totalSlots = rows.reduce((a, { pay }) => a + (pay.slotCount ?? 0), 0);
-  const pendingRecords = records.filter((r) => r.status === "승인대기" || r.status === "제출");
+  const pendingRecords = records.filter(
+    (r) => (r.status === "승인대기" || r.status === "제출") && r.date?.startsWith(selectedMonth)
+  );
 
   const persistPayroll = (emp: Employee, pay: PayrollRow, patch: Partial<PayrollRow>) => {
     const next = { ...pay, ...patch };
@@ -149,8 +158,19 @@ export default function Payroll() {
         </div>
       </div>
 
+      <div className="row" style={{ marginBottom: 16, alignItems: "center", gap: 10 }}>
+        <label className="field-label" style={{ margin: 0, whiteSpace: "nowrap" }}>급여 기준 월</label>
+        <input
+          type="month"
+          className="input"
+          style={{ width: "auto" }}
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+        />
+      </div>
+
       <div className="grid grid-4">
-        <StatCard label="이번달 총 급여 예상" value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="월급+시급+건별수당" trendUp icon="💰" />
+        <StatCard label={`${selectedMonth} 총 급여 예상`} value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="월급+시급+건별수당" trendUp icon="💰" />
         <StatCard label="총 근무 슬롯" value={totalSlots} unit="개" trend="오전/오후 합산" trendUp icon="🗓️" tone="blue" />
         <StatCard label="정직원" value={monthlyCount} unit="명" trend="월급 고정" trendUp icon="🧑‍💼" tone="blue" />
         <StatCard label="알바/건별" value={`${partTimeCount}/${slotPaidCount}`} unit="명" trend="시급/건별수당" trendUp icon="👥" tone="amber" />
