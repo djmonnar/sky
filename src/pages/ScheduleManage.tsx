@@ -30,7 +30,7 @@ export default function ScheduleManage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const week = useMemo(() => weekDates(weekBase(weekOffset)), [weekOffset]);
   const [sel, setSel] = useState<SelSlot | null>(null);
-  const [addId, setAddId] = useState(0);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
 
   const cellShifts = (s: SelSlot): Shift[] =>
     shiftsForDay(shifts, shiftDateForDay(week, s.dayIndex), s.dayIndex)
@@ -47,26 +47,39 @@ export default function ScheduleManage() {
     return acc + ROWS.filter((r) => cellShifts({ ...r, dayIndex }).length === 0).length;
   }, 0);
 
-  const addEmployee = () => {
+  const availableEmployees = employees.filter(
+    (e) => !selShifts.some((s) => s.employeeId === e.id)
+  );
+
+  const toggleEmployeeSelection = (employeeId: number) => {
+    setSelectedEmployeeIds((prev) =>
+      prev.includes(employeeId)
+        ? prev.filter((id) => id !== employeeId)
+        : [...prev, employeeId]
+    );
+  };
+
+  const addEmployees = () => {
     if (!sel) return;
-    const employee = employees.find((e) => e.id === addId);
-    if (!employee) { showToast("직원을 선택해주세요"); return; }
-    if (selShifts.some((s) => s.employeeId === employee.id)) {
-      showToast("이미 이 칸에 배치된 직원입니다");
+    const selectedEmployees = availableEmployees.filter((e) => selectedEmployeeIds.includes(e.id));
+    if (selectedEmployees.length === 0) {
+      showToast("추가할 직원을 선택해주세요");
       return;
     }
     const date = shiftDateForDay(week, sel.dayIndex);
     const time = PERIOD_TIME[sel.period];
-    const id = `${date}_${sel.period}_${sel.department}_${employee.id}`;
-    setShift({
-      id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
-      period: sel.period, department: sel.department,
-      employeeId: employee.id, empId: employee.id,
-      employeeName: employee.name, roleLabel: employee.roleLabel,
-      order: selShifts.length, ...time,
+    selectedEmployees.forEach((employee, index) => {
+      const id = `${date}_${sel.period}_${sel.department}_${employee.id}`;
+      setShift({
+        id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
+        period: sel.period, department: sel.department,
+        employeeId: employee.id, empId: employee.id,
+        employeeName: employee.name, roleLabel: employee.roleLabel,
+        order: selShifts.length + index, ...time,
+      });
     });
-    setAddId(0);
-    showToast(`${employee.name} 배치했습니다`);
+    setSelectedEmployeeIds([]);
+    showToast(`${selectedEmployees.length}명 배치했습니다`);
   };
 
   const removeShift = (s: Shift) => {
@@ -105,11 +118,11 @@ export default function ScheduleManage() {
       {/* 툴바 */}
       <div className="spread schedule-toolbar">
         <div className="row">
-          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="이전 주" onClick={() => { setWeekOffset((v) => v - 1); setSel(null); }}>‹</button>
+          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="이전 주" onClick={() => { setWeekOffset((v) => v - 1); setSel(null); setSelectedEmployeeIds([]); }}>‹</button>
           <span className="bold">
             {week[0].getFullYear()}년 {week[0].getMonth() + 1}월 {week[0].getDate()}일 ~ {week[6].getMonth() + 1}월 {week[6].getDate()}일
           </span>
-          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="다음 주" onClick={() => { setWeekOffset((v) => v + 1); setSel(null); }}>›</button>
+          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="다음 주" onClick={() => { setWeekOffset((v) => v + 1); setSel(null); setSelectedEmployeeIds([]); }}>›</button>
         </div>
         <div className="row schedule-actions">
           <button className="btn btn-outline btn-sm" onClick={() => copyWeek(-1)}>📄 지난주 복사</button>
@@ -148,7 +161,7 @@ export default function ScheduleManage() {
                     week={week}
                     cellShifts={(dayIndex) => cellShifts({ ...row, dayIndex })}
                     isSel={(dayIndex) => sameSlot(sel, dayIndex, row.period, row.department)}
-                    onSelect={(dayIndex) => { setSel({ ...row, dayIndex }); setAddId(0); }}
+                    onSelect={(dayIndex) => { setSel({ ...row, dayIndex }); setSelectedEmployeeIds([]); }}
                   />
                 ))}
               </div>
@@ -199,18 +212,27 @@ export default function ScheduleManage() {
                 </div>
 
                 <label className="field-label">직원 추가</label>
-                <div className="row">
-                  <select className="select" value={addId} onChange={(e) => setAddId(Number(e.target.value))}>
-                    <option value={0}>직원 선택</option>
-                    {employees
-                      .filter((e) => !selShifts.some((s) => s.employeeId === e.id))
-                      .map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.name}{e.roleLabel ? ` (${e.roleLabel})` : ""} · {e.role}
-                        </option>
-                      ))}
-                  </select>
-                  <button className="btn btn-primary" onClick={addEmployee}>추가</button>
+                <div className="employee-multi-add">
+                  <div className="employee-multi-list" role="group" aria-label="추가할 직원 선택">
+                    {availableEmployees.length === 0 ? (
+                      <div className="employee-multi-empty">추가 가능한 직원이 없습니다.</div>
+                    ) : (
+                      availableEmployees.map((e) => (
+                        <label className="employee-pick" key={e.id}>
+                          <input
+                            type="checkbox"
+                            checked={selectedEmployeeIds.includes(e.id)}
+                            onChange={() => toggleEmployeeSelection(e.id)}
+                          />
+                          <span>
+                            <span className="employee-pick-name">{e.name}{e.roleLabel ? ` (${e.roleLabel})` : ""}</span>
+                            <span className="employee-pick-meta">{e.role}</span>
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  <button className="btn btn-primary" onClick={addEmployees} disabled={selectedEmployeeIds.length === 0}>선택 추가</button>
                 </div>
 
                 <label className="field-label" style={{ marginTop: 14 }}>배치된 직원 ({selShifts.length})</label>
