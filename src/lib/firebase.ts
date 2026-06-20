@@ -28,8 +28,12 @@ export const missingFirebaseKeys: string[] = REQUIRED_KEYS.filter(
 );
 export const firebaseConfigured = missingFirebaseKeys.length === 0;
 
+function cleanEnvValue(value: unknown): string {
+  return typeof value === "string" ? value.replace(/^\uFEFF/, "").trim() : "";
+}
+
 /** 매장 ID (Firestore 최상위 stores/{storeId}) */
-export const STORE_ID = env.VITE_FIREBASE_STORE_ID || "haneulttang";
+export const STORE_ID = cleanEnvValue(env.VITE_FIREBASE_STORE_ID) || "haneulttang";
 
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;

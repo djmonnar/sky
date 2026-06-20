@@ -13,6 +13,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isHaneulttangStore(storeId) {
+      return storeId == "haneulttang" || storeId == "\uFEFFhaneulttang";
+    }
+
     function me() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
@@ -24,7 +28,7 @@ service cloud.firestore {
 
     function isConfiguredAdmin(storeId) {
       return signedIn()
-        && storeId == "haneulttang"
+        && isHaneulttangStore(storeId)
         && (
           request.auth.uid == "E8HlEC6QH3YcAHqaBLgtvuc0Ab02"
           || request.auth.uid == "Hnu9dItMJ9WICgrOSeBntMN1Y993"
@@ -56,7 +60,7 @@ service cloud.firestore {
     }
 
     function isValidConfiguredAdminProfile() {
-      return request.resource.data.storeId == "haneulttang"
+      return isHaneulttangStore(request.resource.data.storeId)
         && request.resource.data.active == true
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
@@ -77,7 +81,7 @@ service cloud.firestore {
         && request.auth.uid == uid
         && (
           (
-            request.resource.data.storeId == "haneulttang"
+            isHaneulttangStore(request.resource.data.storeId)
             && request.resource.data.active == true
             && request.resource.data.name is string
             && request.resource.data.name.size() > 0
@@ -120,7 +124,7 @@ service cloud.firestore {
       // Internal signed-in users can read store data. Writes stay limited to
       // hard-coded bootstrap admins even before their profile is repaired.
       match /{document=**} {
-        allow read: if signedIn() && storeId == "haneulttang";
+        allow read: if signedIn() && isHaneulttangStore(storeId);
         allow write: if isConfiguredAdmin(storeId);
       }
 
@@ -128,10 +132,10 @@ service cloud.firestore {
       // 아직 프로필이 없는 로그인 사용자도 읽기 허용. employeeCounter 문서 1개만.
       match /meta/{docId} {
         allow read: if signedIn()
-                    && storeId == "haneulttang"
+                    && isHaneulttangStore(storeId)
                     && docId == "employeeCounter";
         allow write: if signedIn()
-                     && storeId == "haneulttang"
+                     && isHaneulttangStore(storeId)
                      && docId == "employeeCounter"
                      && request.resource.data.value is number
                      && request.resource.data.value > 0;
@@ -143,7 +147,7 @@ service cloud.firestore {
         allow create: if isAdmin(storeId)
                       || (
                         signedIn()
-                        && storeId == "haneulttang"
+                        && isHaneulttangStore(storeId)
                         && request.resource.data.uid == request.auth.uid
                         && request.resource.data.active == true
                         && request.resource.data.id is number
