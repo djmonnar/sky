@@ -21,6 +21,7 @@ function roleTone(role?: Role): string {
 export default function EmployeeList() {
   const { employees, loading, userProfiles, updateUserRole, showToast } = useStore();
   const [savingUid, setSavingUid] = useState<string | null>(null);
+  const signupUrl = `${window.location.origin}/signup`;
 
   const linked = employees.filter((e) => e.uid);
   const profilesByUid = useMemo(
@@ -41,8 +42,28 @@ export default function EmployeeList() {
     }
   };
 
+  const copySignupLink = async () => {
+    try {
+      await navigator.clipboard.writeText(signupUrl);
+      showToast("회원가입 링크를 복사했습니다");
+    } catch {
+      showToast(signupUrl);
+    }
+  };
+
   return (
     <>
+      <Card
+        title="신규 직원 추가"
+        icon="＋"
+        action={<button className="btn btn-primary btn-sm" onClick={copySignupLink}>회원가입 링크 복사</button>}
+      >
+        <p className="muted small" style={{ margin: 0 }}>
+          현재 직원 추가는 직원이 회원가입하면 자동으로 처리됩니다. 링크를 직원에게 보내면
+          가입 시 직원번호가 발급되고, 직원 문서와 앱 계정이 같이 생성됩니다.
+        </p>
+      </Card>
+
       <div className="grid grid-3" style={{ marginBottom: 16 }}>
         <StatCard label="전체 직원" value={employees.length} unit="명" icon="👥" />
         <StatCard label="계정 연결" value={linked.length} unit="명" icon="🔐" tone="blue" />

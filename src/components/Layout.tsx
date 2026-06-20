@@ -13,12 +13,12 @@ const STAFF_NAV: NavDef[] = [
 ];
 
 const ADMIN_NAV: NavDef[] = [
-  { to: "/", icon: "🏠", label: "대시보드", title: "관리자 대시보드", mobile: true },
-  { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true },
+  { to: "/", icon: "🏠", label: "대시보드", title: "관리자 대시보드", mobile: true, mobileLabel: "홈" },
+  { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true, mobileLabel: "예약" },
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표" },
-  { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: false },
-  { to: "/payroll", icon: "💰", label: "급여 관리", title: "급여 관리", mobile: true },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true },
+  { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원" },
+  { to: "/payroll", icon: "💰", label: "급여 관리", title: "급여 관리", mobile: true, mobileLabel: "급여" },
+  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, mobileLabel: "공지" },
 ];
 
 const MANAGER_NAV: NavDef[] = [

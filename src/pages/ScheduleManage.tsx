@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, Badge } from "../components/ui";
 import { TODAY, TODAY_DOW, DOW_KO, weekDates } from "../data";
@@ -26,7 +27,7 @@ function weekBase(offset: number): Date {
 type SelSlot = { dayIndex: number; period: ShiftPeriod; department: Department };
 
 export default function ScheduleManage() {
-  const { shifts, setShift, deleteShift, showToast, employees } = useStore();
+  const { shifts, setShift, deleteShift, showToast, employees, role } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const week = useMemo(() => weekDates(weekBase(weekOffset)), [weekOffset]);
   const [sel, setSel] = useState<SelSlot | null>(null);
@@ -126,7 +127,11 @@ export default function ScheduleManage() {
         </div>
         <div className="row schedule-actions">
           <button className="btn btn-outline btn-sm" onClick={() => copyWeek(-1)}>📄 지난주 복사</button>
-          <button className="btn btn-outline btn-sm" onClick={() => showToast("직원은 회원가입 또는 Firebase employees 문서로 추가됩니다")}>＋ 직원 추가</button>
+          {role === "admin" ? (
+            <Link className="btn btn-outline btn-sm" to="/employees">＋ 직원 추가</Link>
+          ) : (
+            <button className="btn btn-outline btn-sm" onClick={() => showToast("신규 직원 추가는 관리자만 가능합니다")}>＋ 직원 추가</button>
+          )}
         </div>
       </div>
 
