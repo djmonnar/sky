@@ -19,6 +19,7 @@ const ADMIN_NAV: NavDef[] = [
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원" },
   { to: "/payroll", icon: "💰", label: "급여 관리", title: "급여 관리", mobile: true, mobileLabel: "급여" },
   { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, mobileLabel: "공지" },
+  { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false },
 ];
 
 const MANAGER_NAV: NavDef[] = [
@@ -26,6 +27,7 @@ const MANAGER_NAV: NavDef[] = [
   { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true },
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표" },
   { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true },
+  { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
