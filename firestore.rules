@@ -69,7 +69,24 @@ service cloud.firestore {
         && request.resource.data.role == "staff"
         && request.resource.data.employeeId is number;
 
-      allow update, delete: if false;
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.active == resource.data.active
+        && (
+          ("employeeId" in resource.data && request.resource.data.employeeId == resource.data.employeeId)
+          || (!("employeeId" in resource.data) && !("employeeId" in request.resource.data))
+        )
+        && (
+          ("createdAt" in resource.data && request.resource.data.createdAt == resource.data.createdAt)
+          || (!("createdAt" in resource.data) && !("createdAt" in request.resource.data))
+        )
+        && request.resource.data.keys().hasOnly([
+          "name", "role", "storeId", "employeeId", "active",
+          "phone", "bank", "account", "createdAt", "updatedAt"
+        ]);
+      allow delete: if false;
     }
 
     // ---------- 매장 ----------
