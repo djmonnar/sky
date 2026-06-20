@@ -28,6 +28,7 @@ function Splash({ text }: { text: string }) {
 export default function App() {
   const { mode, role, authLoading, authUser, profile } = useStore();
   const location = useLocation();
+  const canManageOps = role === "admin" || role === "manager";
 
   // 라이브 모드: 인증 게이트
   if (mode === "live") {
@@ -43,11 +44,11 @@ export default function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={role === "admin" ? <AdminDashboard /> : <StaffDashboard />} />
+        <Route path="/" element={canManageOps ? <AdminDashboard /> : <StaffDashboard />} />
         <Route path="/reservations" element={<Reservations />} />
         <Route path="/worklog" element={<WorkLog />} />
         <Route path="/schedule" element={<SchedulePage />} />
-        <Route path="/schedule-manage" element={role === "admin" ? <ScheduleManage /> : <Navigate to="/schedule" replace />} />
+        <Route path="/schedule-manage" element={canManageOps ? <ScheduleManage /> : <Navigate to="/schedule" replace />} />
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />
         <Route path="/employees" element={role === "admin" ? <EmployeeList /> : <Navigate to="/" replace />} />
         <Route path="/notices" element={<Notices />} />

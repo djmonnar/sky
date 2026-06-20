@@ -36,3 +36,5 @@ export interface UserProfile {
   bank?: string;
   account?: string;
 }
+
+export type UserProfileDoc = UserProfile & AuditFields & { uid: string };

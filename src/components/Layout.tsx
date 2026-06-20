@@ -21,24 +21,31 @@ const ADMIN_NAV: NavDef[] = [
   { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true },
 ];
 
+const MANAGER_NAV: NavDef[] = [
+  { to: "/", icon: "🏠", label: "대시보드", title: "매니저 대시보드", mobile: true },
+  { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true },
+  { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표" },
+  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true },
+];
+
 export default function Layout({ children }: { children: ReactNode }) {
   const {
     mode, demoReason, role, setRole, toast, loading, error,
     profile, authUser, logout, currentEmployee,
   } = useStore();
   const loc = useLocation();
-  const nav = role === "admin" ? ADMIN_NAV : STAFF_NAV;
+  const nav = role === "admin" ? ADMIN_NAV : role === "manager" ? MANAGER_NAV : STAFF_NAV;
   const current = nav.find((n) => n.to === loc.pathname);
   const title = current?.title ?? "하늘땅 매장관리";
 
   const userName =
     mode === "live"
       ? profile?.name ?? authUser?.email ?? "사용자"
-      : role === "admin" ? "김지현" : currentEmployee?.name ?? "직원";
+      : role === "admin" ? "김지현" : role === "manager" ? "매니저" : currentEmployee?.name ?? "직원";
   const userRole =
     mode === "live"
-      ? role === "admin" ? "매장 관리자" : currentEmployee?.role ?? "직원"
-      : role === "admin" ? "매장 관리자" : currentEmployee?.role ?? "직원";
+      ? role === "admin" ? "매장 관리자" : role === "manager" ? "매니저" : currentEmployee?.role ?? "직원"
+      : role === "admin" ? "매장 관리자" : role === "manager" ? "매니저" : currentEmployee?.role ?? "직원";
 
   const switchRole = () => setRole(role === "admin" ? "staff" : "admin");
   const handleLogout = () => {

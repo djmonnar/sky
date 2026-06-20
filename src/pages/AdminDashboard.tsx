@@ -9,9 +9,10 @@ import { planTimesForShifts, shiftsForDay, slotSummary } from "../lib/shifts";
 
 export default function AdminDashboard() {
   const {
-    reservations, shifts, records, payroll, employees, mode, loading, showToast,
+    reservations, shifts, records, payroll, employees, mode, loading, showToast, role,
   } = useStore();
   const [seeding, setSeeding] = useState(false);
+  const canViewPayroll = role === "admin";
 
   const runSeed = async () => {
     setSeeding(true);
@@ -48,10 +49,10 @@ export default function AdminDashboard() {
     const emp = employees.find((e) => e.id === r.empId);
     return !emp || !isMonthlyEmployee(emp);
   });
-  const totalPay = payroll.reduce((a, p) => {
+  const totalPay = canViewPayroll ? payroll.reduce((a, p) => {
     const emp = employees.find((e) => e.id === p.empId);
     return a + finalPay(p, emp);
-  }, 0);
+  }, 0) : 0;
   const warnResv = reservations.filter((r) => r.status === "확인전화필요");
   const groupResv = reservations.filter((r) => r.status === "단체");
 
@@ -90,7 +91,11 @@ export default function AdminDashboard() {
         <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="전일 대비 4건" trendUp icon="📋" />
         <StatCard label="오늘 근무 직원" value={todayWorkers.length} unit="명" trend="슬롯 배치 기준" trendUp icon="👥" tone="blue" />
         <StatCard label="미확인 근무기록" value={pendingRecords.length} unit="건" trend="승인 대기 중" trendUp={false} icon="🗂️" tone="amber" />
-        <StatCard label="이번달 급여 예상" value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="전월 대비 8.2%" trendUp icon="💰" />
+        {canViewPayroll ? (
+          <StatCard label="이번달 급여 예상" value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="전월 대비 8.2%" trendUp icon="💰" />
+        ) : (
+          <StatCard label="운영 권한" value="매니저" trend="예약·근무표 관리" trendUp icon="🛠️" />
+        )}
       </div>
 
       <div className="grid grid-main-side">
@@ -173,13 +178,13 @@ export default function AdminDashboard() {
             <div className="quick-actions">
               <Link to="/reservations" className="quick-action"><span className="qa-ic">📞</span>예약 등록</Link>
               <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표 작성</Link>
-              <Link to="/payroll" className="quick-action"><span className="qa-ic">💰</span>급여 확인</Link>
+              {canViewPayroll && <Link to="/payroll" className="quick-action"><span className="qa-ic">💰</span>급여 확인</Link>}
               <Link to="/notices" className="quick-action"><span className="qa-ic">📢</span>공지 등록</Link>
             </div>
           </Card>
 
           {/* 승인 대기 */}
-          <Card title="근무기록 승인 대기" icon="🗂️" action={<Link to="/payroll" className="card-link">급여 관리 ›</Link>}>
+          <Card title="근무기록 승인 대기" icon="🗂️" action={canViewPayroll ? <Link to="/payroll" className="card-link">급여 관리 ›</Link> : undefined}>
             {pendingRecords.slice(0, 4).map((r) => {
               const emp = employees.find((e) => e.id === r.empId);
               if (!emp) return null;

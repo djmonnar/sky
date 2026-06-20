@@ -1,6 +1,6 @@
 /* 도메인 타입 정의 */
 
-export type Role = "staff" | "admin";
+export type Role = "staff" | "manager" | "admin";
 export type EmploymentType = "fullTime" | "partTime";
 export type SalaryType = "monthly" | "hourly" | "perSlot";
 export type ShiftPeriod = "morning" | "afternoon";

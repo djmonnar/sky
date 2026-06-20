@@ -51,8 +51,20 @@ service cloud.firestore {
       return isConfiguredAdmin(storeId) || (hasProfileInStore(storeId) && me().role == 'admin');
     }
 
+    function isManager(storeId) {
+      return hasProfileInStore(storeId) && me().role == 'manager';
+    }
+
+    function canManageOps(storeId) {
+      return isAdmin(storeId) || isManager(storeId);
+    }
+
     function isStaff(storeId) {
       return hasProfileInStore(storeId) && me().role == 'staff';
+    }
+
+    function isManageableRole(role) {
+      return role == "staff" || role == "manager";
     }
 
     function myEmpId() {
@@ -74,8 +86,8 @@ service cloud.firestore {
 
     // ---------- 사용자 프로필 ----------
     match /users/{uid} {
-      allow get: if signedIn() && request.auth.uid == uid;
-      allow list: if false;
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin("haneulttang"));
+      allow list: if isAdmin("haneulttang");
 
       allow create: if signedIn()
         && request.auth.uid == uid
@@ -92,10 +104,10 @@ service cloud.firestore {
         );
 
       allow update: if signedIn()
-        && request.auth.uid == uid
         && (
           (
-            request.resource.data.role == resource.data.role
+            request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
             && request.resource.data.storeId == resource.data.storeId
             && request.resource.data.active == resource.data.active
             && (
@@ -111,7 +123,13 @@ service cloud.firestore {
               "phone", "bank", "account", "createdAt", "updatedAt"
             ])
           )
-          || (isConfiguredAdmin("haneulttang") && isValidConfiguredAdminProfile())
+          || (
+            isAdmin("haneulttang")
+            && isManageableRole(request.resource.data.role)
+            && request.resource.data.storeId == resource.data.storeId
+            && request.resource.data.active == resource.data.active
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["role", "updatedAt"])
+          )
         );
       allow delete: if false;
     }
@@ -120,13 +138,6 @@ service cloud.firestore {
     match /stores/{storeId} {
       allow read: if inStore(storeId);
       allow write: if isAdmin(storeId);
-
-      // Internal signed-in users can read store data. Writes stay limited to
-      // hard-coded bootstrap admins even before their profile is repaired.
-      match /{document=**} {
-        allow read: if signedIn() && isHaneulttangStore(storeId);
-        allow write: if isConfiguredAdmin(storeId);
-      }
 
       // 직원번호 카운터: 회원가입 트랜잭션에서 증가시켜야 하므로
       // 아직 프로필이 없는 로그인 사용자도 읽기 허용. employeeCounter 문서 1개만.
@@ -177,25 +188,25 @@ service cloud.firestore {
 
       match /shifts/{id} {
         // staff는 본인 근무표만 (slot 모델은 employeeId, 기존 문서는 empId)
-        allow read: if isAdmin(storeId)
+        allow read: if canManageOps(storeId)
                     || (isStaff(storeId)
                         && (resource.data.employeeId == myEmpId()
                             || resource.data.empId == myEmpId()));
-        allow write: if isAdmin(storeId);
+        allow write: if canManageOps(storeId);
       }
 
       match /workRecords/{id} {
-        allow read: if isAdmin(storeId)
+        allow read: if canManageOps(storeId)
                     || (isStaff(storeId) && resource.data.empId == myEmpId());
-        allow create: if isAdmin(storeId)
+        allow create: if canManageOps(storeId)
                       || (isStaff(storeId) && request.resource.data.empId == myEmpId());
-        allow update, delete: if isAdmin(storeId);
+        allow update, delete: if canManageOps(storeId);
       }
 
       match /attendanceLogs/{id} {
-        allow read: if isAdmin(storeId)
+        allow read: if canManageOps(storeId)
                     || (isStaff(storeId) && resource.data.empId == myEmpId());
-        allow create: if isAdmin(storeId)
+        allow create: if canManageOps(storeId)
                       || (isStaff(storeId) && request.resource.data.empId == myEmpId());
         allow update, delete: if false; // 출퇴근 로그는 수정 불가
       }
@@ -208,13 +219,13 @@ service cloud.firestore {
 
       match /notices/{id} {
         allow read: if inStore(storeId);
-        allow write: if isAdmin(storeId);
+        allow write: if canManageOps(storeId);
       }
 
       match /handovers/{id} {
         allow read: if inStore(storeId);
         allow create: if inStore(storeId); // 전달사항은 누구나 남길 수 있음
-        allow update, delete: if isAdmin(storeId);
+        allow update, delete: if canManageOps(storeId);
       }
     }
   }

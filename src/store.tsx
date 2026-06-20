@@ -16,12 +16,13 @@ import {
   createUserProfile, createStaffProfile, signOutUser,
   type AuthUser,
 } from "./services/auth";
-import type { UserProfile } from "./types/firestore";
+import type { UserProfile, UserProfileDoc } from "./types/firestore";
 import {
   subscribeEmployees, subscribeReservations, subscribeShifts,
   subscribeRecords, subscribePayroll, subscribeNotices, subscribeHandovers,
   fsUpsertReservation, fsSetShift, fsDeleteShift, fsAddRecord, fsApproveRecord,
   fsUpdatePayroll, fsAddHandover, fsAddAttendanceLog,
+  subscribeUserProfiles, fsUpdateUserRole,
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
 
@@ -55,6 +56,8 @@ interface Store {
   error: string | null;
 
   employees: Employee[];
+  userProfiles: UserProfileDoc[];
+  updateUserRole: (uid: string, role: Role) => Promise<void>;
   /** 로그인된(또는 데모) 실무자 본인 */
   currentEmployee: Employee | null;
 
@@ -98,6 +101,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [userProfiles, setUserProfiles] = useState<UserProfileDoc[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [records, setRecords] = useState<WorkRecord[]>([]);
@@ -226,7 +230,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       subscribeHandovers(setHandovers, onErr),
       // 급여는 관리자만 구독 (staff는 Rules상 본인 문서만 허용, 화면도 없음)
       ...(profile.role === "admin"
-        ? [subscribePayroll(setPayroll, onErr)]
+        ? [
+            subscribePayroll(setPayroll, onErr),
+            subscribeUserProfiles(setUserProfiles, onErr),
+          ]
         : []),
     ];
     return () => unsubs.forEach((u) => u());
@@ -317,6 +324,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       prev.map((p) => (p.empId === empId ? { ...p, ...patch } : p))
     );
   }, [fail]);
+
+  const updateUserRole = useCallback(async (uid: string, nextRole: Role) => {
+    if (nextRole === "admin") {
+      throw new Error("관리자 권한은 Firebase 콘솔에서 직접 부여해주세요.");
+    }
+    if (APP_MODE === "live") {
+      await fsUpdateUserRole(uid, nextRole);
+    }
+    setUserProfiles((prev) =>
+      prev.map((u) => (u.uid === uid ? { ...u, role: nextRole } : u))
+    );
+    showToast(nextRole === "manager" ? "매니저 권한을 부여했습니다" : "실무자 권한으로 변경했습니다");
+  }, [showToast]);
 
   const addHandover = useCallback((text: string) => {
     const n: Notice = { id: Date.now(), text, date: TODAY_STR.slice(5) };
@@ -426,7 +446,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       role, setRole,
       authUser, profile, authLoading, login, signup, completeProfile, logout,
       loading, error,
-      employees, currentEmployee,
+      employees, userProfiles, updateUserRole, currentEmployee,
       reservations, upsertReservation,
       shifts, setShift,
       deleteShift,
@@ -437,7 +457,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toast, showToast,
     }),
     [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, logout,
-     loading, error, employees, currentEmployee,
+     loading, error, employees, userProfiles, updateUserRole, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertReservation, setShift, deleteShift, addRecord, approveRecord, updatePayroll,

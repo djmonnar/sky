@@ -19,13 +19,17 @@ import {
 } from "firebase/firestore";
 import { requireDb, STORE_ID } from "../lib/firebase";
 import type {
-  Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice,
+  Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
 } from "../data/types";
-import type { AttendanceLogDoc } from "../types/firestore";
+import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
 
 function col(name: string) {
   return collection(requireDb(), "stores", STORE_ID, name);
+}
+
+function usersCol() {
+  return collection(requireDb(), "users");
 }
 
 type Unsub = () => void;
@@ -70,6 +74,18 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
     }),
     (items) => cb(items.sort((a, b) => a.id - b.id)),
     onError
+  );
+}
+
+export function subscribeUserProfiles(cb: (v: UserProfileDoc[]) => void, onError: ErrCb): Unsub {
+  return onSnapshot(
+    query(usersCol(), where("storeId", "==", STORE_ID)),
+    (snap) => cb(
+      snap.docs
+        .map((d) => ({ uid: d.id, ...(d.data() as Omit<UserProfileDoc, "uid">) }))
+        .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+    ),
+    (e) => onError(new Error(`users: ${e.message}`))
   );
 }
 
@@ -271,5 +287,12 @@ export async function fsAddAttendanceLog(
   await addDoc(col("attendanceLogs"), {
     ...log,
     createdAt: serverTimestamp(),
+  });
+}
+
+export async function fsUpdateUserRole(uid: string, role: Role): Promise<void> {
+  await updateDoc(doc(requireDb(), "users", uid), {
+    role,
+    updatedAt: serverTimestamp(),
   });
 }
