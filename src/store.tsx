@@ -113,6 +113,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // 회원가입 중에는 auth 리스너가 프로필을 먼저 조회하지 않도록 막음
   // (계정 생성 → users 문서 생성 사이의 레이스 방지)
   const signupInProgress = useRef(false);
+  const [subRetryKey, setSubRetryKey] = useState(0);
+  const subRetryCount = useRef(0);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -153,6 +155,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setAuthLoading(false);
         setLoading(true);
+        subRetryCount.current = 0;
         return;
       }
       if (signupInProgress.current) {
@@ -201,11 +204,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "live" || !profile) return;
     setLoading(true);
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const onErr = (e: Error) => {
       console.error("[firestore]", e);
       const isPerm = e.message.includes("Missing or insufficient permissions")
                   || e.message.includes("permission-denied");
+      if (!isPerm && subRetryCount.current < 5) {
+        const delay = Math.min(1500 * 2 ** subRetryCount.current, 30000);
+        subRetryCount.current++;
+        console.warn(`[firestore] 재연결 ${subRetryCount.current}/5 (${delay}ms 후)`);
+        retryTimer = setTimeout(() => setSubRetryKey((k) => k + 1), delay);
+        return;
+      }
+      subRetryCount.current = 0;
       if (isPerm && profile?.role === "admin") {
         setError(
           `${e.message} — Firestore 보안 규칙이 아직 배포되지 않았습니다. ` +
@@ -242,8 +254,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? [subscribePayroll(setPayroll, onErr)]
         : []),
     ];
-    return () => unsubs.forEach((u) => u());
-  }, [profile]);
+    return () => {
+      if (retryTimer) clearTimeout(retryTimer);
+      unsubs.forEach((u) => u());
+    };
+  // subRetryKey 변경 시 구독을 재설정 (retry 트리거)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, subRetryKey]);
 
   const currentEmployee = useMemo<Employee | null>(() => {
     const targetId =

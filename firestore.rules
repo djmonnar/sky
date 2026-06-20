@@ -69,7 +69,20 @@ service cloud.firestore {
         && request.resource.data.role == "staff"
         && request.resource.data.employeeId is number;
 
-      allow update, delete: if false;
+      // 본인 연락처·계좌·이름만 수정 허용 (role/storeId/employeeId/active 불변)
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.active == resource.data.active
+        && (resource.data.employeeId == null
+            ? !("employeeId" in request.resource.data)
+            : request.resource.data.employeeId == resource.data.employeeId)
+        && request.resource.data.keys().hasOnly([
+          "name", "role", "storeId", "employeeId", "active",
+          "phone", "bank", "account", "updatedAt"
+        ]);
+      allow delete: if false;
     }
 
     // ---------- 매장 ----------
