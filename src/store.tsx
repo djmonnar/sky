@@ -53,6 +53,7 @@ interface Store {
 
   loading: boolean;
   error: string | null;
+  clearError: () => void;
 
   employees: Employee[];
   /** 로그인된(또는 데모) 실무자 본인 */
@@ -117,6 +118,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setToast(msg);
     setTimeout(() => setToast(null), 2200);
   }, []);
+
+  const clearError = useCallback(() => setError(null), []);
 
   /* ---------- 데모 모드: 목업 저장소에서 1회 로드 ---------- */
   useEffect(() => {
@@ -201,7 +204,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const onErr = (e: Error) => {
       console.error("[firestore]", e);
-      setError(`데이터를 불러오지 못했습니다: ${e.message}`);
+      const isPerm = e.message.includes("Missing or insufficient permissions")
+                  || e.message.includes("permission-denied");
+      if (isPerm && profile?.role === "admin") {
+        setError(
+          `${e.message} — Firestore 보안 규칙이 아직 배포되지 않았습니다. ` +
+          `Firebase Console › Firestore › 규칙 탭에 firestore.rules 내용을 붙여넣거나, ` +
+          `로컬에서 firebase deploy --only firestore:rules 를 실행하세요.`
+        );
+      } else {
+        setError(`데이터를 불러오지 못했습니다: ${e.message}`);
+      }
       setLoading(false);
     };
 
@@ -425,7 +438,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mode: APP_MODE, demoReason,
       role, setRole,
       authUser, profile, authLoading, login, signup, completeProfile, logout,
-      loading, error,
+      loading, error, clearError,
       employees, currentEmployee,
       reservations, upsertReservation,
       shifts, setShift,
@@ -437,7 +450,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toast, showToast,
     }),
     [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, logout,
-     loading, error, employees, currentEmployee,
+     loading, error, clearError, employees, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertReservation, setShift, deleteShift, addRecord, approveRecord, updatePayroll,

@@ -23,7 +23,7 @@ const ADMIN_NAV: NavDef[] = [
 
 export default function Layout({ children }: { children: ReactNode }) {
   const {
-    mode, demoReason, role, setRole, toast, loading, error,
+    mode, demoReason, role, setRole, toast, loading, error, clearError,
     profile, authUser, logout, currentEmployee,
   } = useStore();
   const loc = useLocation();
@@ -109,7 +109,14 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="demo-banner">🔌 {demoReason}</div>
         )}
         {error && (
-          <div className="demo-banner danger">⚠️ {error}</div>
+          <div className="demo-banner danger" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span style={{ flex: 1 }}>⚠️ {error}</span>
+            <button
+              onClick={clearError}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, lineHeight: 1, flexShrink: 0, opacity: 0.7 }}
+              aria-label="닫기"
+            >✕</button>
+          </div>
         )}
 
         {/* 데스크톱 톱바 */}
