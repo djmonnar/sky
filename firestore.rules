@@ -55,6 +55,19 @@ service cloud.firestore {
       return me().employeeId;
     }
 
+    function isValidConfiguredAdminProfile() {
+      return request.resource.data.storeId == "haneulttang"
+        && request.resource.data.active == true
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.role == "admin"
+        && (!("employeeId" in request.resource.data) || request.resource.data.employeeId is number)
+        && request.resource.data.keys().hasOnly([
+          "name", "role", "storeId", "employeeId", "active",
+          "phone", "bank", "account", "createdAt", "updatedAt"
+        ]);
+    }
+
     // ---------- 사용자 프로필 ----------
     match /users/{uid} {
       allow get: if signedIn() && request.auth.uid == uid;
@@ -62,30 +75,40 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.storeId == "haneulttang"
-        && request.resource.data.active == true
-        && request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.role == "staff"
-        && request.resource.data.employeeId is number;
+        && (
+          (
+            request.resource.data.storeId == "haneulttang"
+            && request.resource.data.active == true
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.role == "staff"
+            && request.resource.data.employeeId is number
+          )
+          || (isConfiguredAdmin("haneulttang") && isValidConfiguredAdminProfile())
+        );
 
       allow update: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.storeId == resource.data.storeId
-        && request.resource.data.active == resource.data.active
         && (
-          ("employeeId" in resource.data && request.resource.data.employeeId == resource.data.employeeId)
-          || (!("employeeId" in resource.data) && !("employeeId" in request.resource.data))
-        )
-        && (
-          ("createdAt" in resource.data && request.resource.data.createdAt == resource.data.createdAt)
-          || (!("createdAt" in resource.data) && !("createdAt" in request.resource.data))
-        )
-        && request.resource.data.keys().hasOnly([
-          "name", "role", "storeId", "employeeId", "active",
-          "phone", "bank", "account", "createdAt", "updatedAt"
-        ]);
+          (
+            request.resource.data.role == resource.data.role
+            && request.resource.data.storeId == resource.data.storeId
+            && request.resource.data.active == resource.data.active
+            && (
+              ("employeeId" in resource.data && request.resource.data.employeeId == resource.data.employeeId)
+              || (!("employeeId" in resource.data) && !("employeeId" in request.resource.data))
+            )
+            && (
+              ("createdAt" in resource.data && request.resource.data.createdAt == resource.data.createdAt)
+              || (!("createdAt" in resource.data) && !("createdAt" in request.resource.data))
+            )
+            && request.resource.data.keys().hasOnly([
+              "name", "role", "storeId", "employeeId", "active",
+              "phone", "bank", "account", "createdAt", "updatedAt"
+            ])
+          )
+          || (isConfiguredAdmin("haneulttang") && isValidConfiguredAdminProfile())
+        );
       allow delete: if false;
     }
 
