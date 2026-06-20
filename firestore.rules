@@ -117,10 +117,11 @@ service cloud.firestore {
       allow read: if inStore(storeId);
       allow write: if isAdmin(storeId);
 
-      // Hard-coded bootstrap admins must be able to manage every store document
-      // even before/while their users/{uid} profile is being repaired.
+      // Internal signed-in users can read store data. Writes stay limited to
+      // hard-coded bootstrap admins even before their profile is repaired.
       match /{document=**} {
-        allow read, write: if isConfiguredAdmin(storeId);
+        allow read: if signedIn() && storeId == "haneulttang";
+        allow write: if isConfiguredAdmin(storeId);
       }
 
       // 직원번호 카운터: 회원가입 트랜잭션에서 증가시켜야 하므로
