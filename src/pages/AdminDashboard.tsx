@@ -123,17 +123,18 @@ export default function AdminDashboard() {
             <div className="grid grid-3" style={{ gap: 10 }}>
               {todayWorkers.map(({ employeeId, shifts: workerShifts }) => {
                 const emp = employees.find((e) => e.id === employeeId);
-                if (!emp) return null;
+                const displayName = emp?.name ?? workerShifts[0]?.employeeName ?? "직접 입력";
+                const roleText = emp ? slotSummary(workerShifts) : `${slotSummary(workerShifts)} · 직접 입력`;
                 const plan = planTimesForShifts(workerShifts);
                 const started = plan.start <= "10:30";
                 return (
                   <div key={employeeId} className="row" style={{
                     background: "var(--card-alt)", borderRadius: 11, padding: "10px 12px",
                   }}>
-                    <span className="avatar">{emp.name[0]}</span>
+                    <span className="avatar">{displayName[0]}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="bold small">{emp.name}</div>
-                      <div className="muted small">{slotSummary(workerShifts)} · {plan.start}–{plan.end}</div>
+                      <div className="bold small">{displayName}</div>
+                      <div className="muted small">{roleText} · {plan.start}–{plan.end}</div>
                     </div>
                     <Badge tone={started ? "green" : "gray"}>{started ? "근무중" : "출근전"}</Badge>
                   </div>
