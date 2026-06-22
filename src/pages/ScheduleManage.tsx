@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, Badge } from "../components/ui";
 import { TODAY, TODAY_DOW, DOW_KO, weekDates } from "../data";
-import type { Department, Shift, ShiftPeriod } from "../data/types";
+import type { Department, Employee, Shift, ShiftPeriod } from "../data/types";
 import {
   DEPARTMENT_LABEL, PERIOD_LABEL, PERIOD_TIME,
   countSlots, shiftDateForDay, shiftsForDay,
@@ -26,12 +26,28 @@ function weekBase(offset: number): Date {
 
 type SelSlot = { dayIndex: number; period: ShiftPeriod; department: Department };
 
+const normalizeSearch = (value: string) => value.trim().toLowerCase();
+
+const employeeMatchesQuery = (employee: Employee, query: string) => {
+  const q = normalizeSearch(query);
+  if (!q) return true;
+  return [
+    employee.name,
+    employee.role,
+    employee.roleLabel ?? "",
+    employmentLabel(employee),
+    String(employee.id),
+  ].some((value) => value.toLowerCase().includes(q));
+};
+
 export default function ScheduleManage() {
   const { shifts, setShift, deleteShift, showToast, employees, role } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const week = useMemo(() => weekDates(weekBase(weekOffset)), [weekOffset]);
   const [sel, setSel] = useState<SelSlot | null>(null);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const cellShifts = (s: SelSlot): Shift[] =>
     shiftsForDay(shifts, shiftDateForDay(week, s.dayIndex), s.dayIndex)
@@ -51,6 +67,30 @@ export default function ScheduleManage() {
   const availableEmployees = employees.filter(
     (e) => !selShifts.some((s) => s.employeeId === e.id)
   );
+  const filteredAvailableEmployees = availableEmployees.filter((employee) =>
+    employeeMatchesQuery(employee, employeeSearch)
+  );
+
+  const resetSlotDraft = () => {
+    setSelectedEmployeeIds([]);
+    setEmployeeSearch("");
+  };
+
+  const selectSlot = (next: SelSlot) => {
+    setSel(next);
+    resetSlotDraft();
+  };
+
+  const clearSlot = () => {
+    setSel(null);
+    resetSlotDraft();
+  };
+
+  useEffect(() => {
+    if (!sel || !window.matchMedia("(max-width: 720px)").matches) return;
+    const focusTimer = window.setTimeout(() => searchInputRef.current?.focus(), 40);
+    return () => window.clearTimeout(focusTimer);
+  }, [sel]);
 
   const toggleEmployeeSelection = (employeeId: number) => {
     setSelectedEmployeeIds((prev) =>
@@ -79,8 +119,48 @@ export default function ScheduleManage() {
         order: selShifts.length + index, ...time,
       });
     });
-    setSelectedEmployeeIds([]);
+    resetSlotDraft();
     showToast(`${selectedEmployees.length}명 배치했습니다`);
+  };
+
+  const addOneEmployee = (employee: Employee) => {
+    if (!sel) return;
+    const date = shiftDateForDay(week, sel.dayIndex);
+    const time = PERIOD_TIME[sel.period];
+    const id = `${date}_${sel.period}_${sel.department}_${employee.id}`;
+    setShift({
+      id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
+      period: sel.period, department: sel.department,
+      employeeId: employee.id, empId: employee.id,
+      employeeName: employee.name, roleLabel: employee.roleLabel,
+      order: selShifts.length, ...time,
+    });
+    resetSlotDraft();
+    showToast(`${employee.name} 배치했습니다`);
+  };
+
+  const addEmployeeBySearch = () => {
+    const q = normalizeSearch(employeeSearch);
+    if (!q) return;
+    const exactMatches = availableEmployees.filter(
+      (employee) => normalizeSearch(employee.name) === q || String(employee.id) === q
+    );
+    const matches = exactMatches.length > 0 ? exactMatches : filteredAvailableEmployees;
+    if (matches.length === 0) {
+      showToast("일치하는 직원이 없습니다");
+      return;
+    }
+    if (matches.length > 1) {
+      showToast("직원을 하나 선택해주세요");
+      return;
+    }
+    addOneEmployee(matches[0]);
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addEmployeeBySearch();
   };
 
   const removeShift = (s: Shift) => {
@@ -119,11 +199,11 @@ export default function ScheduleManage() {
       {/* 툴바 */}
       <div className="spread schedule-toolbar">
         <div className="row">
-          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="이전 주" onClick={() => { setWeekOffset((v) => v - 1); setSel(null); setSelectedEmployeeIds([]); }}>‹</button>
+          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="이전 주" onClick={() => { setWeekOffset((v) => v - 1); clearSlot(); }}>‹</button>
           <span className="bold">
             {week[0].getFullYear()}년 {week[0].getMonth() + 1}월 {week[0].getDate()}일 ~ {week[6].getMonth() + 1}월 {week[6].getDate()}일
           </span>
-          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="다음 주" onClick={() => { setWeekOffset((v) => v + 1); setSel(null); setSelectedEmployeeIds([]); }}>›</button>
+          <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="다음 주" onClick={() => { setWeekOffset((v) => v + 1); clearSlot(); }}>›</button>
         </div>
         <div className="row schedule-actions">
           <button className="btn btn-outline btn-sm" onClick={() => copyWeek(-1)}>📄 지난주 복사</button>
@@ -166,7 +246,7 @@ export default function ScheduleManage() {
                     week={week}
                     cellShifts={(dayIndex) => cellShifts({ ...row, dayIndex })}
                     isSel={(dayIndex) => sameSlot(sel, dayIndex, row.period, row.department)}
-                    onSelect={(dayIndex) => { setSel({ ...row, dayIndex }); setSelectedEmployeeIds([]); }}
+                    onSelect={(dayIndex) => selectSlot({ ...row, dayIndex })}
                   />
                 ))}
               </div>
@@ -200,7 +280,7 @@ export default function ScheduleManage() {
         </div>
 
         {/* 우측 편집 패널 */}
-        <div className="side-panel">
+        <div className="side-panel hide-mobile">
           <Card title="근무 배치" icon="✏️" action={sel ? <Badge tone="green">{selShifts.length}명</Badge> : undefined}>
             {!sel ? (
               <div className="muted" style={{ textAlign: "center", padding: "34px 0" }}>
@@ -265,6 +345,81 @@ export default function ScheduleManage() {
           </Card>
         </div>
       </div>
+
+      {sel && (
+        <div className="mobile-slot-editor hide-desktop" role="dialog" aria-label="근무 직원 빠른 추가">
+          <div className="mobile-slot-editor-head">
+            <div>
+              <div className="mobile-slot-title">
+                {DOW_KO[sel.dayIndex]} {week[sel.dayIndex].getMonth() + 1}/{week[sel.dayIndex].getDate()} · {PERIOD_LABEL[sel.period]} · {DEPARTMENT_LABEL[sel.department]}
+              </div>
+              <div className="muted small">{PERIOD_TIME[sel.period].start} ~ {PERIOD_TIME[sel.period].end}</div>
+            </div>
+            <button className="icon-btn" type="button" aria-label="닫기" onClick={clearSlot}>×</button>
+          </div>
+
+          <div className="mobile-slot-search-row">
+            <input
+              className="input mobile-slot-input"
+              ref={searchInputRef}
+              value={employeeSearch}
+              onChange={(event) => setEmployeeSearch(event.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="직원 이름 또는 번호 입력"
+              autoFocus
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              type="button"
+              onClick={addEmployeeBySearch}
+              disabled={employeeSearch.trim().length === 0}
+            >
+              추가
+            </button>
+          </div>
+          <div className="mobile-slot-hint">검색 결과를 누르거나 정확한 이름 입력 후 Enter를 누르세요.</div>
+
+          <div className="mobile-employee-results">
+            {filteredAvailableEmployees.length === 0 ? (
+              <div className="mobile-employee-empty">
+                {availableEmployees.length === 0 ? "추가 가능한 직원이 없습니다." : "검색 결과가 없습니다."}
+              </div>
+            ) : (
+              filteredAvailableEmployees.map((employee) => (
+                <button
+                  className="mobile-employee-result"
+                  type="button"
+                  key={employee.id}
+                  onClick={() => addOneEmployee(employee)}
+                >
+                  <span>
+                    <strong>{employee.name}{employee.roleLabel ? ` (${employee.roleLabel})` : ""}</strong>
+                    <small>{employee.role} · {employmentLabel(employee)}</small>
+                  </span>
+                  <b>추가</b>
+                </button>
+              ))
+            )}
+          </div>
+
+          {selShifts.length > 0 && (
+            <div className="mobile-assigned-list" aria-label="배치된 직원">
+              {selShifts.map((shift) => (
+                <button
+                  className="mobile-assigned-chip"
+                  type="button"
+                  key={shift.id}
+                  onClick={() => removeShift(shift)}
+                  aria-label={`${shift.employeeName} 배치 삭제`}
+                >
+                  {shift.employeeName}
+                  <span>삭제</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }
