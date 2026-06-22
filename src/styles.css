@@ -16,6 +16,7 @@
   --green-800: #2e3b2b;
   --green-700: #3e5237;
   --green-600: #4c6342;
+  --green-200: #cbdcbc;
   --green-100: #e3ecd9;
   --green-50: #eef3e6;
 
@@ -24,9 +25,13 @@
   --text-muted: #91897a;
 
   --amber-bg: #fdf0d7;
+  --amber-50: #fff8e8;
+  --amber-100: #fce8bd;
+  --amber-300: #e3bd70;
   --amber-tx: #a16a16;
   --red-bg: #fae3dd;
   --red-tx: #b4452e;
+  --danger: #b4452e;
   --gray-bg: #edeae0;
   --gray-tx: #6e6a5c;
   --orange-bg: #fde8d2;
@@ -436,6 +441,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-size: 11px; font-weight: 700; line-height: 1.45;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.smx-chip.manual {
+  background: var(--amber-100);
+  color: var(--orange-tx);
+  border: 1px dashed var(--amber-300);
+}
 
 /* 편집 패널 배치 목록 */
 .employee-multi-add {
@@ -519,6 +529,37 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .assign-row {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border-radius: 10px; background: var(--card-alt);
+}
+.assign-row.manual {
+  background: var(--amber-50);
+  border: 1px dashed var(--amber-300);
+}
+.candidate-register {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.candidate-name {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--amber-100);
+  color: var(--orange-tx);
+  font-size: 13px;
+  font-weight: 850;
+}
+.candidate-url {
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 관리자 데이터 도구 */
@@ -632,9 +673,37 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-size: 12px;
   font-weight: 800;
 }
+.mobile-assigned-chip.manual {
+  border-style: dashed;
+  border-color: var(--amber-300);
+  background: var(--amber-100);
+  color: var(--orange-tx);
+}
+.mobile-assigned-chip b {
+  font-size: 12px;
+}
+.mobile-assigned-chip span,
+.mobile-assigned-chip a,
+.mobile-assigned-chip button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+}
 .mobile-assigned-chip span {
+  color: var(--orange-tx);
+  font-size: 11px;
+}
+.mobile-assigned-chip a,
+.mobile-assigned-chip button.link-action {
+  color: var(--green-700);
+  text-decoration: underline;
+  font-size: 11px;
+}
+.mobile-assigned-chip button.delete-action {
   color: var(--danger);
   font-size: 11px;
+  cursor: pointer;
 }
 
 .reset-tool {

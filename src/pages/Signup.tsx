@@ -1,5 +1,5 @@
 import { useState, FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { authErrorMessage } from "../services/auth";
 
@@ -10,7 +10,8 @@ const BANKS = [
 
 export default function Signup() {
   const { signup } = useStore();
-  const [name, setName] = useState("");
+  const [searchParams] = useSearchParams();
+  const [name, setName] = useState(() => searchParams.get("name")?.trim() ?? "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");

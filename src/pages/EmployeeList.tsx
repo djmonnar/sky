@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, Badge, StatCard } from "../components/ui";
 import { salaryTypeLabel, employmentLabel } from "../lib/payroll";
@@ -21,7 +22,12 @@ function roleTone(role?: Role): string {
 export default function EmployeeList() {
   const { employees, loading, userProfiles, updateUserRole, showToast } = useStore();
   const [savingUid, setSavingUid] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const candidateName = searchParams.get("candidate")?.trim() ?? "";
   const signupUrl = `${window.location.origin}/signup`;
+  const candidateSignupUrl = candidateName
+    ? `${signupUrl}?name=${encodeURIComponent(candidateName)}`
+    : signupUrl;
 
   const linked = employees.filter((e) => e.uid);
   const profilesByUid = useMemo(
@@ -42,12 +48,12 @@ export default function EmployeeList() {
     }
   };
 
-  const copySignupLink = async () => {
+  const copySignupLink = async (url = signupUrl) => {
     try {
-      await navigator.clipboard.writeText(signupUrl);
+      await navigator.clipboard.writeText(url);
       showToast("회원가입 링크를 복사했습니다");
     } catch {
-      showToast(signupUrl);
+      showToast(url);
     }
   };
 
@@ -56,13 +62,35 @@ export default function EmployeeList() {
       <Card
         title="신규 직원 추가"
         icon="＋"
-        action={<button className="btn btn-primary btn-sm" onClick={copySignupLink}>회원가입 링크 복사</button>}
+        action={<button className="btn btn-primary btn-sm" onClick={() => void copySignupLink()}>회원가입 링크 복사</button>}
       >
         <p className="muted small" style={{ margin: 0 }}>
           현재 직원 추가는 직원이 회원가입하면 자동으로 처리됩니다. 링크를 직원에게 보내면
           가입 시 직원번호가 발급되고, 직원 문서와 앱 계정이 같이 생성됩니다.
         </p>
       </Card>
+
+      {candidateName && (
+        <Card
+          title="직접 입력 이름 정식 등록"
+          icon="🏷️"
+          action={
+            <button className="btn btn-primary btn-sm" onClick={() => void copySignupLink(candidateSignupUrl)}>
+              이름 포함 링크 복사
+            </button>
+          }
+        >
+          <div className="candidate-register">
+            <div>
+              <span className="candidate-name">{candidateName}</span>
+              <p className="muted small">
+                이 이름은 근무표에서 직접 입력된 이름입니다. 링크를 보내면 회원가입 화면 이름 칸에 미리 채워집니다.
+              </p>
+            </div>
+            <span className="candidate-url">{candidateSignupUrl}</span>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-3" style={{ marginBottom: 16 }}>
         <StatCard label="전체 직원" value={employees.length} unit="명" icon="👥" />

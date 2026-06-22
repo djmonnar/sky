@@ -53,6 +53,12 @@ const isSameEmployeeInput = (employee: Employee, query: string) => {
   return normalizeSearch(employee.name) === q || String(employee.id) === q;
 };
 
+const isManualShift = (shift: Shift) =>
+  shift.employeeId < 0 || shift.roleLabel === "직접 입력";
+
+const employeeCandidateUrl = (name: string) =>
+  `/employees?candidate=${encodeURIComponent(name)}`;
+
 export default function ScheduleManage() {
   const { shifts, setShift, deleteShift, showToast, employees, role } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
@@ -204,6 +210,24 @@ export default function ScheduleManage() {
       return;
     }
     addOneEmployee(matches[0]);
+  };
+
+  const linkManualShiftToEmployee = (shift: Shift, employee: Employee) => {
+    if (selShifts.some((item) => item.id !== shift.id && item.employeeId === employee.id)) {
+      showToast("이미 이 칸에 배치된 직원입니다");
+      return;
+    }
+    const id = `${shift.date}_${shift.period}_${shift.department}_${employee.id}`;
+    setShift({
+      ...shift,
+      id,
+      employeeId: employee.id,
+      empId: employee.id,
+      employeeName: employee.name,
+      roleLabel: employee.roleLabel,
+    });
+    deleteShift(shift.id);
+    showToast(`${employee.name} 직원으로 연결했습니다`);
   };
 
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -398,13 +422,33 @@ export default function ScheduleManage() {
                   <div className="assign-list">
                     {selShifts.map((s) => {
                       const emp = employees.find((e) => e.id === s.employeeId);
+                      const manual = isManualShift(s);
+                      const matchingEmployee = manual
+                        ? employees.find((e) => normalizeSearch(e.name) === normalizeSearch(s.employeeName))
+                        : undefined;
                       return (
-                        <div className="assign-row" key={s.id}>
+                        <div className={`assign-row ${manual ? "manual" : ""}`} key={s.id}>
                           <span className="avatar">{(s.employeeName ?? "?")[0]}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="bold small">{s.employeeName}{(s.roleLabel ?? emp?.roleLabel) ? ` (${s.roleLabel ?? emp?.roleLabel})` : ""}</div>
+                            <div className="bold small">
+                              {s.employeeName}{!manual && (s.roleLabel ?? emp?.roleLabel) ? ` (${s.roleLabel ?? emp?.roleLabel})` : ""}
+                            </div>
                             <div className="muted small">{emp?.role ?? "—"}</div>
                           </div>
+                          {manual && <Badge tone="amber">직접 입력</Badge>}
+                          {manual && matchingEmployee && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => linkManualShiftToEmployee(s, matchingEmployee)}
+                            >
+                              직원 연결
+                            </button>
+                          )}
+                          {manual && role === "admin" && !matchingEmployee && (
+                            <Link className="btn btn-outline btn-sm" to={employeeCandidateUrl(s.employeeName)}>
+                              정식 등록
+                            </Link>
+                          )}
                           <button className="btn btn-danger btn-sm" onClick={() => removeShift(s)}>삭제</button>
                         </div>
                       );
@@ -475,18 +519,38 @@ export default function ScheduleManage() {
 
           {selShifts.length > 0 && (
             <div className="mobile-assigned-list" aria-label="배치된 직원">
-              {selShifts.map((shift) => (
-                <button
-                  className="mobile-assigned-chip"
-                  type="button"
-                  key={shift.id}
-                  onClick={() => removeShift(shift)}
-                  aria-label={`${shift.employeeName} 배치 삭제`}
-                >
-                  {shift.employeeName}
-                  <span>삭제</span>
-                </button>
-              ))}
+              {selShifts.map((shift) => {
+                const manual = isManualShift(shift);
+                const matchingEmployee = manual
+                  ? employees.find((employee) => normalizeSearch(employee.name) === normalizeSearch(shift.employeeName))
+                  : undefined;
+                return (
+                  <div className={`mobile-assigned-chip ${manual ? "manual" : ""}`} key={shift.id}>
+                    <b>{shift.employeeName}</b>
+                    {manual && <span>직접 입력</span>}
+                    {manual && matchingEmployee && (
+                      <button
+                        className="link-action"
+                        type="button"
+                        onClick={() => linkManualShiftToEmployee(shift, matchingEmployee)}
+                      >
+                        연결
+                      </button>
+                    )}
+                    {manual && role === "admin" && !matchingEmployee && (
+                      <Link to={employeeCandidateUrl(shift.employeeName)}>등록</Link>
+                    )}
+                    <button
+                      className="delete-action"
+                      type="button"
+                      onClick={() => removeShift(shift)}
+                      aria-label={`${shift.employeeName} 배치 삭제`}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -522,7 +586,9 @@ function RowCells({
               <span className="smx-add">＋</span>
             ) : (
               cell.map((s) => (
-                <span className="smx-chip" key={s.id}>{s.employeeName}</span>
+                <span className={`smx-chip ${isManualShift(s) ? "manual" : ""}`} key={s.id}>
+                  {s.employeeName}
+                </span>
               ))
             )}
           </button>
