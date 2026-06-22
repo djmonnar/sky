@@ -40,6 +40,19 @@ const employeeMatchesQuery = (employee: Employee, query: string) => {
   ].some((value) => value.toLowerCase().includes(q));
 };
 
+const manualEmployeeId = (name: string) => {
+  let hash = 0;
+  for (const char of normalizeSearch(name)) {
+    hash = ((hash * 31) + char.charCodeAt(0)) | 0;
+  }
+  return -Math.max(1, Math.abs(hash));
+};
+
+const isSameEmployeeInput = (employee: Employee, query: string) => {
+  const q = normalizeSearch(query);
+  return normalizeSearch(employee.name) === q || String(employee.id) === q;
+};
+
 export default function ScheduleManage() {
   const { shifts, setShift, deleteShift, showToast, employees, role } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
@@ -74,6 +87,11 @@ export default function ScheduleManage() {
   const resetSlotDraft = () => {
     setSelectedEmployeeIds([]);
     setEmployeeSearch("");
+  };
+
+  const updateEmployeeSearch = (value: string) => {
+    setEmployeeSearch(value);
+    setSelectedEmployeeIds([]);
   };
 
   const selectSlot = (next: SelSlot) => {
@@ -139,15 +157,46 @@ export default function ScheduleManage() {
     showToast(`${employee.name} 배치했습니다`);
   };
 
+  const addManualName = (rawName: string) => {
+    if (!sel) return;
+    const name = rawName.trim();
+    if (!name) return;
+    if (selShifts.some((shift) => normalizeSearch(shift.employeeName) === normalizeSearch(name))) {
+      showToast("이미 배치된 이름입니다");
+      return;
+    }
+    const date = shiftDateForDay(week, sel.dayIndex);
+    const time = PERIOD_TIME[sel.period];
+    const employeeId = manualEmployeeId(name);
+    const id = `${date}_${sel.period}_${sel.department}_manual_${Math.abs(employeeId)}`;
+    setShift({
+      id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
+      period: sel.period, department: sel.department,
+      employeeId, empId: employeeId,
+      employeeName: name, roleLabel: "직접 입력",
+      order: selShifts.length, ...time,
+    });
+    resetSlotDraft();
+    showToast(`${name} 이름으로 배치했습니다`);
+  };
+
   const addEmployeeBySearch = () => {
     const q = normalizeSearch(employeeSearch);
     if (!q) return;
+    const alreadyAssignedEmployee = employees.find((employee) => isSameEmployeeInput(employee, employeeSearch));
+    if (
+      alreadyAssignedEmployee
+      && !availableEmployees.some((employee) => employee.id === alreadyAssignedEmployee.id)
+    ) {
+      showToast("이미 배치된 직원입니다");
+      return;
+    }
     const exactMatches = availableEmployees.filter(
-      (employee) => normalizeSearch(employee.name) === q || String(employee.id) === q
+      (employee) => isSameEmployeeInput(employee, employeeSearch)
     );
     const matches = exactMatches.length > 0 ? exactMatches : filteredAvailableEmployees;
     if (matches.length === 0) {
-      showToast("일치하는 직원이 없습니다");
+      addManualName(employeeSearch);
       return;
     }
     if (matches.length > 1) {
@@ -297,12 +346,34 @@ export default function ScheduleManage() {
                 </div>
 
                 <label className="field-label">직원 추가</label>
+                <div className="slot-search-row">
+                  <input
+                    className="input"
+                    value={employeeSearch}
+                    onChange={(event) => updateEmployeeSearch(event.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder="직원 이름 검색 또는 직접 입력"
+                  />
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={addEmployeeBySearch}
+                    disabled={employeeSearch.trim().length === 0}
+                  >
+                    추가
+                  </button>
+                </div>
+                <div className="slot-search-hint">
+                  등록된 직원은 검색해서 추가하고, 없는 이름은 입력한 그대로 근무표에 올라갑니다.
+                </div>
                 <div className="employee-multi-add">
                   <div className="employee-multi-list" role="group" aria-label="추가할 직원 선택">
-                    {availableEmployees.length === 0 ? (
-                      <div className="employee-multi-empty">추가 가능한 직원이 없습니다.</div>
+                    {filteredAvailableEmployees.length === 0 ? (
+                      <div className="employee-multi-empty">
+                        {employeeSearch.trim() ? "검색 결과가 없습니다. 위 추가 버튼으로 이름만 올릴 수 있습니다." : "추가 가능한 직원이 없습니다."}
+                      </div>
                     ) : (
-                      availableEmployees.map((e) => (
+                      filteredAvailableEmployees.map((e) => (
                         <label className="employee-pick" key={e.id}>
                           <input
                             type="checkbox"
@@ -363,7 +434,7 @@ export default function ScheduleManage() {
               className="input mobile-slot-input"
               ref={searchInputRef}
               value={employeeSearch}
-              onChange={(event) => setEmployeeSearch(event.target.value)}
+              onChange={(event) => updateEmployeeSearch(event.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder="직원 이름 또는 번호 입력"
               autoFocus
@@ -377,12 +448,12 @@ export default function ScheduleManage() {
               추가
             </button>
           </div>
-          <div className="mobile-slot-hint">검색 결과를 누르거나 정확한 이름 입력 후 Enter를 누르세요.</div>
+          <div className="mobile-slot-hint">등록 직원은 검색 결과를 누르고, 없는 이름은 그대로 추가할 수 있습니다.</div>
 
           <div className="mobile-employee-results">
             {filteredAvailableEmployees.length === 0 ? (
               <div className="mobile-employee-empty">
-                {availableEmployees.length === 0 ? "추가 가능한 직원이 없습니다." : "검색 결과가 없습니다."}
+                {employeeSearch.trim() ? "검색 결과가 없습니다. 위 추가 버튼으로 이름만 올릴 수 있습니다." : "추가 가능한 직원이 없습니다."}
               </div>
             ) : (
               filteredAvailableEmployees.map((employee) => (

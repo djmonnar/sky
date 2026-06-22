@@ -444,6 +444,24 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   align-items: stretch;
   gap: 10px;
 }
+.slot-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 78px;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 6px;
+}
+.slot-search-row .btn {
+  min-height: 46px;
+  white-space: nowrap;
+}
+.slot-search-hint {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.45;
+}
 .employee-multi-list {
   max-height: 260px;
   overflow-y: auto;
