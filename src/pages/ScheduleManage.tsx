@@ -368,6 +368,23 @@ export default function ScheduleManage() {
     showToast("현재 주로 복사했습니다");
   };
 
+  const deleteCurrentWeekShifts = () => {
+    if (weekShifts.length === 0) {
+      showToast("삭제할 근무표가 없습니다");
+      return;
+    }
+
+    const rangeLabel = `${week[0].getFullYear()}년 ${week[0].getMonth() + 1}/${week[0].getDate()} ~ ${week[6].getMonth() + 1}/${week[6].getDate()}`;
+    const ok = window.confirm(
+      `${rangeLabel} 근무표 ${weekShifts.length}건을 모두 삭제할까요?\n삭제 후에는 되돌릴 수 없습니다.`
+    );
+    if (!ok) return;
+
+    weekShifts.forEach((shift) => deleteShift(shift.id));
+    clearSlot();
+    showToast(`이번 주 근무표 ${weekShifts.length}건을 삭제했습니다`);
+  };
+
   const sameSlot = (a: SelSlot | null, dayIndex: number, period: ShiftPeriod, department: Department) =>
     !!a && a.dayIndex === dayIndex && a.period === period && a.department === department;
 
@@ -392,6 +409,14 @@ export default function ScheduleManage() {
         </div>
         <div className="row schedule-actions">
           <button className="btn btn-outline btn-sm" onClick={() => copyWeek(-1)}>📄 지난주 복사</button>
+          <button
+            className="btn btn-danger btn-sm"
+            type="button"
+            onClick={deleteCurrentWeekShifts}
+            disabled={weekShifts.length === 0}
+          >
+            🗑️ 이번 주 전체 삭제
+          </button>
           {role === "admin" ? (
             <Link className="btn btn-outline btn-sm" to="/employees">＋ 직원 추가</Link>
           ) : (
