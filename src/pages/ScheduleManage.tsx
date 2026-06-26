@@ -25,6 +25,7 @@ function weekBase(offset: number): Date {
 }
 
 type SelSlot = { dayIndex: number; period: ShiftPeriod; department: Department };
+type CopiedSlot = { label: string; shifts: Shift[] };
 
 const normalizeSearch = (value: string) => value.trim().toLowerCase();
 
@@ -59,6 +60,16 @@ const isManualShift = (shift: Shift) =>
 const employeeCandidateUrl = (name: string) =>
   `/employees?candidate=${encodeURIComponent(name)}`;
 
+const shiftAssignmentId = (
+  date: string,
+  period: ShiftPeriod,
+  department: Department,
+  employeeId: number
+) =>
+  employeeId < 0
+    ? `${date}_${period}_${department}_manual_${Math.abs(employeeId)}`
+    : `${date}_${period}_${department}_${employeeId}`;
+
 export default function ScheduleManage() {
   const { shifts, setShift, deleteShift, showToast, employees, role } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
@@ -66,6 +77,7 @@ export default function ScheduleManage() {
   const [sel, setSel] = useState<SelSlot | null>(null);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
+  const [copiedSlot, setCopiedSlot] = useState<CopiedSlot | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const cellShifts = (s: SelSlot): Shift[] =>
@@ -89,6 +101,9 @@ export default function ScheduleManage() {
   const filteredAvailableEmployees = availableEmployees.filter((employee) =>
     employeeMatchesQuery(employee, employeeSearch)
   );
+
+  const selectedSlotLabel = (slot: SelSlot) =>
+    `${DOW_KO[slot.dayIndex]} ${week[slot.dayIndex].getMonth() + 1}/${week[slot.dayIndex].getDate()} · ${PERIOD_LABEL[slot.period]} · ${DEPARTMENT_LABEL[slot.department]}`;
 
   const resetSlotDraft = () => {
     setSelectedEmployeeIds([]);
@@ -134,7 +149,7 @@ export default function ScheduleManage() {
     const date = shiftDateForDay(week, sel.dayIndex);
     const time = PERIOD_TIME[sel.period];
     selectedEmployees.forEach((employee, index) => {
-      const id = `${date}_${sel.period}_${sel.department}_${employee.id}`;
+      const id = shiftAssignmentId(date, sel.period, sel.department, employee.id);
       setShift({
         id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
         period: sel.period, department: sel.department,
@@ -151,7 +166,7 @@ export default function ScheduleManage() {
     if (!sel) return;
     const date = shiftDateForDay(week, sel.dayIndex);
     const time = PERIOD_TIME[sel.period];
-    const id = `${date}_${sel.period}_${sel.department}_${employee.id}`;
+    const id = shiftAssignmentId(date, sel.period, sel.department, employee.id);
     setShift({
       id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
       period: sel.period, department: sel.department,
@@ -174,7 +189,7 @@ export default function ScheduleManage() {
     const date = shiftDateForDay(week, sel.dayIndex);
     const time = PERIOD_TIME[sel.period];
     const employeeId = manualEmployeeId(name);
-    const id = `${date}_${sel.period}_${sel.department}_manual_${Math.abs(employeeId)}`;
+    const id = shiftAssignmentId(date, sel.period, sel.department, employeeId);
     setShift({
       id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
       period: sel.period, department: sel.department,
@@ -217,7 +232,7 @@ export default function ScheduleManage() {
       showToast("이미 이 칸에 배치된 직원입니다");
       return;
     }
-    const id = `${shift.date}_${shift.period}_${shift.department}_${employee.id}`;
+    const id = shiftAssignmentId(shift.date, shift.period, shift.department, employee.id);
     setShift({
       ...shift,
       id,
@@ -236,6 +251,98 @@ export default function ScheduleManage() {
     addEmployeeBySearch();
   };
 
+  const copySelectedSlot = () => {
+    if (!sel) {
+      showToast("복사할 근무표 칸을 선택해주세요");
+      return;
+    }
+    if (selShifts.length === 0) {
+      showToast("선택한 칸에 복사할 직원이 없습니다");
+      return;
+    }
+    setCopiedSlot({
+      label: selectedSlotLabel(sel),
+      shifts: selShifts.map((shift) => ({ ...shift })),
+    });
+    showToast(`${selShifts.length}명 배치를 복사했습니다`);
+  };
+
+  const pasteCopiedSlot = () => {
+    if (!sel) {
+      showToast("붙여넣을 근무표 칸을 선택해주세요");
+      return;
+    }
+    if (!copiedSlot || copiedSlot.shifts.length === 0) {
+      showToast("복사된 근무표 칸이 없습니다");
+      return;
+    }
+
+    const date = shiftDateForDay(week, sel.dayIndex);
+    const time = PERIOD_TIME[sel.period];
+    let added = 0;
+
+    copiedSlot.shifts.forEach((source) => {
+      const manual = isManualShift(source);
+      const employeeId = manual ? manualEmployeeId(source.employeeName) : source.employeeId;
+      const duplicate = manual
+        ? selShifts.some((target) => normalizeSearch(target.employeeName) === normalizeSearch(source.employeeName))
+        : selShifts.some((target) => target.employeeId === employeeId);
+
+      if (duplicate) return;
+
+      setShift({
+        ...source,
+        id: shiftAssignmentId(date, sel.period, sel.department, employeeId),
+        date,
+        dayIndex: sel.dayIndex,
+        day: sel.dayIndex,
+        period: sel.period,
+        department: sel.department,
+        employeeId,
+        empId: employeeId,
+        employeeName: source.employeeName,
+        roleLabel: source.roleLabel,
+        order: selShifts.length + added,
+        ...time,
+      });
+      added += 1;
+    });
+
+    showToast(
+      added > 0
+        ? `${added}명 배치를 붙여넣었습니다`
+        : "이미 같은 직원이 배치되어 있습니다"
+    );
+  };
+
+  useEffect(() => {
+    const handleScheduleShortcut = (event: globalThis.KeyboardEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget = !!target && (
+        target.isContentEditable
+        || target.tagName === "INPUT"
+        || target.tagName === "TEXTAREA"
+        || target.tagName === "SELECT"
+      );
+      if (isTypingTarget) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        event.preventDefault();
+        copySelectedSlot();
+      }
+      if (key === "v") {
+        event.preventDefault();
+        pasteCopiedSlot();
+      }
+    };
+
+    window.addEventListener("keydown", handleScheduleShortcut);
+    return () => window.removeEventListener("keydown", handleScheduleShortcut);
+  });
+
   const removeShift = (s: Shift) => {
     deleteShift(s.id);
     showToast("배치를 삭제했습니다");
@@ -251,7 +358,12 @@ export default function ScheduleManage() {
     }
     source.forEach((s) => {
       const targetDate = shiftDateForDay(week, s.dayIndex);
-      setShift({ ...s, id: `${targetDate}_${s.period}_${s.department}_${s.employeeId}`, date: targetDate, day: s.dayIndex });
+      setShift({
+        ...s,
+        id: shiftAssignmentId(targetDate, s.period, s.department, s.employeeId),
+        date: targetDate,
+        day: s.dayIndex,
+      });
     });
     showToast("현재 주로 복사했습니다");
   };
@@ -390,6 +502,29 @@ export default function ScheduleManage() {
                 <div className="slot-search-hint">
                   등록된 직원은 검색해서 추가하고, 없는 이름은 입력한 그대로 근무표에 올라갑니다.
                 </div>
+                <div className="slot-copy-row">
+                  <button
+                    className="btn btn-outline btn-sm"
+                    type="button"
+                    onClick={copySelectedSlot}
+                    disabled={selShifts.length === 0}
+                  >
+                    Ctrl+C 복사
+                  </button>
+                  <button
+                    className="btn btn-outline btn-sm"
+                    type="button"
+                    onClick={pasteCopiedSlot}
+                    disabled={!copiedSlot}
+                  >
+                    Ctrl+V 붙여넣기
+                  </button>
+                </div>
+                {copiedSlot && (
+                  <div className="slot-copy-hint">
+                    복사됨: {copiedSlot.label} · {copiedSlot.shifts.length}명
+                  </div>
+                )}
                 <div className="employee-multi-add">
                   <div className="employee-multi-list" role="group" aria-label="추가할 직원 선택">
                     {filteredAvailableEmployees.length === 0 ? (
@@ -472,6 +607,30 @@ export default function ScheduleManage() {
             </div>
             <button className="icon-btn" type="button" aria-label="닫기" onClick={clearSlot}>×</button>
           </div>
+
+          <div className="slot-copy-row mobile">
+            <button
+              className="btn btn-outline btn-sm"
+              type="button"
+              onClick={copySelectedSlot}
+              disabled={selShifts.length === 0}
+            >
+              복사
+            </button>
+            <button
+              className="btn btn-outline btn-sm"
+              type="button"
+              onClick={pasteCopiedSlot}
+              disabled={!copiedSlot}
+            >
+              붙여넣기
+            </button>
+          </div>
+          {copiedSlot && (
+            <div className="slot-copy-hint mobile">
+              {copiedSlot.label} · {copiedSlot.shifts.length}명 복사됨
+            </div>
+          )}
 
           <div className="mobile-slot-search-row">
             <input

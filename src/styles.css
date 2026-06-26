@@ -472,6 +472,24 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-weight: 650;
   line-height: 1.45;
 }
+.slot-copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 12px;
+}
+.slot-copy-row .btn {
+  flex: 1 1 128px;
+  min-height: 36px;
+  white-space: nowrap;
+}
+.slot-copy-hint {
+  margin: -6px 0 12px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.35;
+}
 .employee-multi-list {
   max-height: 260px;
   overflow-y: auto;
@@ -599,6 +617,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 }
 .mobile-slot-search-row .btn {
   min-height: 46px;
+}
+.mobile-slot-editor .slot-copy-row {
+  margin: 0;
+}
+.mobile-slot-editor .slot-copy-row .btn {
+  min-height: 36px;
+}
+.mobile-slot-editor .slot-copy-hint {
+  margin: -3px 0 0;
 }
 .mobile-slot-hint {
   color: var(--text-muted);
