@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, Badge, StatCard } from "../components/ui";
+import EmploymentContractBuilder from "../components/EmploymentContractBuilder";
 import { salaryTypeLabel, employmentLabel } from "../lib/payroll";
 import type { Employee, EmploymentType, Role, SalaryType } from "../data/types";
 
@@ -33,6 +34,7 @@ export default function EmployeeList() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [draft, setDraft] = useState<Employee | null>(null);
+  const [contractEmployee, setContractEmployee] = useState<Employee | null>(null);
   const [searchParams] = useSearchParams();
   const candidateName = searchParams.get("candidate")?.trim() ?? "";
   const signupUrl = `${window.location.origin}/signup`;
@@ -82,6 +84,16 @@ export default function EmployeeList() {
   const openEdit = (employee: Employee) => {
     setEditing(employee);
     setDraft({ ...employee });
+    setContractEmployee(null);
+  };
+
+  const openContract = (employee: Employee) => {
+    setContractEmployee(employee);
+    setEditing(null);
+    setDraft(null);
+    window.setTimeout(() => {
+      document.querySelector(".contract-builder")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   };
 
   const saveEmployee = () => {
@@ -269,6 +281,17 @@ export default function EmployeeList() {
         </Card>
       )}
 
+      {contractEmployee && (
+        <Card title="근로계약서 작성" icon="📝">
+          <EmploymentContractBuilder
+            key={contractEmployee.id}
+            employee={contractEmployee}
+            onClose={() => setContractEmployee(null)}
+            showToast={showToast}
+          />
+        </Card>
+      )}
+
       <Card title="직원 관리" icon="👥">
         <div className="bulk-bar">
           <label className="check-row">
@@ -320,6 +343,7 @@ export default function EmployeeList() {
 
                   <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
                     <button className="btn btn-outline btn-sm" onClick={() => openEdit(emp)}>수정</button>
+                    <button className="btn btn-soft btn-sm" onClick={() => openContract(emp)}>근로계약서</button>
                     {uid ? (
                       <>
                         <Badge tone={roleTone(appRole)}>{roleLabel(appRole)}</Badge>
