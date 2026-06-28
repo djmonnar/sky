@@ -191,6 +191,46 @@ function slashArgs(body) {
   return first ? [first, ...parts.slice(1)] : parts.slice(1);
 }
 
+function textReservationFields(body) {
+  const raw = utteranceOf(body);
+  const text = raw.replace(/\//g, " ");
+  const phoneMatch = text.match(/01[016789][-\s]?\d{3,4}[-\s]?\d{4}/);
+  const dateMatch = text.match(/오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b/);
+  const periodMatch = text.match(/오전|오후/);
+  const timeSource = periodMatch ? text.slice(periodMatch.index ?? 0) : text;
+  const timeMatch = timeSource.match(/\b\d{1,2}(?::\d{2})?\b/);
+  const peopleMatch = text.match(/(\d+)\s*(?:명|인)/);
+
+  let name = "";
+  if (phoneMatch) {
+    name = text.slice(0, phoneMatch.index)
+      .replace(/예약\s*(등록|추가|작성|잡아줘|잡아|잡)?/g, " ")
+      .replace(dateMatch?.[0] ?? "", " ")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  let seat = "";
+  if (peopleMatch && peopleMatch.index !== undefined) {
+    seat = text.slice(peopleMatch.index + peopleMatch[0].length)
+      .replace(/요청사항|메모/g, " ")
+      .trim();
+  }
+
+  return {
+    dateInput: dateMatch?.[0] ?? "",
+    name,
+    phone: phoneMatch?.[0] ?? "",
+    period: periodMatch?.[0] ?? "",
+    time: timeMatch?.[0] ?? "",
+    people: peopleMatch?.[1] ?? "",
+    seat,
+    request: "",
+  };
+}
+
 function reservationCreateFields(body) {
   const parts = slashArgs(body);
   const utterance = utteranceOf(body);
@@ -213,7 +253,17 @@ function reservationCreateFields(body) {
   const people = paramOf(body, ["people", "인원"]) || positionalParts[4] || "";
   const seat = paramOf(body, ["seat", "좌석", "자리"]) || positionalParts[5] || "";
   const request = paramOf(body, ["request", "요청사항", "메모"]) || positionalParts[6] || "";
-  return { dateInput, name, phone, period, time, people, seat, request };
+  const textFields = textReservationFields(body);
+  return {
+    dateInput: dateInput || textFields.dateInput,
+    name: name || textFields.name,
+    phone: phone || textFields.phone,
+    period: period || textFields.period,
+    time: time || textFields.time,
+    people: people || textFields.people,
+    seat: seat || textFields.seat,
+    request: request || textFields.request,
+  };
 }
 
 function getIdentity(body) {
