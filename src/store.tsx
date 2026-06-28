@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
-  Notice, Employee,
+  Notice, Employee, Vendor, Recipe,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
@@ -27,6 +27,8 @@ import {
   fsUpsertNotice, fsDeleteNotice,
   fsUpsertHandover, fsDeleteHandover, fsAddAttendanceLog,
   subscribeUserProfiles, fsUpdateUserRole,
+  subscribeVendors, subscribeRecipes,
+  fsUpsertVendor, fsDeleteVendor, fsUpsertRecipe, fsDeleteRecipe,
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
 
@@ -37,6 +39,8 @@ export const APP_MODE: AppMode =
   !firebaseConfigured || import.meta.env.VITE_DEMO_MODE === "true"
     ? "demo"
     : "live";
+
+const DEFAULT_PAYROLL_PASSWORD = "qaz@qwer4312";
 
 interface Store {
   mode: AppMode;
@@ -89,6 +93,12 @@ interface Store {
   upsertHandover: (handover: Notice) => void;
   deleteHandover: (docId: string) => void;
   addHandover: (text: string) => void;
+  vendors: Vendor[];
+  upsertVendor: (vendor: Vendor) => void;
+  deleteVendor: (id: number) => void;
+  recipes: Recipe[];
+  upsertRecipe: (recipe: Recipe) => void;
+  deleteRecipe: (id: number) => void;
 
   punchStatus: PunchStatus;
   punchInAt: string | null;
@@ -123,13 +133,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [payroll, setPayroll] = useState<PayrollRow[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [handovers, setHandovers] = useState<Notice[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
 
   const [punchStatus, setPunchStatus] = useState<PunchStatus>("before");
   const [punchInAt, setPunchInAt] = useState<string | null>(null);
   const [punchOutAt, setPunchOutAt] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [demoPayrollPassword, setDemoPayrollPassword] = useState(() =>
-    window.localStorage.getItem("haneulttang.payrollPassword") ?? "0000"
+    window.localStorage.getItem("haneulttang.payrollPassword") ?? DEFAULT_PAYROLL_PASSWORD
   );
   // 회원가입 중에는 auth 리스너가 프로필을 먼저 조회하지 않도록 막음
   // (계정 생성 → users 문서 생성 사이의 레이스 방지)
@@ -144,7 +156,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "demo") return;
     (async () => {
-      const [emp, resv, sh, rec, pay, not, hand] = await Promise.all([
+      const [emp, resv, sh, rec, pay, not, hand, ven, recipeList] = await Promise.all([
         repository.listEmployees(),
         repository.listReservations(),
         repository.listShifts(),
@@ -152,6 +164,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         repository.listPayroll(),
         repository.listNotices(),
         repository.listHandovers(),
+        repository.listVendors(),
+        repository.listRecipes(),
       ]);
       setEmployees(emp);
       setReservations(resv);
@@ -160,6 +174,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setPayroll(pay);
       setNotices(not);
       setHandovers(hand);
+      setVendors(ven);
+      setRecipes(recipeList);
       setLoading(false);
     })();
   }, []);
@@ -252,6 +268,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? [
             subscribePayroll(setPayroll, onErr),
             subscribeUserProfiles(setUserProfiles, onErr),
+            subscribeVendors(setVendors, onErr),
+            subscribeRecipes(setRecipes, onErr),
           ]
         : []),
     ];
@@ -404,6 +422,77 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPayroll((prev) =>
       prev.map((p) => (p.empId === empId ? { ...p, ...patch } : p))
     );
+  }, [fail]);
+
+  const upsertVendor = useCallback((vendor: Vendor) => {
+    const normalized: Vendor = {
+      ...vendor,
+      name: vendor.name.trim(),
+      businessNumber: vendor.businessNumber.trim(),
+      address: vendor.address.trim(),
+      active: vendor.active ?? true,
+    };
+    if (APP_MODE === "live") {
+      fsUpsertVendor(normalized).catch(fail("거래처 저장"));
+      return;
+    }
+    void repository.saveVendor(normalized);
+    setVendors((prev) => {
+      const i = prev.findIndex((v) => v.id === normalized.id);
+      if (i === -1) return [...prev, normalized].sort((a, b) => a.name.localeCompare(b.name));
+      const next = [...prev];
+      next[i] = normalized;
+      return next.sort((a, b) => a.name.localeCompare(b.name));
+    });
+  }, [fail]);
+
+  const deleteVendor = useCallback((id: number) => {
+    if (APP_MODE === "live") {
+      fsDeleteVendor(id).catch(fail("거래처 삭제"));
+      return;
+    }
+    void repository.deleteVendor(id);
+    setVendors((prev) => prev.filter((v) => v.id !== id));
+  }, [fail]);
+
+  const upsertRecipe = useCallback((recipe: Recipe) => {
+    const normalized: Recipe = {
+      ...recipe,
+      name: recipe.name.trim(),
+      category: recipe.category.trim(),
+      servings: Math.max(1, Number(recipe.servings) || 1),
+      ingredients: recipe.ingredients.map((ingredient) => ({
+        ...ingredient,
+        name: ingredient.name.trim(),
+        quantity: Number(ingredient.quantity) || 0,
+        unitCost: Number(ingredient.unitCost) || 0,
+      })),
+      laborCost: Number(recipe.laborCost) || 0,
+      overheadCost: Number(recipe.overheadCost) || 0,
+      salePrice: Number(recipe.salePrice) || 0,
+      active: recipe.active ?? true,
+    };
+    if (APP_MODE === "live") {
+      fsUpsertRecipe(normalized).catch(fail("레시피 저장"));
+      return;
+    }
+    void repository.saveRecipe(normalized);
+    setRecipes((prev) => {
+      const i = prev.findIndex((r) => r.id === normalized.id);
+      if (i === -1) return [...prev, normalized].sort((a, b) => a.name.localeCompare(b.name));
+      const next = [...prev];
+      next[i] = normalized;
+      return next.sort((a, b) => a.name.localeCompare(b.name));
+    });
+  }, [fail]);
+
+  const deleteRecipe = useCallback((id: number) => {
+    if (APP_MODE === "live") {
+      fsDeleteRecipe(id).catch(fail("레시피 삭제"));
+      return;
+    }
+    void repository.deleteRecipe(id);
+    setRecipes((prev) => prev.filter((r) => r.id !== id));
   }, [fail]);
 
   const getPayrollPassword = useCallback(async () => {
@@ -602,18 +691,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       records, addRecord, approveRecord,
       payroll, updatePayroll, getPayrollPassword, setPayrollPassword,
       notices, handovers, upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
+      vendors, upsertVendor, deleteVendor,
+      recipes, upsertRecipe, deleteRecipe,
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
     [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
-     reservations, shifts, records, payroll, notices, handovers,
+     reservations, shifts, records, payroll, notices, handovers, vendors, recipes,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertEmployee, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
      setShift, deleteShift, addRecord, approveRecord, updatePayroll,
      getPayrollPassword, setPayrollPassword,
      upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
+     upsertVendor, deleteVendor, upsertRecipe, deleteRecipe,
      punchIn, punchOut, showToast]
   );
 

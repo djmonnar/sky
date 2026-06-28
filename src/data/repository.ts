@@ -8,11 +8,11 @@
    ============================================================ */
 
 import {
-  Employee, Reservation, Shift, WorkRecord, PayrollRow, Notice,
+  Employee, Recipe, Reservation, Shift, WorkRecord, PayrollRow, Notice, Vendor,
 } from "./types";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
-  SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS,
+  SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
 } from "./mock";
 
 export interface Repository {
@@ -42,6 +42,14 @@ export interface Repository {
   saveHandover(n: Notice): Promise<void>;
   deleteHandover(id: number): Promise<void>;
   addHandover(n: Notice): Promise<void>;
+
+  listVendors(): Promise<Vendor[]>;
+  saveVendor(v: Vendor): Promise<void>;
+  deleteVendor(id: number): Promise<void>;
+
+  listRecipes(): Promise<Recipe[]>;
+  saveRecipe(r: Recipe): Promise<void>;
+  deleteRecipe(id: number): Promise<void>;
 }
 
 /** 인메모리 목업 구현 — 새로고침 시 초기화됨 */
@@ -54,6 +62,8 @@ export function createMockRepository(): Repository {
     payroll: structuredClone(SEED_PAYROLL),
     notices: structuredClone(SEED_NOTICES),
     handovers: structuredClone(SEED_HANDOVERS),
+    vendors: structuredClone(SEED_VENDORS),
+    recipes: structuredClone(SEED_RECIPES),
   };
 
   return {
@@ -124,6 +134,28 @@ export function createMockRepository(): Repository {
       if (i !== -1) db.handovers.splice(i, 1);
     },
     async addHandover(n) { db.handovers.unshift(n); },
+
+    async listVendors() { return [...db.vendors]; },
+    async saveVendor(v) {
+      const i = db.vendors.findIndex((x) => x.id === v.id);
+      if (i === -1) db.vendors.unshift(v);
+      else db.vendors[i] = v;
+    },
+    async deleteVendor(id) {
+      const i = db.vendors.findIndex((x) => x.id === id);
+      if (i !== -1) db.vendors.splice(i, 1);
+    },
+
+    async listRecipes() { return [...db.recipes]; },
+    async saveRecipe(r) {
+      const i = db.recipes.findIndex((x) => x.id === r.id);
+      if (i === -1) db.recipes.unshift(r);
+      else db.recipes[i] = r;
+    },
+    async deleteRecipe(id) {
+      const i = db.recipes.findIndex((x) => x.id === id);
+      if (i !== -1) db.recipes.splice(i, 1);
+    },
   };
 }
 

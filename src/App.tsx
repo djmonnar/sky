@@ -14,6 +14,8 @@ import Payroll from "./pages/Payroll";
 import Notices from "./pages/Notices";
 import EmployeeList from "./pages/EmployeeList";
 import Guide from "./pages/Guide";
+import Vendors from "./pages/Vendors";
+import Recipes from "./pages/Recipes";
 
 function Splash({ text }: { text: string }) {
   return (
@@ -52,6 +54,8 @@ export default function App() {
         <Route path="/schedule-manage" element={canManageOps ? <ScheduleManage /> : <Navigate to="/schedule" replace />} />
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />
         <Route path="/employees" element={role === "admin" ? <EmployeeList /> : <Navigate to="/" replace />} />
+        <Route path="/vendors" element={role === "admin" ? <Vendors /> : <Navigate to="/" replace />} />
+        <Route path="/recipes" element={role === "admin" ? <Recipes /> : <Navigate to="/" replace />} />
         <Route path="/guide" element={canManageOps ? <Guide /> : <Navigate to="/" replace />} />
         <Route path="/notices" element={<Notices />} />
         {/* 로그인 상태(또는 데모 모드)에서 /signup 접근 시 홈으로 */}

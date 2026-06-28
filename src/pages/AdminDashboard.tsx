@@ -180,6 +180,8 @@ export default function AdminDashboard() {
               <Link to="/reservations" className="quick-action"><span className="qa-ic">📞</span>예약 등록</Link>
               <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표 작성</Link>
               {canViewPayroll && <Link to="/payroll" className="quick-action"><span className="qa-ic">💰</span>급여 확인</Link>}
+              {canViewPayroll && <Link to="/vendors" className="quick-action"><span className="qa-ic">🏢</span>거래처</Link>}
+              {canViewPayroll && <Link to="/recipes" className="quick-action"><span className="qa-ic">🥘</span>레시피 원가</Link>}
               <Link to="/notices" className="quick-action"><span className="qa-ic">📢</span>공지 등록</Link>
               <Link to="/guide" className="quick-action"><span className="qa-ic">📖</span>사용 가이드</Link>
             </div>

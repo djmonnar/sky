@@ -6,9 +6,11 @@ import type {
   Employee,
   Notice,
   PayrollRow,
+  Recipe,
   Reservation,
   Shift,
   ShiftPeriod,
+  Vendor,
   WorkRecord,
 } from "./types";
 
@@ -180,6 +182,48 @@ export const SEED_HANDOVERS: Notice[] = [
   { id: 2, text: "유아의자 1개 13시 예약 테이블에 미리 준비해주세요.", date: "06-12" },
   { id: 3, text: "창가 쪽 블라인드 수리 접수했습니다. 당분간 수동 조작입니다.", date: "06-11" },
   { id: 4, text: "마감 시 식기세척기 필터 청소 꼭 확인 부탁드립니다.", date: "06-11" },
+];
+
+export const SEED_VENDORS: Vendor[] = [
+  {
+    id: 1,
+    name: "하늘식자재",
+    businessNumber: "123-45-67890",
+    address: "광주광역시 북구 샘플로 12",
+    contactName: "김담당",
+    phone: "062-000-0000",
+    memo: "채소/공산품 주 거래처",
+    active: true,
+  },
+  {
+    id: 2,
+    name: "땅푸드",
+    businessNumber: "234-56-78901",
+    address: "광주광역시 서구 예시로 8",
+    contactName: "박담당",
+    phone: "062-111-1111",
+    memo: "육류 납품",
+    active: true,
+  },
+];
+
+export const SEED_RECIPES: Recipe[] = [
+  {
+    id: 1,
+    name: "샘플 김치찌개",
+    category: "찌개",
+    servings: 4,
+    salePrice: 32000,
+    laborCost: 3000,
+    overheadCost: 2000,
+    memo: "원가계산 예시 레시피",
+    active: true,
+    ingredients: [
+      { id: "pork", name: "돼지고기", quantity: 0.6, unit: "kg", unitCost: 12000, vendorId: 2 },
+      { id: "kimchi", name: "김치", quantity: 1, unit: "kg", unitCost: 4500, vendorId: 1 },
+      { id: "tofu", name: "두부", quantity: 2, unit: "모", unitCost: 1200, vendorId: 1 },
+    ],
+  },
 ];
 
 export const CHECKLIST_TEMPLATE = [

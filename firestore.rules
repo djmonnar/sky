@@ -244,6 +244,14 @@ service cloud.firestore {
         allow write: if canManageOps(storeId);
       }
 
+      match /vendors/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
+      match /recipes/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
       match /handovers/{id} {
         allow read: if inStore(storeId);
         allow create: if inStore(storeId); // 전달사항은 누구나 남길 수 있음

@@ -20,6 +20,7 @@ import {
 import { requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
+  Vendor, Recipe,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
@@ -229,6 +230,42 @@ export function subscribeHandovers(cb: (v: Notice[]) => void, onError: ErrCb): U
   );
 }
 
+export function subscribeVendors(cb: (v: Vendor[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "vendors",
+    (d, id) => ({
+      ...(d as Vendor),
+      id: Number(d.id ?? id),
+      name: d.name ?? "",
+      businessNumber: d.businessNumber ?? "",
+      address: d.address ?? "",
+      active: d.active ?? true,
+    }),
+    (items) => cb(items.sort((a, b) => a.name.localeCompare(b.name))),
+    onError
+  );
+}
+
+export function subscribeRecipes(cb: (v: Recipe[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "recipes",
+    (d, id) => ({
+      ...(d as Recipe),
+      id: Number(d.id ?? id),
+      name: d.name ?? "",
+      category: d.category ?? "",
+      servings: Number(d.servings ?? 1),
+      ingredients: Array.isArray(d.ingredients) ? d.ingredients : [],
+      laborCost: Number(d.laborCost ?? 0),
+      overheadCost: Number(d.overheadCost ?? 0),
+      salePrice: Number(d.salePrice ?? 0),
+      active: d.active ?? true,
+    }),
+    (items) => cb(items.sort((a, b) => a.name.localeCompare(b.name))),
+    onError
+  );
+}
+
 /* ---------- 쓰기 ---------- */
 
 export async function fsUpsertReservation(r: Reservation): Promise<void> {
@@ -253,6 +290,30 @@ export async function fsUpsertEmployee(e: Employee): Promise<void> {
 
 export async function fsDeleteEmployee(id: number): Promise<void> {
   await deleteDoc(doc(col("employees"), String(id)));
+}
+
+export async function fsUpsertVendor(v: Vendor): Promise<void> {
+  await setDoc(
+    doc(col("vendors"), String(v.id)),
+    { ...v, active: v.active ?? true, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteVendor(id: number): Promise<void> {
+  await deleteDoc(doc(col("vendors"), String(id)));
+}
+
+export async function fsUpsertRecipe(r: Recipe): Promise<void> {
+  await setDoc(
+    doc(col("recipes"), String(r.id)),
+    { ...r, active: r.active ?? true, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteRecipe(id: number): Promise<void> {
+  await deleteDoc(doc(col("recipes"), String(id)));
 }
 
 export async function fsSetShift(s: Shift): Promise<void> {
@@ -296,7 +357,7 @@ export async function fsUpdatePayroll(
 export async function fsGetPayrollPassword(): Promise<string> {
   const snap = await getDoc(metaDoc("payrollPassword"));
   const value = snap.exists() ? snap.data().value : null;
-  return typeof value === "string" && value.length > 0 ? value : "0000";
+  return typeof value === "string" && value.length > 0 ? value : "qaz@qwer4312";
 }
 
 export async function fsSetPayrollPassword(nextPassword: string): Promise<void> {

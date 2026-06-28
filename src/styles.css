@@ -354,6 +354,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .table tbody tr:hover td { background: var(--bg-soft); }
 .table tbody tr.sel td { background: var(--green-50); }
 .table .num { font-variant-numeric: tabular-nums; }
+.vendor-table { min-width: 980px; }
+.recipe-table { min-width: 1040px; }
 
 .list-row {
   display: flex; align-items: center; gap: 12px;
@@ -1253,6 +1255,31 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 }
 .pay-line.minus .v { color: var(--red-tx); }
 
+/* ============ Vendors / recipes ============ */
+.recipe-ingredient-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.recipe-ingredient-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) 88px 78px 112px minmax(130px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card-alt);
+}
+.recipe-ingredient-cost {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+  min-width: 88px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ============ Side panel ============ */
 .side-panel { position: sticky; top: 16px; }
 
@@ -1323,6 +1350,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .employee-multi-add { grid-template-columns: 1fr; }
   .employee-multi-list { max-height: 300px; }
   .employee-multi-add .btn { width: 100%; }
+  .recipe-ingredient-row { grid-template-columns: 1fr 1fr; }
+  .recipe-ingredient-cost {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
   .slot-checks { grid-template-columns: 1fr; }
   .slot-record-title { font-size: 25px; }
   .stat-value { font-size: 20px; }

@@ -15,13 +15,13 @@ import {
 import { requireDb, STORE_ID } from "../lib/firebase";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
-  SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS,
+  SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
 } from "../data/mock";
 
 // attendanceLogs는 규칙상 삭제 불가(출퇴근 로그 불변)이므로 재설정 대상에서 제외
 const COLLECTIONS = [
   "employees", "reservations", "shifts", "workRecords",
-  "payroll", "notices", "handovers",
+  "payroll", "notices", "handovers", "vendors", "recipes",
 ];
 
 /** 슬롯 문서 id: 날짜_슬롯_구역_직원 (직원은 한 칸에 최대 1회) */
@@ -61,10 +61,17 @@ function buildSeedBatches(db: ReturnType<typeof requireDb>) {
   SEED_HANDOVERS.forEach((h) =>
     ops.push(() => batch.set(doc(colRef("handovers"), String(h.id)), { ...h, createdBy: "seed", createdAt: serverTimestamp() }))
   );
+  SEED_VENDORS.forEach((v) =>
+    ops.push(() => batch.set(doc(colRef("vendors"), String(v.id)), { ...v, active: true, ...ts() }))
+  );
+  SEED_RECIPES.forEach((r) =>
+    ops.push(() => batch.set(doc(colRef("recipes"), String(r.id)), { ...r, active: true, ...ts() }))
+  );
 
   // 직원번호 카운터: 다음 회원가입은 max(id)+1 부터
   const maxId = EMPLOYEES.reduce((m, e) => Math.max(m, e.id), 0);
   ops.push(() => batch.set(doc(colRef("meta"), "employeeCounter"), { value: maxId, updatedAt: serverTimestamp() }));
+  ops.push(() => batch.set(doc(colRef("meta"), "payrollPassword"), { value: "qaz@qwer4312", updatedAt: serverTimestamp() }));
 
   return { batch, ops };
 }
@@ -120,8 +127,11 @@ export async function resetFirestore(): Promise<string> {
   SEED_PAYROLL.forEach((p) => writes.push({ ref: doc(colRef2("payroll"), String(p.empId)), data: { ...p, ...ts() } }));
   SEED_NOTICES.forEach((n) => writes.push({ ref: doc(colRef2("notices"), String(n.id)), data: { ...n, ...ts() } }));
   SEED_HANDOVERS.forEach((h) => writes.push({ ref: doc(colRef2("handovers"), String(h.id)), data: { ...h, createdBy: "seed", createdAt: serverTimestamp() } }));
+  SEED_VENDORS.forEach((v) => writes.push({ ref: doc(colRef2("vendors"), String(v.id)), data: { ...v, active: true, ...ts() } }));
+  SEED_RECIPES.forEach((r) => writes.push({ ref: doc(colRef2("recipes"), String(r.id)), data: { ...r, active: true, ...ts() } }));
   const maxId = EMPLOYEES.reduce((m, e) => Math.max(m, e.id), 0);
   writes.push({ ref: doc(colRef2("meta"), "employeeCounter"), data: { value: maxId, updatedAt: serverTimestamp() } });
+  writes.push({ ref: doc(colRef2("meta"), "payrollPassword"), data: { value: "qaz@qwer4312", updatedAt: serverTimestamp() } });
 
   for (let i = 0; i < writes.length; i += 450) {
     const chunk = writes.slice(i, i + 450);

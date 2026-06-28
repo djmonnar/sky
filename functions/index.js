@@ -395,10 +395,11 @@ async function handlePayrollSummary(body, chatUser) {
   const denied = assertRole(chatUser, ["admin"]);
   if (denied) return failResponse(denied);
   const utterance = body.userRequest?.utterance ?? "";
-  const password = paramOf(body, ["password", "비밀번호"]) || (utterance.match(/\d{4,}/)?.[0] ?? "");
+  const passwordFromUtterance = utterance.match(/(?:password|비밀번호)\s+(\S+)/i)?.[1] ?? "";
+  const password = paramOf(body, ["password", "비밀번호"]) || passwordFromUtterance;
   const passwordSnap = await storeDoc("meta", "payrollPassword").get();
-  const expected = passwordSnap.exists ? String(passwordSnap.data().value ?? "0000") : "0000";
-  if (password !== expected) return failResponse("급여 확인 비밀번호가 필요합니다.\n예: 급여 요약 / 비밀번호 0000");
+  const expected = passwordSnap.exists ? String(passwordSnap.data().value ?? "qaz@qwer4312") : "qaz@qwer4312";
+  if (password !== expected) return failResponse("급여 확인 비밀번호가 필요합니다.\n예: 급여 요약 / 비밀번호 qaz@qwer4312");
 
   const docs = (await storeCol("payroll").get()).docs.map((doc) => doc.data());
   const total = docs.reduce((sum, row) => sum + Number(row.base ?? 0) + Number(row.extra ?? 0) - Number(row.deduct ?? 0), 0);

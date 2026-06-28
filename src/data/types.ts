@@ -124,6 +124,44 @@ export interface Notice {
   pinned?: boolean;
 }
 
+export interface Vendor {
+  id: number;
+  name: string;
+  businessNumber: string;
+  address: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
+  bank?: string;
+  account?: string;
+  memo?: string;
+  active?: boolean;
+  createdAt?: string;
+}
+
+export interface RecipeIngredient {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  vendorId?: number;
+}
+
+export interface Recipe {
+  id: number;
+  name: string;
+  category: string;
+  servings: number;
+  ingredients: RecipeIngredient[];
+  laborCost: number;
+  overheadCost: number;
+  salePrice: number;
+  memo?: string;
+  active?: boolean;
+  createdAt?: string;
+}
+
 export const RESV_STATUSES: ResvStatus[] = [
   "예약확정", "방문완료", "취소", "노쇼", "단체", "확인전화필요", "예약대기",
 ];

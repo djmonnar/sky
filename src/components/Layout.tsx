@@ -18,6 +18,8 @@ const ADMIN_NAV: NavDef[] = [
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표" },
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원" },
   { to: "/payroll", icon: "💰", label: "급여 관리", title: "급여 관리", mobile: true, mobileLabel: "급여" },
+  { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: false },
+  { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: false },
   { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, mobileLabel: "공지" },
   { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false },
 ];
