@@ -89,7 +89,7 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill
 | 예약 목록 | 오늘 예약, 내일 예약 | `reservation.list` | `date`, `period`, `status` 선택 |
 | 예약 등록 | 예약 등록, 예약 잡아줘 | `reservation.create` | `date`, `name`, `phone`, `period`, `time`, `people`, `seat` |
 | 예약 수정 | 예약 수정 | `reservation.update` | `id`, 변경할 `period`, `time`, `people`, `seat`, `status` |
-| 예약 상태 변경 | 방문완료, 예약 취소 | `reservation.status` | `id`, `status` |
+| 예약 상태 변경 | 방문완료, 예약 취소 | `reservation.status` | `id`, `status` 또는 `date`, `name`, `status` |
 | 예약 삭제 | 예약 삭제 | `reservation.delete` | `id` |
 | 근무표 보기 | 오늘 근무표, 내일 근무 | `schedule.list` | `date` |
 | 근무표 추가 | 근무표 추가 | `schedule.add` | `date`, `period`, `department`, `name` |
@@ -126,6 +126,7 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill
 예약 등록 / 내일 / 홍길동 / 010-1234-5678 / 오후 / 7:30 / 4명 / 창가
 예약 등록 홍길동 010-1234-5678 내일 오후 7:30 4명 창가
 예약 1780000000000 방문완료
+예약취소 6월29일 홍길동
 예약 삭제 / 1780000000000
 
 오늘 근무표

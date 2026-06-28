@@ -118,7 +118,7 @@ function parseNumber(raw, fallback = 0) {
 }
 
 function hasDateToken(raw) {
-  return /오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b/.test(String(raw ?? ""));
+  return /오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b|\d{1,2}\s*월\s*\d{1,2}\s*일?/.test(String(raw ?? ""));
 }
 
 function resolveDate(raw) {
@@ -135,6 +135,10 @@ function resolveDate(raw) {
   const slash = value.match(/\b(\d{1,2})[./-](\d{1,2})\b/);
   if (slash) {
     return `${today.slice(0, 4)}-${slash[1].padStart(2, "0")}-${slash[2].padStart(2, "0")}`;
+  }
+  const korean = value.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일?/);
+  if (korean) {
+    return `${today.slice(0, 4)}-${korean[1].padStart(2, "0")}-${korean[2].padStart(2, "0")}`;
   }
   return today;
 }
@@ -195,7 +199,7 @@ function textReservationFields(body) {
   const raw = utteranceOf(body);
   const text = raw.replace(/\//g, " ");
   const phoneMatch = text.match(/01[016789][-\s]?\d{3,4}[-\s]?\d{4}/);
-  const dateMatch = text.match(/오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b/);
+  const dateMatch = text.match(/오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b|\d{1,2}\s*월\s*\d{1,2}\s*일?/);
   const periodMatch = text.match(/오전|오후/);
   const timeSource = periodMatch ? text.slice(periodMatch.index ?? 0) : text;
   const timeMatch = timeSource.match(/\b\d{1,2}(?::\d{2})?\b/);
@@ -264,6 +268,83 @@ function reservationCreateFields(body) {
     seat: seat || textFields.seat,
     request: request || textFields.request,
   };
+}
+
+function explicitReservationId(body) {
+  const direct = paramOf(body, ["id", "reservationId", "예약번호"]);
+  if (direct) return parseNumber(direct);
+  const text = utteranceOf(body);
+  const labeled = text.match(/(?:예약번호|예약\s*번호|번호)\s*[:#]?\s*(\d{8,})/);
+  if (labeled) return Number(labeled[1]);
+  const afterReservation = text.match(/예약\s*(\d{8,})/);
+  if (afterReservation) return Number(afterReservation[1]);
+  const longId = text.match(/\b(\d{12,})\b/);
+  return longId ? Number(longId[1]) : 0;
+}
+
+function reservationLookupFields(body) {
+  const raw = utteranceOf(body);
+  const text = raw.replace(/\//g, " ");
+  const dateParam = paramOf(body, ["date", "날짜"]);
+  const nameParam = paramOf(body, ["name", "예약자", "이름"]);
+  const dateMatch = text.match(/오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b|\d{1,2}\s*월\s*\d{1,2}\s*일?/);
+  const dateInput = dateParam || dateMatch?.[0] || "";
+  if (nameParam) return { dateInput, name: nameParam };
+
+  let nameSource = text;
+  if (dateMatch && dateMatch.index !== undefined) {
+    nameSource = text.slice(dateMatch.index + dateMatch[0].length);
+  }
+  const name = nameSource
+    .replace(/예약\s*(취소|삭제|방문완료|방문|완료|노쇼|상태|수정|변경)?/g, " ")
+    .replace(/01[016789][-\s]?\d{3,4}[-\s]?\d{4}/g, " ")
+    .replace(/\b\d{1,2}(?::\d{2})?\b/g, " ")
+    .replace(/\d+\s*(?:명|인)/g, " ")
+    .replace(/오전|오후/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((token) => !["취소", "삭제", "방문완료", "방문", "완료", "노쇼", "예약확정", "확정", "상태"].includes(token))
+    .filter(Boolean)
+    .join(" ");
+  return { dateInput, name };
+}
+
+async function findReservationByDateAndName(body) {
+  const { dateInput, name } = reservationLookupFields(body);
+  if (!dateInput || !name) {
+    return {
+      error: "예약번호 또는 날짜+예약자명이 필요합니다.\n예: 예약취소 6월29일 홍길동",
+    };
+  }
+  const date = resolveDate(dateInput);
+  const targetName = name.replace(/\s+/g, "");
+  const docs = (await storeCol("reservations").where("date", "==", date).get()).docs
+    .map((doc) => ({ ref: doc.ref, data: doc.data() }))
+    .filter(({ data }) => String(data.name ?? "").replace(/\s+/g, "") === targetName);
+
+  if (docs.length === 0) {
+    return { error: `${date} ${name} 예약을 찾지 못했습니다.` };
+  }
+  if (docs.length > 1) {
+    const lines = docs.slice(0, 5).map(({ data }) =>
+      `${data.id}. ${data.time ?? ""} ${data.name ?? ""} ${data.people ?? ""}명 ${data.seat ?? ""}`.trim()
+    );
+    return {
+      error: `같은 이름 예약이 ${docs.length}건 있습니다. 예약번호로 다시 입력해주세요.\n${lines.join("\n")}`,
+    };
+  }
+  return docs[0];
+}
+
+async function reservationTarget(body) {
+  const id = explicitReservationId(body);
+  if (id) {
+    const ref = storeDoc("reservations", String(id));
+    const snap = await ref.get();
+    if (!snap.exists) return { error: `예약번호 ${id}를 찾지 못했습니다.` };
+    return { ref, data: snap.data() };
+  }
+  return findReservationByDateAndName(body);
 }
 
 function getIdentity(body) {
@@ -484,11 +565,10 @@ async function handleReservationCreate(body, chatUser) {
 
 async function handleReservationUpdate(body, mode = "update") {
   const text = utteranceOf(body);
-  const id = parseNumber(paramOf(body, ["id", "reservationId", "예약번호"]) || text);
-  if (!id) return failResponse("예약번호가 필요합니다.");
-  const ref = storeDoc("reservations", String(id));
-  const snap = await ref.get();
-  if (!snap.exists) return failResponse(`예약번호 ${id}를 찾지 못했습니다.`);
+  const target = await reservationTarget(body);
+  if (target.error) return failResponse(target.error);
+  const { ref, data } = target;
+  const id = data.id ?? ref.id;
   if (mode === "delete") {
     await ref.delete();
     return textResponse(`예약 ${id}번을 삭제했습니다.`, ["오늘 예약"]);
@@ -514,6 +594,12 @@ async function handleReservationUpdate(body, mode = "update") {
   if (time) patch.time = time;
   if (dateRaw) patch.date = resolveDate(dateRaw);
   await ref.set(patch, { merge: true });
+  if (patch.status === "취소") {
+    return textResponse(`예약 ${id}번을 취소했습니다.`, ["오늘 예약"]);
+  }
+  if (patch.status === "방문완료") {
+    return textResponse(`예약 ${id}번을 방문완료로 변경했습니다.`, ["오늘 예약"]);
+  }
   return textResponse(`예약 ${id}번을 수정했습니다.`, ["오늘 예약"]);
 }
 
