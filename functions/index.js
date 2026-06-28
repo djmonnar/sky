@@ -117,6 +117,10 @@ function parseNumber(raw, fallback = 0) {
   return found ? Number(found[0]) : fallback;
 }
 
+function hasDateToken(raw) {
+  return /오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b/.test(String(raw ?? ""));
+}
+
 function resolveDate(raw) {
   const today = formatDate();
   const value = String(raw ?? "").trim();
@@ -124,8 +128,11 @@ function resolveDate(raw) {
   if (/내일/.test(value)) return addDays(today, 1);
   if (/어제/.test(value)) return addDays(today, -1);
   if (/모레/.test(value)) return addDays(today, 2);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const slash = value.match(/^(\d{1,2})[./-](\d{1,2})$/);
+  const full = value.match(/(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (full) {
+    return `${full[1]}-${full[2].padStart(2, "0")}-${full[3].padStart(2, "0")}`;
+  }
+  const slash = value.match(/\b(\d{1,2})[./-](\d{1,2})\b/);
   if (slash) {
     return `${today.slice(0, 4)}-${slash[1].padStart(2, "0")}-${slash[2].padStart(2, "0")}`;
   }
@@ -175,6 +182,38 @@ function normalizeStatus(raw) {
   if (/대기/.test(text)) return "예약대기";
   if (/확정|예약/.test(text)) return "예약확정";
   return "";
+}
+
+function slashArgs(body) {
+  const parts = utteranceOf(body).split("/").map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+  const first = parts[0].replace(/예약\s*(등록|추가|작성|잡아줘|잡아|잡)?/g, "").trim();
+  return first ? [first, ...parts.slice(1)] : parts.slice(1);
+}
+
+function reservationCreateFields(body) {
+  const parts = slashArgs(body);
+  const utterance = utteranceOf(body);
+  let offset = 0;
+  let dateInput = paramOf(body, ["date", "날짜"]);
+  const datePartIndex = parts.findIndex((part) => hasDateToken(part));
+  if (!dateInput && datePartIndex >= 0) {
+    dateInput = parts[datePartIndex];
+    offset = datePartIndex + 1;
+  }
+  if (!dateInput && hasDateToken(utterance)) {
+    dateInput = utterance;
+  }
+  const expectedParts = parts.slice(offset);
+  const positionalParts = normalizePeriod(expectedParts[0]) ? [] : expectedParts;
+  const name = paramOf(body, ["name", "예약자", "이름"]) || positionalParts[0] || "";
+  const phone = paramOf(body, ["phone", "연락처", "전화"]) || positionalParts[1] || "";
+  const period = paramOf(body, ["period", "오전오후"]) || positionalParts[2] || "";
+  const time = paramOf(body, ["time", "시간"]) || positionalParts[3] || "";
+  const people = paramOf(body, ["people", "인원"]) || positionalParts[4] || "";
+  const seat = paramOf(body, ["seat", "좌석", "자리"]) || positionalParts[5] || "";
+  const request = paramOf(body, ["request", "요청사항", "메모"]) || positionalParts[6] || "";
+  return { dateInput, name, phone, period, time, people, seat, request };
 }
 
 function getIdentity(body) {
@@ -359,30 +398,38 @@ async function handleReservationList(body) {
 }
 
 async function handleReservationCreate(body, chatUser) {
-  const name = paramOf(body, ["name", "예약자", "이름"]);
-  const phone = paramOf(body, ["phone", "연락처", "전화"]);
-  const time = parseTime(paramOf(body, ["period", "오전오후"]), paramOf(body, ["time", "시간"]));
-  if (!name || !phone || !time) {
-    return failResponse("예약 등록에는 예약자, 연락처, 오전/오후, 시간이 필요합니다.\n예: 예약 등록 / 홍길동 / 010-1234-5678 / 오후 / 7:30 / 4명 / 창가");
+  const fields = reservationCreateFields(body);
+  const time = parseTime(fields.period, fields.time);
+  const missing = [];
+  if (!fields.dateInput) missing.push("날짜");
+  if (!fields.name) missing.push("예약자");
+  if (!fields.phone) missing.push("연락처");
+  if (!fields.period) missing.push("오전/오후");
+  if (!time) missing.push("시간");
+  if (missing.length > 0) {
+    return failResponse(
+      `예약 등록에는 다음 항목이 필요합니다: ${missing.join(", ")}.\n` +
+      "예: 예약 등록 / 내일 / 홍길동 / 010-1234-5678 / 오후 / 7:30 / 4명 / 창가"
+    );
   }
-  const people = Math.max(1, parseNumber(paramOf(body, ["people", "인원"]), 2));
+  const people = Math.max(1, parseNumber(fields.people, 2));
   const id = Date.now();
   const reservation = {
     id,
-    date: resolveDate(paramOf(body, ["date", "날짜"])),
+    date: resolveDate(fields.dateInput),
     time,
-    name,
-    phone,
+    name: fields.name,
+    phone: fields.phone,
     people,
-    seat: paramOf(body, ["seat", "좌석", "자리"]),
-    request: paramOf(body, ["request", "요청사항", "메모"]),
+    seat: fields.seat,
+    request: fields.request,
     status: normalizeStatus(paramOf(body, ["status", "상태"])) || (people >= 8 ? "단체" : "예약확정"),
     writer: chatUser.name,
     createdAt: nowStamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
   await storeDoc("reservations", String(id)).set(reservation, { merge: true });
-  return textResponse(`예약을 등록했습니다.\n번호: ${id}\n${reservation.date} ${reservation.time}\n${name} ${people}명 ${reservation.seat || ""}`, ["오늘 예약", "오늘 현황"]);
+  return textResponse(`예약을 등록했습니다.\n번호: ${id}\n${reservation.date} ${reservation.time}\n${fields.name} ${people}명 ${reservation.seat || ""}`, ["오늘 예약", "오늘 현황"]);
 }
 
 async function handleReservationUpdate(body, mode = "update") {
