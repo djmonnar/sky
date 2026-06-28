@@ -5,11 +5,12 @@ import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
 import { TODAY_DOW, TODAY_STR } from "../data";
 import { seedFirestore, resetFirestore } from "../dev/seedFirestore";
 import { finalPay, isMonthlyEmployee } from "../lib/payroll";
+import { latestSyncRun, money, ordersForDate, salesSummary } from "../lib/sales";
 import { planTimesForShifts, shiftsForDay, slotSummary } from "../lib/shifts";
 
 export default function AdminDashboard() {
   const {
-    reservations, shifts, records, payroll, employees, mode, loading, showToast, role,
+    reservations, shifts, records, payroll, employees, salesOrders, salesSyncRuns, mode, loading, showToast, role,
   } = useStore();
   const [seeding, setSeeding] = useState(false);
   const canViewPayroll = role === "admin";
@@ -55,6 +56,9 @@ export default function AdminDashboard() {
   }, 0) : 0;
   const warnResv = reservations.filter((r) => r.status === "확인전화필요");
   const groupResv = reservations.filter((r) => r.status === "단체");
+  const todaySales = ordersForDate(salesOrders, TODAY_STR);
+  const todaySalesSummary = salesSummary(todaySales);
+  const latestSalesSync = latestSyncRun(salesSyncRuns);
 
   return (
     <>
@@ -89,6 +93,7 @@ export default function AdminDashboard() {
       {/* KPI */}
       <div className="grid grid-4">
         <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="전일 대비 4건" trendUp icon="📋" />
+        {canViewPayroll && <StatCard label="오늘 매출" value={money(todaySalesSummary.netAmount)} unit="원" trend={`${todaySalesSummary.orderCount}건 · 객단가 ${money(todaySalesSummary.averageOrderAmount)}원`} trendUp icon="💳" tone="blue" />}
         <StatCard label="오늘 근무 직원" value={todayWorkers.length} unit="명" trend="슬롯 배치 기준" trendUp icon="👥" tone="blue" />
         <StatCard label="미확인 근무기록" value={pendingRecords.length} unit="건" trend="승인 대기 중" trendUp={false} icon="🗂️" tone="amber" />
         {canViewPayroll ? (
@@ -179,6 +184,7 @@ export default function AdminDashboard() {
             <div className="quick-actions">
               <Link to="/reservations" className="quick-action"><span className="qa-ic">📞</span>예약 등록</Link>
               <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표 작성</Link>
+              {canViewPayroll && <Link to="/sales" className="quick-action"><span className="qa-ic">💳</span>매출 확인</Link>}
               {canViewPayroll && <Link to="/payroll" className="quick-action"><span className="qa-ic">💰</span>급여 확인</Link>}
               {canViewPayroll && <Link to="/vendors" className="quick-action"><span className="qa-ic">🏢</span>거래처</Link>}
               {canViewPayroll && <Link to="/recipes" className="quick-action"><span className="qa-ic">🥘</span>레시피 원가</Link>}
@@ -186,6 +192,18 @@ export default function AdminDashboard() {
               <Link to="/guide" className="quick-action"><span className="qa-ic">📖</span>사용 가이드</Link>
             </div>
           </Card>
+
+          {canViewPayroll && (
+            <Card title="OK포스 매출 동기화" icon="💳" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
+              <div className="alert-item info">
+                <span>🔄</span>
+                <div>
+                  마지막 동기화 {latestSalesSync?.finishedAt || latestSalesSync?.startedAt || "없음"}
+                  <div className="desc">{latestSalesSync?.message || "OK포스 표준 API 연결 대기 중"}</div>
+                </div>
+              </div>
+            </Card>
+          )}
 
           {/* 승인 대기 */}
           <Card title="근무기록 승인 대기" icon="🗂️" action={canViewPayroll ? <Link to="/payroll" className="card-link">급여 관리 ›</Link> : undefined}>

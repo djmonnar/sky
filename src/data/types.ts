@@ -164,6 +164,66 @@ export interface Recipe {
   createdAt?: string;
 }
 
+export type SalesOrderStatus = "paid" | "canceled" | "refunded" | "partialRefund" | "voided";
+
+export interface SalesOrderItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  category?: string;
+}
+
+export interface SalesPayment {
+  method: "card" | "cash" | "simplePay" | "voucher" | "other";
+  amount: number;
+}
+
+export interface SalesOrder {
+  id: string;
+  okposOrderId: string;
+  businessDate: string; // YYYY-MM-DD
+  soldAt: string; // ISO or display timestamp
+  status: SalesOrderStatus;
+  totalAmount: number;
+  discountAmount: number;
+  paidAmount: number;
+  refundAmount: number;
+  paymentMethods: SalesPayment[];
+  items: SalesOrderItem[];
+  tableName?: string;
+  orderType?: "dineIn" | "takeout" | "delivery" | "other";
+  source?: "okpos" | "manual" | "mock";
+  syncedAt?: string;
+}
+
+export interface SalesDailySummary {
+  id: string;
+  businessDate: string;
+  orderCount: number;
+  canceledCount: number;
+  grossAmount: number;
+  discountAmount: number;
+  refundAmount: number;
+  netAmount: number;
+  averageOrderAmount: number;
+  paymentTotals: SalesPayment[];
+  syncedAt?: string;
+}
+
+export interface SalesSyncRun {
+  id: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: "success" | "failed" | "config_required" | "skipped";
+  importedCount: number;
+  updatedCount: number;
+  rangeStart: string;
+  rangeEnd: string;
+  message?: string;
+}
+
 export const RESV_STATUSES: ResvStatus[] = [
   "예약확정", "방문완료", "취소", "노쇼", "단체", "확인전화필요", "예약대기",
 ];

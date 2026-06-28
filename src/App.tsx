@@ -16,6 +16,7 @@ import EmployeeList from "./pages/EmployeeList";
 import Guide from "./pages/Guide";
 import Vendors from "./pages/Vendors";
 import Recipes from "./pages/Recipes";
+import Sales from "./pages/Sales";
 import MyProfile from "./pages/MyProfile";
 
 function Splash({ text }: { text: string }) {
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/schedule-manage" element={canManageOps ? <ScheduleManage /> : <Navigate to="/schedule" replace />} />
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />
         <Route path="/employees" element={role === "admin" ? <EmployeeList /> : <Navigate to="/" replace />} />
+        <Route path="/sales" element={role === "admin" ? <Sales /> : <Navigate to="/" replace />} />
         <Route path="/vendors" element={role === "admin" ? <Vendors /> : <Navigate to="/" replace />} />
         <Route path="/recipes" element={role === "admin" ? <Recipes /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<MyProfile />} />

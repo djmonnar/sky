@@ -986,6 +986,22 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   margin: 52px auto 0;
 }
 .payroll-table { min-width: 1100px; }
+.sales-sync-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  gap: 14px;
+  align-items: end;
+}
+.sales-sync-panel .badge {
+  margin-left: 8px;
+}
+.sales-table {
+  min-width: 860px;
+}
+.empty-note {
+  padding: 20px;
+  text-align: center;
+}
 
 /* ============ Employment contract ============ */
 .contract-builder {
@@ -1707,6 +1723,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .slot-record-title { font-size: 25px; }
   .stat-value { font-size: 20px; }
   .toast { bottom: calc(104px + env(safe-area-inset-bottom)); width: max-content; max-width: 90vw; }
+  .sales-sync-panel {
+    grid-template-columns: 1fr;
+  }
 
   /* 실무자 모바일 우선: 터치 타겟 확대 (최소 44~48px) */
   .chip { padding: 12px 16px; min-height: 48px; font-size: 14px; flex: 1 0 auto; }

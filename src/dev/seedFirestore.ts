@@ -16,12 +16,14 @@ import { requireDb, STORE_ID } from "../lib/firebase";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
   SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
+  SEED_SALES_ORDERS, SEED_SALES_SYNC_RUNS,
 } from "../data/mock";
 
 // attendanceLogs는 규칙상 삭제 불가(출퇴근 로그 불변)이므로 재설정 대상에서 제외
 const COLLECTIONS = [
   "employees", "reservations", "shifts", "workRecords",
   "payroll", "notices", "handovers", "vendors", "recipes",
+  "salesOrders", "salesDailySummaries", "salesSyncRuns",
 ];
 
 /** 슬롯 문서 id: 날짜_슬롯_구역_직원 (직원은 한 칸에 최대 1회) */
@@ -66,6 +68,12 @@ function buildSeedBatches(db: ReturnType<typeof requireDb>) {
   );
   SEED_RECIPES.forEach((r) =>
     ops.push(() => batch.set(doc(colRef("recipes"), String(r.id)), { ...r, active: true, ...ts() }))
+  );
+  SEED_SALES_ORDERS.forEach((order) =>
+    ops.push(() => batch.set(doc(colRef("salesOrders"), order.id), { ...order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }))
+  );
+  SEED_SALES_SYNC_RUNS.forEach((run) =>
+    ops.push(() => batch.set(doc(colRef("salesSyncRuns"), run.id), { ...run, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }))
   );
 
   // 직원번호 카운터: 다음 회원가입은 max(id)+1 부터
@@ -129,6 +137,8 @@ export async function resetFirestore(): Promise<string> {
   SEED_HANDOVERS.forEach((h) => writes.push({ ref: doc(colRef2("handovers"), String(h.id)), data: { ...h, createdBy: "seed", createdAt: serverTimestamp() } }));
   SEED_VENDORS.forEach((v) => writes.push({ ref: doc(colRef2("vendors"), String(v.id)), data: { ...v, active: true, ...ts() } }));
   SEED_RECIPES.forEach((r) => writes.push({ ref: doc(colRef2("recipes"), String(r.id)), data: { ...r, active: true, ...ts() } }));
+  SEED_SALES_ORDERS.forEach((order) => writes.push({ ref: doc(colRef2("salesOrders"), order.id), data: { ...order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() } }));
+  SEED_SALES_SYNC_RUNS.forEach((run) => writes.push({ ref: doc(colRef2("salesSyncRuns"), run.id), data: { ...run, createdAt: serverTimestamp(), updatedAt: serverTimestamp() } }));
   const maxId = EMPLOYEES.reduce((m, e) => Math.max(m, e.id), 0);
   writes.push({ ref: doc(colRef2("meta"), "employeeCounter"), data: { value: maxId, updatedAt: serverTimestamp() } });
   writes.push({ ref: doc(colRef2("meta"), "payrollPassword"), data: { value: "qaz@qwer4312", updatedAt: serverTimestamp() } });

@@ -17,10 +17,10 @@ import {
   setDoc, updateDoc, addDoc, deleteDoc, getDoc, serverTimestamp,
   type QueryConstraint, type DocumentData,
 } from "firebase/firestore";
-import { requireDb, STORE_ID } from "../lib/firebase";
+import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
-  Vendor, Recipe,
+  Vendor, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
@@ -268,6 +268,73 @@ export function subscribeRecipes(cb: (v: Recipe[]) => void, onError: ErrCb): Uns
   );
 }
 
+function normalizePaymentMethod(raw: unknown): SalesPayment["method"] {
+  if (raw === "card" || raw === "cash" || raw === "simplePay" || raw === "voucher" || raw === "other") return raw;
+  return "other";
+}
+
+export function subscribeSalesOrders(cb: (v: SalesOrder[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "salesOrders",
+    (d, id) => ({
+      id,
+      okposOrderId: String(d.okposOrderId ?? id),
+      businessDate: String(d.businessDate ?? ""),
+      soldAt: asDisplayDate(d.soldAt) || String(d.soldAt ?? ""),
+      status: d.status === "canceled" || d.status === "refunded" || d.status === "partialRefund" || d.status === "voided"
+        ? d.status
+        : "paid",
+      totalAmount: Number(d.totalAmount ?? 0),
+      discountAmount: Number(d.discountAmount ?? 0),
+      paidAmount: Number(d.paidAmount ?? 0),
+      refundAmount: Number(d.refundAmount ?? 0),
+      paymentMethods: Array.isArray(d.paymentMethods)
+        ? d.paymentMethods.map((p: DocumentData) => ({
+            method: normalizePaymentMethod(p.method),
+            amount: Number(p.amount ?? 0),
+          }))
+        : [],
+      items: Array.isArray(d.items)
+        ? d.items.map((item: DocumentData, index: number) => ({
+            id: String(item.id ?? `${id}-${index}`),
+            name: String(item.name ?? "메뉴"),
+            quantity: Number(item.quantity ?? 0),
+            unitPrice: Number(item.unitPrice ?? 0),
+            totalAmount: Number(item.totalAmount ?? 0),
+            category: item.category,
+          }))
+        : [],
+      tableName: d.tableName,
+      orderType: d.orderType,
+      source: d.source ?? "okpos",
+      syncedAt: asDisplayDate(d.syncedAt) || String(d.syncedAt ?? ""),
+    }),
+    (items) => cb(items.sort((a, b) => b.soldAt.localeCompare(a.soldAt))),
+    onError
+  );
+}
+
+export function subscribeSalesSyncRuns(cb: (v: SalesSyncRun[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "salesSyncRuns",
+    (d, id) => ({
+      id,
+      startedAt: asDisplayDate(d.startedAt) || String(d.startedAt ?? ""),
+      finishedAt: asDisplayDate(d.finishedAt) || String(d.finishedAt ?? ""),
+      status: d.status === "success" || d.status === "failed" || d.status === "config_required" || d.status === "skipped"
+        ? d.status
+        : "failed",
+      importedCount: Number(d.importedCount ?? 0),
+      updatedCount: Number(d.updatedCount ?? 0),
+      rangeStart: String(d.rangeStart ?? ""),
+      rangeEnd: String(d.rangeEnd ?? ""),
+      message: d.message,
+    }),
+    (items) => cb(items.sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 20)),
+    onError
+  );
+}
+
 /* ---------- 쓰기 ---------- */
 
 export async function fsUpsertReservation(r: Reservation): Promise<void> {
@@ -457,4 +524,30 @@ export async function fsUpdateMyProfile(
   if (employeeId !== undefined) {
     await updateDoc(doc(col("employees"), String(employeeId)), patch);
   }
+}
+
+export async function fsSyncOkposSales(): Promise<{ ok: boolean; message: string; runId?: string }> {
+  const user = requireAuth().currentUser;
+  if (!user) throw new Error("로그인이 필요합니다.");
+  const token = await user.getIdToken();
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const configuredUrl = import.meta.env.VITE_OKPOS_SYNC_FUNCTION_URL;
+  const url = configuredUrl || `https://asia-northeast3-${projectId}.cloudfunctions.net/syncOkposSales`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ mode: "manual" }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json.message || "매출 동기화 요청에 실패했습니다.");
+  }
+  return {
+    ok: !!json.ok,
+    message: String(json.message ?? "매출 동기화 요청이 완료되었습니다."),
+    runId: json.runId,
+  };
 }

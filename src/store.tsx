@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
-  Notice, Employee, Vendor, Recipe,
+  Notice, Employee, Vendor, Recipe, SalesOrder, SalesSyncRun,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
@@ -29,6 +29,7 @@ import {
   subscribeUserProfiles, fsUpdateUserRole,
   subscribeVendors, subscribeRecipes,
   fsUpsertVendor, fsDeleteVendor, fsUpsertRecipe, fsDeleteRecipe,
+  subscribeSalesOrders, subscribeSalesSyncRuns, fsSyncOkposSales,
   fsUpdateMyProfile,
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
@@ -108,6 +109,9 @@ interface Store {
   recipes: Recipe[];
   upsertRecipe: (recipe: Recipe) => void;
   deleteRecipe: (id: number) => void;
+  salesOrders: SalesOrder[];
+  salesSyncRuns: SalesSyncRun[];
+  syncOkposSales: () => Promise<void>;
 
   punchStatus: PunchStatus;
   punchInAt: string | null;
@@ -144,6 +148,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [handovers, setHandovers] = useState<Notice[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
+  const [salesSyncRuns, setSalesSyncRuns] = useState<SalesSyncRun[]>([]);
 
   const [punchStatus, setPunchStatus] = useState<PunchStatus>("before");
   const [punchInAt, setPunchInAt] = useState<string | null>(null);
@@ -165,7 +171,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "demo") return;
     (async () => {
-      const [emp, resv, sh, rec, pay, not, hand, ven, recipeList] = await Promise.all([
+      const [emp, resv, sh, rec, pay, not, hand, ven, recipeList, sales, syncRuns] = await Promise.all([
         repository.listEmployees(),
         repository.listReservations(),
         repository.listShifts(),
@@ -175,6 +181,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         repository.listHandovers(),
         repository.listVendors(),
         repository.listRecipes(),
+        repository.listSalesOrders(),
+        repository.listSalesSyncRuns(),
       ]);
       setEmployees(emp);
       setReservations(resv);
@@ -185,6 +193,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setHandovers(hand);
       setVendors(ven);
       setRecipes(recipeList);
+      setSalesOrders(sales);
+      setSalesSyncRuns(syncRuns);
       setLoading(false);
     })();
   }, []);
@@ -279,6 +289,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribeUserProfiles(setUserProfiles, onErr),
             subscribeVendors(setVendors, onErr),
             subscribeRecipes(setRecipes, onErr),
+            subscribeSalesOrders(setSalesOrders, onErr),
+            subscribeSalesSyncRuns(setSalesSyncRuns, onErr),
           ]
         : []),
     ];
@@ -503,6 +515,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void repository.deleteRecipe(id);
     setRecipes((prev) => prev.filter((r) => r.id !== id));
   }, [fail]);
+
+  const syncOkposSales = useCallback(async () => {
+    if (APP_MODE === "live") {
+      const result = await fsSyncOkposSales();
+      showToast(result.message);
+      return;
+    }
+    const run: SalesSyncRun = {
+      id: `manual-${Date.now()}`,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      status: "success",
+      importedCount: 0,
+      updatedCount: salesOrders.length,
+      rangeStart: TODAY_STR,
+      rangeEnd: TODAY_STR,
+      message: "데모 모드에서는 샘플 매출을 사용합니다.",
+    };
+    setSalesSyncRuns((prev) => [run, ...prev].slice(0, 20));
+    showToast("데모 매출 동기화 로그를 남겼습니다");
+  }, [salesOrders.length, showToast]);
 
   const getPayrollPassword = useCallback(async () => {
     if (APP_MODE === "live") {
@@ -733,12 +766,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notices, handovers, upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
       vendors, upsertVendor, deleteVendor,
       recipes, upsertRecipe, deleteRecipe,
+      salesOrders, salesSyncRuns, syncOkposSales,
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
     [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
-     reservations, shifts, records, payroll, notices, handovers, vendors, recipes,
+     reservations, shifts, records, payroll, notices, handovers, vendors, recipes, salesOrders, salesSyncRuns,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertEmployee, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
@@ -746,6 +780,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      getPayrollPassword, setPayrollPassword,
      upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
      upsertVendor, deleteVendor, upsertRecipe, deleteRecipe,
+     syncOkposSales,
      punchIn, punchOut, showToast]
   );
 

@@ -1,4 +1,5 @@
 const { onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const admin = require("firebase-admin");
 
@@ -986,6 +987,264 @@ async function handleRecipeWrite(body, chatUser, mode) {
   return textResponse(`레시피를 ${mode === "create" ? "등록" : "수정"}했습니다.`, ["레시피 목록"]);
 }
 
+function setCors(res) {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+}
+
+async function adminFromRequest(req) {
+  const header = req.get("authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return { ok: false, message: "로그인이 필요합니다." };
+  try {
+    const token = await admin.auth().verifyIdToken(match[1]);
+    const email = token.email || "";
+    if (email === "iu431214@gmail.com" || email === "djmonnar4@gmail.com") {
+      return { ok: true, uid: token.uid, email };
+    }
+    const snap = await db.doc(`users/${token.uid}`).get();
+    const profile = snap.data() || {};
+    if (profile.storeId === STORE_ID && profile.role === "admin" && profile.active !== false) {
+      return { ok: true, uid: token.uid, email };
+    }
+    return { ok: false, message: "관리자 권한이 필요합니다." };
+  } catch (error) {
+    return { ok: false, message: "인증 토큰을 확인하지 못했습니다." };
+  }
+}
+
+function isoNow() {
+  return new Date().toISOString();
+}
+
+function addHours(date, hours) {
+  const next = new Date(date);
+  next.setHours(next.getHours() + hours);
+  return next;
+}
+
+function dateFromTimestamp(value) {
+  const raw = String(value || "");
+  const match = raw.match(/\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : formatDate();
+}
+
+function normalizePaymentMethod(raw) {
+  const text = String(raw || "").toLowerCase();
+  if (/card|카드|신용/.test(text)) return "card";
+  if (/cash|현금/.test(text)) return "cash";
+  if (/pay|페이|간편/.test(text)) return "simplePay";
+  if (/voucher|상품권|쿠폰/.test(text)) return "voucher";
+  return "other";
+}
+
+function normalizeOrderStatus(raw) {
+  const text = String(raw || "").toLowerCase();
+  if (/partial|부분/.test(text)) return "partialRefund";
+  if (/refund|환불/.test(text)) return "refunded";
+  if (/cancel|취소/.test(text)) return "canceled";
+  if (/void|무효/.test(text)) return "voided";
+  return "paid";
+}
+
+function normalizeOrderType(raw) {
+  const text = String(raw || "").toLowerCase();
+  if (/take|포장/.test(text)) return "takeout";
+  if (/delivery|배달/.test(text)) return "delivery";
+  if (/dine|hall|매장|홀/.test(text)) return "dineIn";
+  return "other";
+}
+
+function numberOf(...values) {
+  for (const value of values) {
+    const n = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
+    if (Number.isFinite(n) && String(value ?? "").trim() !== "") return n;
+  }
+  return 0;
+}
+
+function normalizeOkposOrder(raw) {
+  const orderId = String(raw.okposOrderId || raw.orderId || raw.saleNo || raw.billNo || raw.id || "").trim();
+  if (!orderId) return null;
+  const soldAt = String(raw.soldAt || raw.saleDateTime || raw.orderDateTime || raw.createdAt || isoNow());
+  const rawItems = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.menus) ? raw.menus : [];
+  const rawPayments = Array.isArray(raw.paymentMethods) ? raw.paymentMethods : Array.isArray(raw.payments) ? raw.payments : [];
+  const items = rawItems.map((item, index) => ({
+    id: String(item.id || item.menuId || item.code || `${orderId}-${index}`),
+    name: String(item.name || item.menuName || item.itemName || "메뉴"),
+    quantity: numberOf(item.quantity, item.qty, 1),
+    unitPrice: numberOf(item.unitPrice, item.price),
+    totalAmount: numberOf(item.totalAmount, item.amount, item.salesAmount),
+    category: item.category || item.categoryName || "",
+  }));
+  const totalAmount = numberOf(raw.totalAmount, raw.grossAmount, raw.salesAmount);
+  const discountAmount = numberOf(raw.discountAmount, raw.discount);
+  const refundAmount = numberOf(raw.refundAmount, raw.cancelAmount);
+  const paidAmount = numberOf(raw.paidAmount, raw.netAmount, totalAmount - discountAmount - refundAmount);
+  const paymentMethods = rawPayments.length
+    ? rawPayments.map((payment) => ({
+        method: normalizePaymentMethod(payment.method || payment.type || payment.name),
+        amount: numberOf(payment.amount, payment.paidAmount),
+      }))
+    : [{
+        method: normalizePaymentMethod(raw.paymentMethod || raw.payMethod),
+        amount: paidAmount,
+      }];
+  return {
+    id: `okpos-${orderId}`,
+    okposOrderId: orderId,
+    businessDate: String(raw.businessDate || raw.saleDate || dateFromTimestamp(soldAt)).slice(0, 10),
+    soldAt,
+    status: normalizeOrderStatus(raw.status || raw.orderStatus || (raw.cancelYn === "Y" ? "cancel" : "")),
+    totalAmount,
+    discountAmount,
+    paidAmount,
+    refundAmount,
+    paymentMethods,
+    items,
+    tableName: raw.tableName || raw.tableNo || raw.seatName || "",
+    orderType: normalizeOrderType(raw.orderType || raw.channel || raw.serviceType),
+    source: "okpos",
+    syncedAt: isoNow(),
+  };
+}
+
+async function fetchOkposOrders(rangeStart, rangeEnd) {
+  const baseUrl = process.env.OKPOS_BASE_URL;
+  const storeCode = process.env.OKPOS_STORE_CODE;
+  const ordersPath = process.env.OKPOS_ORDERS_PATH;
+  const apiKey = process.env.OKPOS_API_KEY;
+  if (!baseUrl || !storeCode || !ordersPath) {
+    return {
+      status: "config_required",
+      message: "OKPOS_BASE_URL, OKPOS_STORE_CODE, OKPOS_ORDERS_PATH 설정이 필요합니다.",
+      orders: [],
+    };
+  }
+  const url = new URL(ordersPath, baseUrl);
+  url.searchParams.set("storeCode", storeCode);
+  url.searchParams.set("from", rangeStart);
+  url.searchParams.set("to", rangeEnd);
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}`, "x-api-key": apiKey } : {}),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`OK포스 API 오류: ${response.status}`);
+  }
+  const payload = await response.json();
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.orders)
+      ? payload.orders
+      : Array.isArray(payload.data)
+        ? payload.data
+        : [];
+  return {
+    status: "success",
+    message: `OK포스 주문 ${list.length}건을 가져왔습니다.`,
+    orders: list.map(normalizeOkposOrder).filter(Boolean),
+  };
+}
+
+function hasOkposConfig() {
+  return !!(process.env.OKPOS_BASE_URL && process.env.OKPOS_STORE_CODE && process.env.OKPOS_ORDERS_PATH);
+}
+
+async function rebuildSalesDailySummary(businessDate) {
+  const snap = await storeCol("salesOrders").where("businessDate", "==", businessDate).get();
+  const orders = snap.docs.map((doc) => doc.data());
+  const active = orders.filter((order) => order.status === "paid" || order.status === "partialRefund");
+  const netAmount = active.reduce((sum, order) => sum + Math.max(0, Number(order.paidAmount || 0) - Number(order.refundAmount || 0)), 0);
+  const paymentMap = new Map();
+  active.forEach((order) => {
+    (order.paymentMethods || []).forEach((payment) => {
+      const method = normalizePaymentMethod(payment.method);
+      paymentMap.set(method, (paymentMap.get(method) || 0) + Number(payment.amount || 0));
+    });
+  });
+  await storeDoc("salesDailySummaries", businessDate).set({
+    id: businessDate,
+    businessDate,
+    orderCount: active.length,
+    canceledCount: orders.length - active.length,
+    grossAmount: orders.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0),
+    discountAmount: orders.reduce((sum, order) => sum + Number(order.discountAmount || 0), 0),
+    refundAmount: orders.reduce((sum, order) => sum + Number(order.refundAmount || 0), 0),
+    netAmount,
+    averageOrderAmount: active.length ? Math.round(netAmount / active.length) : 0,
+    paymentTotals: [...paymentMap.entries()].map(([method, amount]) => ({ method, amount })),
+    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+async function syncOkposSalesCore(mode = "scheduled", requestedBy = "system") {
+  const now = new Date();
+  const rangeStart = addHours(now, -24).toISOString();
+  const rangeEnd = now.toISOString();
+  const runId = `${Date.now()}-${mode}`;
+  const runRef = storeDoc("salesSyncRuns", runId);
+  await runRef.set({
+    id: runId,
+    startedAt: admin.firestore.FieldValue.serverTimestamp(),
+    status: "skipped",
+    importedCount: 0,
+    updatedCount: 0,
+    rangeStart,
+    rangeEnd,
+    requestedBy,
+    mode,
+  });
+
+  try {
+    const result = await fetchOkposOrders(rangeStart, rangeEnd);
+    if (result.status === "config_required") {
+      await runRef.set({
+        status: "config_required",
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        message: result.message,
+      }, { merge: true });
+      return { ok: false, runId, message: result.message };
+    }
+
+    let updatedCount = 0;
+    const dates = new Set();
+    for (const order of result.orders) {
+      const ref = storeDoc("salesOrders", order.id);
+      const exists = (await ref.get()).exists;
+      if (exists) updatedCount += 1;
+      dates.add(order.businessDate);
+      await ref.set({
+        ...order,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+      }, { merge: true });
+    }
+    for (const businessDate of dates) {
+      await rebuildSalesDailySummary(businessDate);
+    }
+    await runRef.set({
+      status: "success",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      importedCount: result.orders.length - updatedCount,
+      updatedCount,
+      message: result.message,
+    }, { merge: true });
+    return { ok: true, runId, message: result.message };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "OK포스 매출 동기화에 실패했습니다.";
+    await runRef.set({
+      status: "failed",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      message,
+    }, { merge: true });
+    return { ok: false, runId, message };
+  }
+}
+
 async function routeAction(action, body, chatUser) {
   switch (action) {
     case "dashboard": return handleDashboard();
@@ -1077,3 +1336,30 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 10, memory: "256MiB" }, async (
     res.status(200).json(failResponse("처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."));
   }
 });
+
+exports.syncOkposSales = onRequest({ timeoutSeconds: 60, memory: "256MiB" }, async (req, res) => {
+  setCors(res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    res.status(405).json({ ok: false, message: "POST 요청만 사용할 수 있습니다." });
+    return;
+  }
+  const auth = await adminFromRequest(req);
+  if (!auth.ok) {
+    res.status(403).json({ ok: false, message: auth.message });
+    return;
+  }
+  const result = await syncOkposSalesCore("manual", auth.uid || auth.email || "admin");
+  res.status(result.ok ? 200 : 409).json(result);
+});
+
+exports.syncOkposSalesScheduled = onSchedule(
+  { schedule: "every 10 minutes", timeZone: TZ, timeoutSeconds: 60, memory: "256MiB" },
+  async () => {
+    if (!hasOkposConfig()) return;
+    await syncOkposSalesCore("scheduled", "scheduler");
+  }
+);

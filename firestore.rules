@@ -252,6 +252,18 @@ service cloud.firestore {
         allow write: if isAdmin(storeId);
       }
 
+      match /salesOrders/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
+      match /salesDailySummaries/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
+      match /salesSyncRuns/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
       match /notices/{id} {
         allow read: if inStore(storeId);
         allow write: if canManageOps(storeId);

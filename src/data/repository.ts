@@ -9,10 +9,12 @@
 
 import {
   Employee, Recipe, Reservation, Shift, WorkRecord, PayrollRow, Notice, Vendor,
+  SalesOrder, SalesSyncRun,
 } from "./types";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
   SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
+  SEED_SALES_ORDERS, SEED_SALES_SYNC_RUNS,
 } from "./mock";
 
 export interface Repository {
@@ -50,6 +52,9 @@ export interface Repository {
   listRecipes(): Promise<Recipe[]>;
   saveRecipe(r: Recipe): Promise<void>;
   deleteRecipe(id: number): Promise<void>;
+
+  listSalesOrders(): Promise<SalesOrder[]>;
+  listSalesSyncRuns(): Promise<SalesSyncRun[]>;
 }
 
 /** 인메모리 목업 구현 — 새로고침 시 초기화됨 */
@@ -64,6 +69,8 @@ export function createMockRepository(): Repository {
     handovers: structuredClone(SEED_HANDOVERS),
     vendors: structuredClone(SEED_VENDORS),
     recipes: structuredClone(SEED_RECIPES),
+    salesOrders: structuredClone(SEED_SALES_ORDERS),
+    salesSyncRuns: structuredClone(SEED_SALES_SYNC_RUNS),
   };
 
   return {
@@ -156,6 +163,9 @@ export function createMockRepository(): Repository {
       const i = db.recipes.findIndex((x) => x.id === id);
       if (i !== -1) db.recipes.splice(i, 1);
     },
+
+    async listSalesOrders() { return [...db.salesOrders]; },
+    async listSalesSyncRuns() { return [...db.salesSyncRuns]; },
   };
 }
 
