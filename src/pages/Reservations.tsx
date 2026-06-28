@@ -3,7 +3,7 @@ import { useStore } from "../store";
 import { Card, StatusBadge, Badge } from "../components/ui";
 import {
   Reservation, ResvStatus, RESV_STATUSES,
-  TODAY_STR, DOW_KO, TODAY_DOW,
+  TODAY_STR, DOW_KO, dowIndex, fmtDate,
 } from "../data";
 
 type Filter = "전체" | "오전" | "오후" | "주의";
@@ -53,6 +53,18 @@ function to24Hour(period: TimePeriod, raw: string): string | null {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function parseLocalDate(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return parseLocalDate(TODAY_STR);
+  return new Date(year, month - 1, day);
+}
+
+function addDays(value: string, amount: number): string {
+  const date = parseLocalDate(value);
+  date.setDate(date.getDate() + amount);
+  return fmtDate(date);
+}
+
 export default function Reservations() {
   const {
     reservations, upsertReservation, showToast, mode, profile, currentEmployee,
@@ -90,6 +102,11 @@ export default function Reservations() {
   const visibleIds = list.map((r) => r.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
   const selectedReservations = reservations.filter((r) => selectedIds.includes(r.id));
+  const selectedDateLabel = useMemo(() => {
+    const date = parseLocalDate(selectedDate);
+    const prefix = selectedDate === TODAY_STR ? "오늘 " : "";
+    return `${prefix}${DOW_KO[dowIndex(date)]}요일`;
+  }, [selectedDate]);
 
   const stats = useMemo(() => ({
     total: dayReservations.filter((r) => r.status !== "취소" && r.status !== "노쇼").length,
@@ -104,6 +121,19 @@ export default function Reservations() {
   const select = (r: Reservation) => {
     setSelId(r.id);
     setMemo(r.memo ?? "");
+  };
+
+  const changeSelectedDate = (nextDate: string) => {
+    if (!nextDate) return;
+    setSelectedDate(nextDate);
+    setSelectedIds([]);
+    setSelId(null);
+    setMemo("");
+    setOpenId(null);
+  };
+
+  const moveSelectedDate = (amount: number) => {
+    changeSelectedDate(addDays(selectedDate, amount));
   };
 
   const toggleSelected = (id: number) => {
@@ -201,21 +231,43 @@ export default function Reservations() {
 
   return (
     <>
-      <div className="spread" style={{ flexWrap: "wrap", gap: 10 }}>
-        <div className="row">
-          <input
-            type="date"
-            className="input"
-            style={{ width: 150 }}
-            value={selectedDate}
-            onChange={(e) => {
-              setSelectedDate(e.target.value);
-              setSelectedIds([]);
-            }}
-          />
-          <span className="bold hide-mobile">{selectedDate === TODAY_STR ? DOW_KO[TODAY_DOW] : "선택일"}요일</span>
+      <div className="spread reservation-toolbar" style={{ flexWrap: "wrap", gap: 10 }}>
+        <div className="row reservation-date-row">
+          <div className="reservation-date-control">
+            <button
+              type="button"
+              className="icon-btn date-step-btn"
+              aria-label="전날 예약 보기"
+              onClick={() => moveSelectedDate(-1)}
+            >
+              ‹
+            </button>
+            <input
+              type="date"
+              className="input reservation-date-input"
+              value={selectedDate}
+              onChange={(e) => changeSelectedDate(e.target.value)}
+            />
+            <button
+              type="button"
+              className="icon-btn date-step-btn"
+              aria-label="다음날 예약 보기"
+              onClick={() => moveSelectedDate(1)}
+            >
+              ›
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm today-jump-btn"
+              onClick={() => changeSelectedDate(TODAY_STR)}
+              disabled={selectedDate === TODAY_STR}
+            >
+              오늘
+            </button>
+          </div>
+          <span className="bold reservation-date-label">{selectedDateLabel}</span>
         </div>
-        <div className="row" style={{ flex: 1, justifyContent: "flex-end" }}>
+        <div className="row reservation-actions-row" style={{ flex: 1, justifyContent: "flex-end" }}>
           <div className="search-wrap">
             <span className="search-ic">⌕</span>
             <input
