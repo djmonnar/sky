@@ -242,6 +242,42 @@ function shiftAssignmentId(date, period, department, employeeId) {
 }
 
 function classify(body) {
+  const requestedAction = paramOf(body, ["action", "작업", "command", "명령"]).toLowerCase();
+  const explicitActions = new Set([
+    "dashboard",
+    "reservation.list",
+    "reservation.create",
+    "reservation.update",
+    "reservation.status",
+    "reservation.delete",
+    "schedule.list",
+    "schedule.add",
+    "schedule.delete",
+    "employee.list",
+    "employee.create",
+    "employee.update",
+    "employee.delete",
+    "notice.list",
+    "notice.create",
+    "notice.update",
+    "notice.delete",
+    "handover.list",
+    "handover.create",
+    "handover.update",
+    "handover.delete",
+    "payroll.summary",
+    "vendor.list",
+    "vendor.create",
+    "vendor.update",
+    "vendor.delete",
+    "recipe.list",
+    "recipe.create",
+    "recipe.update",
+    "recipe.delete",
+    "help",
+  ]);
+  if (explicitActions.has(requestedAction)) return requestedAction;
+
   const text = fullText(body).toLowerCase();
   if (/도움|메뉴|help|시작/.test(text)) return "help";
   if (/거래처/.test(text) && /등록|추가|작성/.test(text)) return "vendor.create";
