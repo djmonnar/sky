@@ -71,12 +71,19 @@ function hydratePayroll(emp: Employee, pay: PayrollRow | undefined, counts: Retu
 }
 
 export default function Payroll() {
-  const { payroll, records, shifts, updatePayroll, approveRecord, showToast, employees } = useStore();
+  const {
+    payroll, records, shifts, updatePayroll, approveRecord, showToast, employees,
+    getPayrollPassword, setPayrollPassword,
+  } = useStore();
   const [filter, setFilter] = useState<PayFilter>("all");
   const [selId, setSelId] = useState<number | null>(null);
   const [extraInput, setExtraInput] = useState("");
   const [deductInput, setDeductInput] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(TODAY_STR.slice(0, 7));
+  const [unlocked, setUnlocked] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   const monthShifts = useMemo(
     () => shifts.filter((s) => s.date?.startsWith(selectedMonth)),
@@ -148,6 +155,61 @@ export default function Payroll() {
     showToast(`차감 ${won(n)} 반영`);
   };
 
+  const unlockPayroll = async () => {
+    const savedPassword = await getPayrollPassword();
+    if (passwordInput === savedPassword) {
+      setUnlocked(true);
+      setPasswordError(null);
+      setPasswordInput("");
+      showToast("급여관리 잠금이 해제되었습니다");
+      return;
+    }
+    setPasswordError("비밀번호가 맞지 않습니다");
+  };
+
+  const changePassword = async () => {
+    const next = newPassword.trim();
+    if (next.length < 4) {
+      showToast("비밀번호는 4자리 이상으로 입력해주세요");
+      return;
+    }
+    await setPayrollPassword(next);
+    setNewPassword("");
+    showToast("급여관리 비밀번호를 변경했습니다");
+  };
+
+  if (!unlocked) {
+    return (
+      <div className="payroll-lock-wrap">
+        <Card title="급여관리 잠금" icon="🔒">
+          <p className="muted small" style={{ marginTop: 0 }}>
+            급여 정보는 비밀번호 확인 후 볼 수 있습니다. 초기 비밀번호는 0000입니다.
+          </p>
+          <label className="field-label">비밀번호</label>
+          <input
+            className="input"
+            type="password"
+            value={passwordInput}
+            onChange={(e) => setPasswordInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void unlockPayroll();
+            }}
+            placeholder="비밀번호 입력"
+          />
+          {passwordError && (
+            <div className="alert-item danger" style={{ marginTop: 12 }}>
+              <span>!</span>
+              <div>{passwordError}</div>
+            </div>
+          )}
+          <button className="btn btn-primary btn-block" style={{ marginTop: 14 }} onClick={() => void unlockPayroll()}>
+            확인
+          </button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="alert-item info hide-desktop">
@@ -168,6 +230,25 @@ export default function Payroll() {
           onChange={(e) => setSelectedMonth(e.target.value)}
         />
       </div>
+
+      <Card title="급여관리 비밀번호 설정" icon="🔐">
+        <div className="row" style={{ alignItems: "stretch", flexWrap: "wrap" }}>
+          <input
+            className="input"
+            style={{ maxWidth: 260 }}
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="새 비밀번호"
+          />
+          <button className="btn btn-outline" onClick={() => void changePassword()}>
+            비밀번호 변경
+          </button>
+          <button className="btn btn-soft" onClick={() => setUnlocked(false)}>
+            다시 잠그기
+          </button>
+        </div>
+      </Card>
 
       <div className="grid grid-4">
         <StatCard label={`${selectedMonth} 총 급여 예상`} value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="월급+시급+건별수당" trendUp icon="💰" />

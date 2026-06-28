@@ -130,6 +130,13 @@ service cloud.firestore {
             && request.resource.data.active == resource.data.active
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["role", "updatedAt"])
           )
+          || (
+            isAdmin("haneulttang")
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.storeId == resource.data.storeId
+            && request.resource.data.active == false
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["active", "updatedAt"])
+          )
         );
       allow delete: if false;
     }
@@ -142,14 +149,29 @@ service cloud.firestore {
       // 직원번호 카운터: 회원가입 트랜잭션에서 증가시켜야 하므로
       // 아직 프로필이 없는 로그인 사용자도 읽기 허용. employeeCounter 문서 1개만.
       match /meta/{docId} {
-        allow read: if signedIn()
-                    && isHaneulttangStore(storeId)
-                    && docId == "employeeCounter";
-        allow write: if signedIn()
-                     && isHaneulttangStore(storeId)
-                     && docId == "employeeCounter"
-                     && request.resource.data.value is number
-                     && request.resource.data.value > 0;
+        allow read: if (
+                      signedIn()
+                      && isHaneulttangStore(storeId)
+                      && docId == "employeeCounter"
+                    )
+                    || (
+                      isAdmin(storeId)
+                      && docId == "payrollPassword"
+                    );
+        allow write: if (
+                       signedIn()
+                       && isHaneulttangStore(storeId)
+                       && docId == "employeeCounter"
+                       && request.resource.data.value is number
+                       && request.resource.data.value > 0
+                     )
+                     || (
+                       isAdmin(storeId)
+                       && docId == "payrollPassword"
+                       && request.resource.data.value is string
+                       && request.resource.data.value.size() >= 4
+                       && request.resource.data.keys().hasOnly(["value", "updatedAt"])
+                     );
       }
 
       match /employees/{id} {

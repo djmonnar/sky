@@ -14,7 +14,7 @@
 
 import {
   collection, doc, query, where, onSnapshot,
-  setDoc, updateDoc, addDoc, deleteDoc, serverTimestamp,
+  setDoc, updateDoc, addDoc, deleteDoc, getDoc, serverTimestamp,
   type QueryConstraint, type DocumentData,
 } from "firebase/firestore";
 import { requireDb, STORE_ID } from "../lib/firebase";
@@ -30,6 +30,10 @@ function col(name: string) {
 
 function usersCol() {
   return collection(requireDb(), "users");
+}
+
+function metaDoc(id: string) {
+  return doc(requireDb(), "stores", STORE_ID, "meta", id);
 }
 
 type Unsub = () => void;
@@ -210,7 +214,7 @@ export function subscribePayroll(cb: (v: PayrollRow[]) => void, onError: ErrCb):
 export function subscribeNotices(cb: (v: Notice[]) => void, onError: ErrCb): Unsub {
   return subscribe(
     "notices",
-    (d, id) => ({ ...(d as Notice), id: Number(d.id ?? id) }),
+    (d, id) => ({ ...(d as Notice), id: Number(d.id ?? id), docId: id }),
     (items) => cb(items.sort((a, b) => b.id - a.id)),
     onError
   );
@@ -219,7 +223,7 @@ export function subscribeNotices(cb: (v: Notice[]) => void, onError: ErrCb): Uns
 export function subscribeHandovers(cb: (v: Notice[]) => void, onError: ErrCb): Unsub {
   return subscribe(
     "handovers",
-    (d, id) => ({ id: Number(d.id ?? Date.parse(id) ?? 0), text: d.text ?? "", date: d.date ?? "" }),
+    (d, id) => ({ id: Number(d.id ?? Date.parse(id) ?? 0), docId: id, text: d.text ?? "", date: d.date ?? "" }),
     (items) => cb(items.sort((a, b) => b.id - a.id)),
     onError
   );
@@ -233,6 +237,22 @@ export async function fsUpsertReservation(r: Reservation): Promise<void> {
     { ...r, updatedAt: serverTimestamp() },
     { merge: true }
   );
+}
+
+export async function fsDeleteReservation(id: number): Promise<void> {
+  await deleteDoc(doc(col("reservations"), String(id)));
+}
+
+export async function fsUpsertEmployee(e: Employee): Promise<void> {
+  await setDoc(
+    doc(col("employees"), String(e.id)),
+    { ...e, active: true, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteEmployee(id: number): Promise<void> {
+  await deleteDoc(doc(col("employees"), String(id)));
 }
 
 export async function fsSetShift(s: Shift): Promise<void> {
@@ -273,6 +293,51 @@ export async function fsUpdatePayroll(
   );
 }
 
+export async function fsGetPayrollPassword(): Promise<string> {
+  const snap = await getDoc(metaDoc("payrollPassword"));
+  const value = snap.exists() ? snap.data().value : null;
+  return typeof value === "string" && value.length > 0 ? value : "0000";
+}
+
+export async function fsSetPayrollPassword(nextPassword: string): Promise<void> {
+  await setDoc(
+    metaDoc("payrollPassword"),
+    { value: nextPassword, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsUpsertNotice(n: Notice): Promise<void> {
+  const docId = n.docId ?? String(n.id);
+  await setDoc(
+    doc(col("notices"), docId),
+    { ...n, id: n.id, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteNotice(docId: string): Promise<void> {
+  await deleteDoc(doc(col("notices"), docId));
+}
+
+export async function fsUpsertHandover(n: Notice, createdBy: string): Promise<void> {
+  const docId = n.docId ?? String(n.id);
+  await setDoc(
+    doc(col("handovers"), docId),
+    {
+      ...n,
+      id: n.id,
+      createdBy,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteHandover(docId: string): Promise<void> {
+  await deleteDoc(doc(col("handovers"), docId));
+}
+
 export async function fsAddHandover(n: Notice, createdBy: string): Promise<void> {
   await addDoc(col("handovers"), {
     ...n,
@@ -293,6 +358,13 @@ export async function fsAddAttendanceLog(
 export async function fsUpdateUserRole(uid: string, role: Role): Promise<void> {
   await updateDoc(doc(requireDb(), "users", uid), {
     role,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function fsDeactivateUserProfile(uid: string): Promise<void> {
+  await updateDoc(doc(requireDb(), "users", uid), {
+    active: false,
     updatedAt: serverTimestamp(),
   });
 }

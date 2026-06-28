@@ -8,16 +8,21 @@
    ============================================================ */
 
 import {
-  Reservation, Shift, WorkRecord, PayrollRow, Notice,
+  Employee, Reservation, Shift, WorkRecord, PayrollRow, Notice,
 } from "./types";
 import {
-  SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
+  EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
   SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS,
 } from "./mock";
 
 export interface Repository {
+  listEmployees(): Promise<Employee[]>;
+  saveEmployee(e: Employee): Promise<void>;
+  deleteEmployee(id: number): Promise<void>;
+
   listReservations(): Promise<Reservation[]>;
   saveReservation(r: Reservation): Promise<void>;
+  deleteReservation(id: number): Promise<void>;
 
   listShifts(): Promise<Shift[]>;
   saveShift(s: Shift): Promise<void>;
@@ -31,13 +36,18 @@ export interface Repository {
   updatePayroll(empId: number, patch: Partial<PayrollRow>): Promise<void>;
 
   listNotices(): Promise<Notice[]>;
+  saveNotice(n: Notice): Promise<void>;
+  deleteNotice(id: number): Promise<void>;
   listHandovers(): Promise<Notice[]>;
+  saveHandover(n: Notice): Promise<void>;
+  deleteHandover(id: number): Promise<void>;
   addHandover(n: Notice): Promise<void>;
 }
 
 /** 인메모리 목업 구현 — 새로고침 시 초기화됨 */
 export function createMockRepository(): Repository {
   const db = {
+    employees: structuredClone(EMPLOYEES),
     reservations: structuredClone(SEED_RESERVATIONS),
     shifts: structuredClone(SEED_SHIFTS),
     records: structuredClone(SEED_RECORDS),
@@ -47,11 +57,26 @@ export function createMockRepository(): Repository {
   };
 
   return {
+    async listEmployees() { return [...db.employees]; },
+    async saveEmployee(e) {
+      const i = db.employees.findIndex((x) => x.id === e.id);
+      if (i === -1) db.employees.push(e);
+      else db.employees[i] = e;
+    },
+    async deleteEmployee(id) {
+      const i = db.employees.findIndex((x) => x.id === id);
+      if (i !== -1) db.employees.splice(i, 1);
+    },
+
     async listReservations() { return [...db.reservations]; },
     async saveReservation(r) {
       const i = db.reservations.findIndex((x) => x.id === r.id);
       if (i === -1) db.reservations.push(r);
       else db.reservations[i] = r;
+    },
+    async deleteReservation(id) {
+      const i = db.reservations.findIndex((x) => x.id === id);
+      if (i !== -1) db.reservations.splice(i, 1);
     },
 
     async listShifts() { return [...db.shifts]; },
@@ -79,7 +104,25 @@ export function createMockRepository(): Repository {
     },
 
     async listNotices() { return [...db.notices]; },
+    async saveNotice(n) {
+      const i = db.notices.findIndex((x) => x.id === n.id);
+      if (i === -1) db.notices.unshift(n);
+      else db.notices[i] = n;
+    },
+    async deleteNotice(id) {
+      const i = db.notices.findIndex((x) => x.id === id);
+      if (i !== -1) db.notices.splice(i, 1);
+    },
     async listHandovers() { return [...db.handovers]; },
+    async saveHandover(n) {
+      const i = db.handovers.findIndex((x) => x.id === n.id);
+      if (i === -1) db.handovers.unshift(n);
+      else db.handovers[i] = n;
+    },
+    async deleteHandover(id) {
+      const i = db.handovers.findIndex((x) => x.id === id);
+      if (i !== -1) db.handovers.splice(i, 1);
+    },
     async addHandover(n) { db.handovers.unshift(n); },
   };
 }

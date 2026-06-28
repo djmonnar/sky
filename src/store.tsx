@@ -6,7 +6,7 @@ import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
   Notice, Employee,
 } from "./data/types";
-import { EMPLOYEES, CURRENT_STAFF_ID } from "./data/mock";
+import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
 import { repository } from "./data/repository";
 import { firebaseConfigured, STORE_ID } from "./lib/firebase";
@@ -20,8 +20,12 @@ import type { UserProfile, UserProfileDoc } from "./types/firestore";
 import {
   subscribeEmployees, subscribeReservations, subscribeShifts,
   subscribeRecords, subscribePayroll, subscribeNotices, subscribeHandovers,
-  fsUpsertReservation, fsSetShift, fsDeleteShift, fsAddRecord, fsApproveRecord,
-  fsUpdatePayroll, fsAddHandover, fsAddAttendanceLog,
+  fsUpsertReservation, fsDeleteReservation,
+  fsUpsertEmployee, fsDeleteEmployee, fsDeactivateUserProfile,
+  fsSetShift, fsDeleteShift, fsAddRecord, fsApproveRecord,
+  fsUpdatePayroll, fsGetPayrollPassword, fsSetPayrollPassword,
+  fsUpsertNotice, fsDeleteNotice,
+  fsUpsertHandover, fsDeleteHandover, fsAddAttendanceLog,
   subscribeUserProfiles, fsUpdateUserRole,
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
@@ -56,6 +60,9 @@ interface Store {
   error: string | null;
 
   employees: Employee[];
+  upsertEmployee: (employee: Employee) => void;
+  deleteEmployee: (id: number) => void;
+  deactivateUserProfile: (uid: string) => Promise<void>;
   userProfiles: UserProfileDoc[];
   updateUserRole: (uid: string, role: Role) => Promise<void>;
   /** 로그인된(또는 데모) 실무자 본인 */
@@ -63,6 +70,8 @@ interface Store {
 
   reservations: Reservation[];
   upsertReservation: (r: Reservation) => void;
+  deleteReservation: (id: number) => void;
+  deleteReservations: (ids: number[]) => void;
   shifts: Shift[];
   setShift: (s: Shift) => void;
   deleteShift: (id: string) => void;
@@ -71,8 +80,14 @@ interface Store {
   approveRecord: (id: number) => void;
   payroll: PayrollRow[];
   updatePayroll: (empId: number, patch: Partial<PayrollRow>) => void;
+  getPayrollPassword: () => Promise<string>;
+  setPayrollPassword: (nextPassword: string) => Promise<void>;
   notices: Notice[];
   handovers: Notice[];
+  upsertNotice: (notice: Notice) => void;
+  deleteNotice: (docId: string) => void;
+  upsertHandover: (handover: Notice) => void;
+  deleteHandover: (docId: string) => void;
   addHandover: (text: string) => void;
 
   punchStatus: PunchStatus;
@@ -113,6 +128,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [punchInAt, setPunchInAt] = useState<string | null>(null);
   const [punchOutAt, setPunchOutAt] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [demoPayrollPassword, setDemoPayrollPassword] = useState(() =>
+    window.localStorage.getItem("haneulttang.payrollPassword") ?? "0000"
+  );
   // 회원가입 중에는 auth 리스너가 프로필을 먼저 조회하지 않도록 막음
   // (계정 생성 → users 문서 생성 사이의 레이스 방지)
   const signupInProgress = useRef(false);
@@ -126,7 +144,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "demo") return;
     (async () => {
-      const [resv, sh, rec, pay, not, hand] = await Promise.all([
+      const [emp, resv, sh, rec, pay, not, hand] = await Promise.all([
+        repository.listEmployees(),
         repository.listReservations(),
         repository.listShifts(),
         repository.listRecords(),
@@ -134,7 +153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         repository.listNotices(),
         repository.listHandovers(),
       ]);
-      setEmployees(EMPLOYEES);
+      setEmployees(emp);
       setReservations(resv);
       setShifts(sh);
       setRecords(rec);
@@ -270,6 +289,68 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, [fail]);
 
+  const deleteReservation = useCallback((id: number) => {
+    if (APP_MODE === "live") {
+      fsDeleteReservation(id).catch(fail("예약 삭제"));
+      return;
+    }
+    void repository.deleteReservation(id);
+    setReservations((prev) => prev.filter((r) => r.id !== id));
+  }, [fail]);
+
+  const deleteReservations = useCallback((ids: number[]) => {
+    if (ids.length === 0) return;
+    if (APP_MODE === "live") {
+      ids.forEach((id) => fsDeleteReservation(id).catch(fail("예약 삭제")));
+      return;
+    }
+    ids.forEach((id) => void repository.deleteReservation(id));
+    const target = new Set(ids);
+    setReservations((prev) => prev.filter((r) => !target.has(r.id)));
+  }, [fail]);
+
+  const upsertEmployee = useCallback((employee: Employee) => {
+    if (APP_MODE === "live") {
+      fsUpsertEmployee(employee).catch(fail("직원 저장"));
+      return;
+    }
+    void repository.saveEmployee(employee);
+    setEmployees((prev) => {
+      const i = prev.findIndex((e) => e.id === employee.id);
+      if (i === -1) return [...prev, employee].sort((a, b) => a.id - b.id);
+      const next = [...prev];
+      next[i] = employee;
+      return next.sort((a, b) => a.id - b.id);
+    });
+  }, [fail]);
+
+  const deactivateUserProfile = useCallback(async (uid: string) => {
+    if (APP_MODE === "live") {
+      await fsDeactivateUserProfile(uid);
+    }
+    setUserProfiles((prev) =>
+      prev.map((u) => (u.uid === uid ? { ...u, active: false } : u))
+    );
+  }, []);
+
+  const deleteEmployee = useCallback((id: number) => {
+    const employee = employees.find((e) => e.id === id);
+    if (APP_MODE === "live") {
+      fsDeleteEmployee(id).catch(fail("직원 삭제"));
+      if (employee?.uid) {
+        fsDeactivateUserProfile(employee.uid).catch(fail("계정 비활성화"));
+      }
+      return;
+    }
+    void repository.deleteEmployee(id);
+    setEmployees((prev) => prev.filter((e) => e.id !== id));
+    if (employee?.uid) {
+      setUserProfiles((prev) =>
+        prev.map((u) => (u.uid === employee.uid ? { ...u, active: false } : u))
+      );
+    }
+  }, [employees, fail]);
+
   const setShift = useCallback((s: Shift) => {
     if (APP_MODE === "live") {
       fsSetShift(s).catch(fail("근무표 저장"));
@@ -325,6 +406,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, [fail]);
 
+  const getPayrollPassword = useCallback(async () => {
+    if (APP_MODE === "live") {
+      return fsGetPayrollPassword();
+    }
+    return demoPayrollPassword;
+  }, [demoPayrollPassword]);
+
+  const setPayrollPassword = useCallback(async (nextPassword: string) => {
+    if (APP_MODE === "live") {
+      await fsSetPayrollPassword(nextPassword);
+    } else {
+      window.localStorage.setItem("haneulttang.payrollPassword", nextPassword);
+    }
+    setDemoPayrollPassword(nextPassword);
+  }, []);
+
   const updateUserRole = useCallback(async (uid: string, nextRole: Role) => {
     if (nextRole === "admin") {
       throw new Error("관리자 권한은 Firebase 콘솔에서 직접 부여해주세요.");
@@ -338,10 +435,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     showToast(nextRole === "manager" ? "매니저 권한을 부여했습니다" : "실무자 권한으로 변경했습니다");
   }, [showToast]);
 
-  const addHandover = useCallback((text: string) => {
-    const n: Notice = { id: Date.now(), text, date: TODAY_STR.slice(5) };
+  const upsertNotice = useCallback((notice: Notice) => {
     if (APP_MODE === "live") {
-      fsAddHandover(n, profile?.name ?? "unknown").catch(fail("전달사항 등록"));
+      fsUpsertNotice(notice).catch(fail("공지 저장"));
+      return;
+    }
+    void repository.saveNotice(notice);
+    setNotices((prev) => {
+      const i = prev.findIndex((n) => n.id === notice.id);
+      if (i === -1) return [notice, ...prev].sort((a, b) => b.id - a.id);
+      const next = [...prev];
+      next[i] = notice;
+      return next.sort((a, b) => b.id - a.id);
+    });
+  }, [fail]);
+
+  const deleteNotice = useCallback((docId: string) => {
+    if (APP_MODE === "live") {
+      fsDeleteNotice(docId).catch(fail("공지 삭제"));
+      return;
+    }
+    const id = Number(docId);
+    void repository.deleteNotice(id);
+    setNotices((prev) => prev.filter((n) => n.id !== id && n.docId !== docId));
+  }, [fail]);
+
+  const upsertHandover = useCallback((handover: Notice) => {
+    if (APP_MODE === "live") {
+      fsUpsertHandover(handover, profile?.name ?? "unknown").catch(fail("전달사항 저장"));
+      return;
+    }
+    void repository.saveHandover(handover);
+    setHandovers((prev) => {
+      const i = prev.findIndex((h) => h.id === handover.id);
+      if (i === -1) return [handover, ...prev].sort((a, b) => b.id - a.id);
+      const next = [...prev];
+      next[i] = handover;
+      return next.sort((a, b) => b.id - a.id);
+    });
+  }, [fail, profile]);
+
+  const deleteHandover = useCallback((docId: string) => {
+    if (APP_MODE === "live") {
+      fsDeleteHandover(docId).catch(fail("전달사항 삭제"));
+      return;
+    }
+    const id = Number(docId);
+    void repository.deleteHandover(id);
+    setHandovers((prev) => prev.filter((h) => h.id !== id && h.docId !== docId));
+  }, [fail]);
+
+  const addHandover = useCallback((text: string) => {
+    const id = Date.now();
+    const n: Notice = { id, docId: String(id), text, date: TODAY_STR.slice(5) };
+    if (APP_MODE === "live") {
+      fsUpsertHandover(n, profile?.name ?? "unknown").catch(fail("전달사항 등록"));
       return;
     }
     void repository.addHandover(n);
@@ -446,13 +594,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       role, setRole,
       authUser, profile, authLoading, login, signup, completeProfile, logout,
       loading, error,
-      employees, userProfiles, updateUserRole, currentEmployee,
-      reservations, upsertReservation,
+      employees, upsertEmployee, deleteEmployee, deactivateUserProfile,
+      userProfiles, updateUserRole, currentEmployee,
+      reservations, upsertReservation, deleteReservation, deleteReservations,
       shifts, setShift,
       deleteShift,
       records, addRecord, approveRecord,
-      payroll, updatePayroll,
-      notices, handovers, addHandover,
+      payroll, updatePayroll, getPayrollPassword, setPayrollPassword,
+      notices, handovers, upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
@@ -460,8 +609,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers,
      punchStatus, punchInAt, punchOutAt, toast,
-     upsertReservation, setShift, deleteShift, addRecord, approveRecord, updatePayroll,
-     addHandover, punchIn, punchOut, showToast]
+     upsertEmployee, deleteEmployee, deactivateUserProfile,
+     upsertReservation, deleteReservation, deleteReservations,
+     setShift, deleteShift, addRecord, approveRecord, updatePayroll,
+     getPayrollPassword, setPayrollPassword,
+     upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
+     punchIn, punchOut, showToast]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

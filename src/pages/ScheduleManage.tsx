@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, Badge } from "../components/ui";
@@ -17,6 +17,8 @@ const ROWS: { period: ShiftPeriod; department: Department }[] = [
   { period: "afternoon", department: "hall" },
   { period: "afternoon", department: "kitchen" },
 ];
+const PERIODS: ShiftPeriod[] = ["morning", "afternoon"];
+const DEPARTMENTS: Department[] = ["hall", "kitchen"];
 
 function weekBase(offset: number): Date {
   const d = new Date(TODAY);
@@ -26,6 +28,9 @@ function weekBase(offset: number): Date {
 
 type SelSlot = { dayIndex: number; period: ShiftPeriod; department: Department };
 type CopiedSlot = { label: string; shifts: Shift[] };
+type DragPayload =
+  | { type: "shifts"; ids: string[] }
+  | { type: "employees"; ids: number[] };
 
 const normalizeSearch = (value: string) => value.trim().toLowerCase();
 
@@ -76,8 +81,11 @@ export default function ScheduleManage() {
   const week = useMemo(() => weekDates(weekBase(weekOffset)), [weekOffset]);
   const [sel, setSel] = useState<SelSlot | null>(null);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
+  const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [copiedSlot, setCopiedSlot] = useState<CopiedSlot | null>(null);
+  const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
+  const [trashOver, setTrashOver] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const cellShifts = (s: SelSlot): Shift[] =>
@@ -117,11 +125,13 @@ export default function ScheduleManage() {
 
   const selectSlot = (next: SelSlot) => {
     setSel(next);
+    setSelectedShiftIds([]);
     resetSlotDraft();
   };
 
   const clearSlot = () => {
     setSel(null);
+    setSelectedShiftIds([]);
     resetSlotDraft();
   };
 
@@ -137,6 +147,122 @@ export default function ScheduleManage() {
         ? prev.filter((id) => id !== employeeId)
         : [...prev, employeeId]
     );
+  };
+
+  const toggleShiftSelection = (shiftId: string) => {
+    setSelectedShiftIds((prev) =>
+      prev.includes(shiftId)
+        ? prev.filter((id) => id !== shiftId)
+        : [...prev, shiftId]
+    );
+  };
+
+  const startShiftDrag = (event: DragEvent, shiftId: string) => {
+    const ids = selectedShiftIds.includes(shiftId) ? selectedShiftIds : [shiftId];
+    setSelectedShiftIds(ids);
+    setDragPayload({ type: "shifts", ids });
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", ids.join(","));
+  };
+
+  const startEmployeeDrag = (event: DragEvent, employeeId: number) => {
+    const ids = selectedEmployeeIds.includes(employeeId) ? selectedEmployeeIds : [employeeId];
+    setSelectedEmployeeIds(ids);
+    setDragPayload({ type: "employees", ids });
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("text/plain", ids.join(","));
+  };
+
+  const endDrag = () => {
+    setDragPayload(null);
+    setTrashOver(false);
+  };
+
+  const placeEmployeeInSlot = (employee: Employee, target: SelSlot, order: number) => {
+    const date = shiftDateForDay(week, target.dayIndex);
+    const time = PERIOD_TIME[target.period];
+    setShift({
+      id: shiftAssignmentId(date, target.period, target.department, employee.id),
+      date,
+      dayIndex: target.dayIndex,
+      day: target.dayIndex,
+      period: target.period,
+      department: target.department,
+      employeeId: employee.id,
+      empId: employee.id,
+      employeeName: employee.name,
+      roleLabel: employee.roleLabel,
+      order,
+      ...time,
+    });
+  };
+
+  const dropOnSlot = (target: SelSlot) => {
+    if (!dragPayload) return;
+    const targetShifts = cellShifts(target);
+    let added = 0;
+
+    if (dragPayload.type === "employees") {
+      dragPayload.ids.forEach((employeeId) => {
+        const employee = employees.find((item) => item.id === employeeId);
+        if (!employee) return;
+        if (targetShifts.some((shift) => shift.employeeId === employee.id)) return;
+        placeEmployeeInSlot(employee, target, targetShifts.length + added);
+        added += 1;
+      });
+      showToast(added > 0 ? `${added}명 배치했습니다` : "이미 배치된 직원입니다");
+    } else {
+      const moving = dragPayload.ids
+        .map((id) => shifts.find((shift) => shift.id === id))
+        .filter((shift): shift is Shift => !!shift);
+      moving.forEach((source) => {
+        const manual = isManualShift(source);
+        const duplicate = targetShifts.some((targetShift) => {
+          if (dragPayload.ids.includes(targetShift.id)) return false;
+          return manual
+            ? normalizeSearch(targetShift.employeeName) === normalizeSearch(source.employeeName)
+            : targetShift.employeeId === source.employeeId;
+        });
+        if (duplicate) return;
+        const date = shiftDateForDay(week, target.dayIndex);
+        const time = PERIOD_TIME[target.period];
+        const employeeId = manual ? manualEmployeeId(source.employeeName) : source.employeeId;
+        const id = shiftAssignmentId(date, target.period, target.department, employeeId);
+        if (id === source.id) return;
+        setShift({
+          ...source,
+          id,
+          date,
+          dayIndex: target.dayIndex,
+          day: target.dayIndex,
+          period: target.period,
+          department: target.department,
+          employeeId,
+          empId: employeeId,
+          order: targetShifts.length + added,
+          ...time,
+        });
+        deleteShift(source.id);
+        added += 1;
+      });
+      showToast(added > 0 ? `${added}명 이동했습니다` : "이동할 수 있는 직원이 없습니다");
+    }
+
+    setSel(target);
+    setSelectedShiftIds([]);
+    endDrag();
+  };
+
+  const dropOnTrash = () => {
+    if (!dragPayload || dragPayload.type !== "shifts") {
+      showToast("삭제할 근무표 직원을 끌어오세요");
+      endDrag();
+      return;
+    }
+    dragPayload.ids.forEach(deleteShift);
+    setSelectedShiftIds([]);
+    showToast(`${dragPayload.ids.length}명 배치를 삭제했습니다`);
+    endDrag();
   };
 
   const addEmployees = () => {
@@ -345,6 +471,7 @@ export default function ScheduleManage() {
 
   const removeShift = (s: Shift) => {
     deleteShift(s.id);
+    setSelectedShiftIds((prev) => prev.filter((id) => id !== s.id));
     showToast("배치를 삭제했습니다");
   };
 
@@ -382,6 +509,7 @@ export default function ScheduleManage() {
 
     weekShifts.forEach((shift) => deleteShift(shift.id));
     clearSlot();
+    setSelectedShiftIds([]);
     showToast(`이번 주 근무표 ${weekShifts.length}건을 삭제했습니다`);
   };
 
@@ -435,29 +563,56 @@ export default function ScheduleManage() {
 
       <div className="grid grid-main-side">
         <div className="stack">
-          {/* 슬롯 매트릭스 */}
+          {/* 슬롯 보드 */}
           <Card>
-            <div className="smx-wrap">
-              <div className="smx">
-                {/* 헤더 행 */}
-                <div className="smx-corner" />
-                {week.map((d, i) => (
-                  <div className={`smx-dayhead ${i === TODAY_DOW && weekOffset === 0 ? "today" : ""}`} key={i}>
-                    <span className="dow">{DOW_KO[i]}</span>
-                    <strong>{d.getMonth() + 1}/{d.getDate()}</strong>
+            <div
+              className={`shift-trash-zone ${trashOver ? "over" : ""}`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setTrashOver(true);
+              }}
+              onDragLeave={() => setTrashOver(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                dropOnTrash();
+              }}
+            >
+              🗑️ 삭제 칸
+              <span>직원 배치를 여기로 끌어오면 삭제됩니다</span>
+            </div>
+            <div className="schedule-board-wrap">
+              <div className="schedule-board">
+                {week.map((day, dayIndex) => (
+                  <div className="schedule-day-column" key={dayIndex}>
+                    <div className={`schedule-day-title ${dayIndex === TODAY_DOW && weekOffset === 0 ? "today" : ""}`}>
+                      <span>{DOW_KO[dayIndex]}</span>
+                      <strong>{day.getMonth() + 1}/{day.getDate()}</strong>
+                    </div>
+                    <div className="schedule-period-grid">
+                      {PERIODS.map((period) => (
+                        <div className={`schedule-period-card ${period}`} key={period}>
+                          <div className="schedule-period-title">{PERIOD_LABEL[period]}</div>
+                          {DEPARTMENTS.map((department) => {
+                            const slot = { dayIndex, period, department };
+                            return (
+                              <ScheduleSlotCell
+                                key={`${period}_${department}`}
+                                slot={slot}
+                                shifts={cellShifts(slot)}
+                                selected={sameSlot(sel, dayIndex, period, department)}
+                                selectedShiftIds={selectedShiftIds}
+                                onSelect={() => selectSlot(slot)}
+                                onToggleShift={toggleShiftSelection}
+                                onDragShiftStart={startShiftDrag}
+                                onDragEnd={endDrag}
+                                onDropSlot={dropOnSlot}
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-
-                {/* 본문 행 */}
-                {ROWS.map((row) => (
-                  <RowCells
-                    key={`${row.period}_${row.department}`}
-                    row={row}
-                    week={week}
-                    cellShifts={(dayIndex) => cellShifts({ ...row, dayIndex })}
-                    isSel={(dayIndex) => sameSlot(sel, dayIndex, row.period, row.department)}
-                    onSelect={(dayIndex) => selectSlot({ ...row, dayIndex })}
-                  />
                 ))}
               </div>
             </div>
@@ -558,7 +713,13 @@ export default function ScheduleManage() {
                       </div>
                     ) : (
                       filteredAvailableEmployees.map((e) => (
-                        <label className="employee-pick" key={e.id}>
+                        <label
+                          className="employee-pick"
+                          key={e.id}
+                          draggable
+                          onDragStart={(event) => startEmployeeDrag(event, e.id)}
+                          onDragEnd={endDrag}
+                        >
                           <input
                             type="checkbox"
                             checked={selectedEmployeeIds.includes(e.id)}
@@ -743,41 +904,66 @@ export default function ScheduleManage() {
   );
 }
 
-function RowCells({
-  row, week, cellShifts, isSel, onSelect,
+function ScheduleSlotCell({
+  slot,
+  shifts,
+  selected,
+  selectedShiftIds,
+  onSelect,
+  onToggleShift,
+  onDragShiftStart,
+  onDragEnd,
+  onDropSlot,
 }: {
-  row: { period: ShiftPeriod; department: Department };
-  week: Date[];
-  cellShifts: (dayIndex: number) => Shift[];
-  isSel: (dayIndex: number) => boolean;
-  onSelect: (dayIndex: number) => void;
+  slot: SelSlot;
+  shifts: Shift[];
+  selected: boolean;
+  selectedShiftIds: string[];
+  onSelect: () => void;
+  onToggleShift: (shiftId: string) => void;
+  onDragShiftStart: (event: DragEvent, shiftId: string) => void;
+  onDragEnd: () => void;
+  onDropSlot: (slot: SelSlot) => void;
 }) {
   return (
-    <>
-      <div className={`smx-rowlabel ${row.period}`}>
-        <span className="period">{PERIOD_LABEL[row.period]}</span>
-        <span className="dept">{DEPARTMENT_LABEL[row.department]}</span>
-      </div>
-      {week.map((_, dayIndex) => {
-        const cell = cellShifts(dayIndex);
-        return (
-          <button
-            key={dayIndex}
-            className={`smx-cell ${isSel(dayIndex) ? "sel" : ""} ${cell.length === 0 ? "empty" : ""}`}
-            onClick={() => onSelect(dayIndex)}
-          >
-            {cell.length === 0 ? (
-              <span className="smx-add">＋</span>
-            ) : (
-              cell.map((s) => (
-                <span className={`smx-chip ${isManualShift(s) ? "manual" : ""}`} key={s.id}>
-                  {s.employeeName}
-                </span>
-              ))
-            )}
-          </button>
-        );
-      })}
-    </>
+    <div
+      className={`schedule-slot-cell ${selected ? "sel" : ""} ${shifts.length === 0 ? "empty" : ""}`}
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") onSelect();
+      }}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDropSlot(slot);
+      }}
+    >
+      <div className="schedule-dept-label">{DEPARTMENT_LABEL[slot.department]}</div>
+      {shifts.length === 0 ? (
+        <span className="smx-add">＋</span>
+      ) : (
+        shifts.map((shift) => {
+          const picked = selectedShiftIds.includes(shift.id);
+          return (
+            <span
+              className={`smx-chip ${isManualShift(shift) ? "manual" : ""} ${picked ? "picked" : ""}`}
+              key={shift.id}
+              draggable
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleShift(shift.id);
+              }}
+              onDragStart={(event) => onDragShiftStart(event, shift.id)}
+              onDragEnd={onDragEnd}
+              title="클릭해서 다중선택, 드래그해서 이동"
+            >
+              {shift.employeeName}
+            </span>
+          );
+        })
+      )}
+    </div>
   );
 }

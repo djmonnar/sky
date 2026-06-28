@@ -3,9 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, Badge, StatCard } from "../components/ui";
 import { salaryTypeLabel, employmentLabel } from "../lib/payroll";
-import type { Role } from "../data/types";
+import type { Employee, EmploymentType, Role, SalaryType } from "../data/types";
 
 const ROLE_OPTIONS: Role[] = ["staff", "manager"];
+const WORK_ROLE_OPTIONS = ["홀", "주방", "홀/주방"];
 
 function roleLabel(role?: Role): string {
   if (role === "admin") return "관리자";
@@ -19,9 +20,19 @@ function roleTone(role?: Role): string {
   return "gray";
 }
 
+function toNumber(value: string): number {
+  return Number(value.replace(/[^0-9]/g, "")) || 0;
+}
+
 export default function EmployeeList() {
-  const { employees, loading, userProfiles, updateUserRole, showToast } = useStore();
+  const {
+    employees, loading, userProfiles, updateUserRole,
+    upsertEmployee, deleteEmployee, showToast,
+  } = useStore();
   const [savingUid, setSavingUid] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [editing, setEditing] = useState<Employee | null>(null);
+  const [draft, setDraft] = useState<Employee | null>(null);
   const [searchParams] = useSearchParams();
   const candidateName = searchParams.get("candidate")?.trim() ?? "";
   const signupUrl = `${window.location.origin}/signup`;
@@ -35,6 +46,7 @@ export default function EmployeeList() {
     [userProfiles]
   );
   const managerCount = userProfiles.filter((p) => p.role === "manager").length;
+  const allSelected = employees.length > 0 && employees.every((employee) => selectedIds.includes(employee.id));
 
   const changeRole = async (uid: string, nextRole: Role) => {
     setSavingUid(uid);
@@ -57,6 +69,68 @@ export default function EmployeeList() {
     }
   };
 
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? [] : employees.map((employee) => employee.id));
+  };
+
+  const openEdit = (employee: Employee) => {
+    setEditing(employee);
+    setDraft({ ...employee });
+  };
+
+  const saveEmployee = () => {
+    if (!draft) return;
+    if (!draft.name.trim()) {
+      showToast("직원 이름을 입력해주세요");
+      return;
+    }
+    const normalized: Employee = {
+      ...draft,
+      name: draft.name.trim(),
+      role: draft.role || "홀",
+      hourly: draft.salaryType === "hourly" ? Number(draft.hourly ?? 0) : 0,
+      monthlySalary: draft.salaryType === "monthly" ? Number(draft.monthlySalary ?? 0) : undefined,
+      slotRate: draft.salaryType === "perSlot" ? Number(draft.slotRate ?? 0) : undefined,
+      standardStart: draft.employmentType === "fullTime" ? draft.standardStart : undefined,
+      standardEnd: draft.employmentType === "fullTime" ? draft.standardEnd : undefined,
+    };
+    upsertEmployee(normalized);
+    setEditing(null);
+    setDraft(null);
+    showToast(`${normalized.name} 정보를 저장했습니다`);
+  };
+
+  const deleteSelected = () => {
+    if (selectedIds.length === 0) {
+      showToast("삭제할 직원을 선택해주세요");
+      return;
+    }
+    const names = employees
+      .filter((employee) => selectedIds.includes(employee.id))
+      .map((employee) => employee.name)
+      .join(", ");
+    const ok = window.confirm(`${selectedIds.length}명의 직원을 완전 삭제할까요?\n${names}\n연결된 계정은 비활성화됩니다.`);
+    if (!ok) return;
+    selectedIds.forEach((id) => deleteEmployee(id));
+    setSelectedIds([]);
+    if (editing && selectedIds.includes(editing.id)) {
+      setEditing(null);
+      setDraft(null);
+    }
+    showToast("선택한 직원을 삭제했습니다");
+  };
+
+  const updateDraft = <K extends keyof Employee>(key: K, value: Employee[K]) => {
+    if (!draft) return;
+    setDraft({ ...draft, [key]: value });
+  };
+
   return (
     <>
       <Card
@@ -65,15 +139,14 @@ export default function EmployeeList() {
         action={<button className="btn btn-primary btn-sm" onClick={() => void copySignupLink()}>회원가입 링크 복사</button>}
       >
         <p className="muted small" style={{ margin: 0 }}>
-          현재 직원 추가는 직원이 회원가입하면 자동으로 처리됩니다. 링크를 직원에게 보내면
-          가입 시 직원번호가 발급되고, 직원 문서와 앱 계정이 같이 생성됩니다.
+          신규 직원은 회원가입 링크로 계정을 만들면 직원번호가 자동 발급됩니다. 이 화면에서는 기존 직원 정보 수정, 권한 변경, 선택 삭제를 관리합니다.
         </p>
       </Card>
 
       {candidateName && (
         <Card
           title="직접 입력 이름 정식 등록"
-          icon="🏷️"
+          icon="🌱"
           action={
             <button className="btn btn-primary btn-sm" onClick={() => void copySignupLink(candidateSignupUrl)}>
               이름 포함 링크 복사
@@ -98,7 +171,108 @@ export default function EmployeeList() {
         <StatCard label="매니저" value={managerCount} unit="명" icon="🛠️" tone="amber" />
       </div>
 
-      <Card title="권한 설정" icon="🔐">
+      {draft && (
+        <Card title={`${editing?.name ?? "직원"} 정보 수정`} icon="✎">
+          <div className="grid grid-3" style={{ gap: 12 }}>
+            <div>
+              <label className="field-label">이름</label>
+              <input className="input" value={draft.name} onChange={(e) => updateDraft("name", e.target.value)} />
+            </div>
+            <div>
+              <label className="field-label">직무</label>
+              <select className="select" value={draft.role} onChange={(e) => updateDraft("role", e.target.value)}>
+                {WORK_ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="field-label">직책 표시</label>
+              <input className="input" value={draft.roleLabel ?? ""} onChange={(e) => updateDraft("roleLabel", e.target.value || undefined)} placeholder="사장, 점장, 팀장 등" />
+            </div>
+          </div>
+
+          <div className="grid grid-3" style={{ gap: 12, marginTop: 14 }}>
+            <div>
+              <label className="field-label">고용형태</label>
+              <select className="select" value={draft.employmentType} onChange={(e) => updateDraft("employmentType", e.target.value as EmploymentType)}>
+                <option value="fullTime">정직원</option>
+                <option value="partTime">아르바이트</option>
+              </select>
+            </div>
+            <div>
+              <label className="field-label">급여방식</label>
+              <select className="select" value={draft.salaryType} onChange={(e) => updateDraft("salaryType", e.target.value as SalaryType)}>
+                <option value="monthly">월급</option>
+                <option value="hourly">시급</option>
+                <option value="perSlot">건별수당</option>
+              </select>
+            </div>
+            <div>
+              <label className="field-label">금액</label>
+              {draft.salaryType === "monthly" ? (
+                <input className="input" inputMode="numeric" value={draft.monthlySalary ?? ""} onChange={(e) => updateDraft("monthlySalary", toNumber(e.target.value))} placeholder="월급" />
+              ) : draft.salaryType === "perSlot" ? (
+                <input className="input" inputMode="numeric" value={draft.slotRate ?? ""} onChange={(e) => updateDraft("slotRate", toNumber(e.target.value))} placeholder="슬롯당 금액" />
+              ) : (
+                <input className="input" inputMode="numeric" value={draft.hourly ?? ""} onChange={(e) => updateDraft("hourly", toNumber(e.target.value))} placeholder="시급" />
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-3" style={{ gap: 12, marginTop: 14 }}>
+            <div>
+              <label className="field-label">연락처</label>
+              <input className="input" value={draft.phone ?? ""} onChange={(e) => updateDraft("phone", e.target.value || undefined)} />
+            </div>
+            <div>
+              <label className="field-label">은행</label>
+              <input className="input" value={draft.bank ?? ""} onChange={(e) => updateDraft("bank", e.target.value || undefined)} />
+            </div>
+            <div>
+              <label className="field-label">계좌번호</label>
+              <input className="input" value={draft.account ?? ""} onChange={(e) => updateDraft("account", e.target.value || undefined)} />
+            </div>
+          </div>
+
+          {draft.employmentType === "fullTime" && (
+            <div className="grid grid-2" style={{ gap: 12, marginTop: 14 }}>
+              <div>
+                <label className="field-label">고정 출근</label>
+                <input className="input" value={draft.standardStart ?? ""} onChange={(e) => updateDraft("standardStart", e.target.value || undefined)} placeholder="10:00" />
+              </div>
+              <div>
+                <label className="field-label">고정 퇴근</label>
+                <input className="input" value={draft.standardEnd ?? ""} onChange={(e) => updateDraft("standardEnd", e.target.value || undefined)} placeholder="22:00" />
+              </div>
+            </div>
+          )}
+
+          <div className="row" style={{ justifyContent: "flex-end", marginTop: 16 }}>
+            <button className="btn btn-outline" onClick={() => { setEditing(null); setDraft(null); }}>취소</button>
+            <button className="btn btn-primary" onClick={saveEmployee}>저장</button>
+          </div>
+        </Card>
+      )}
+
+      <Card title="직원 관리" icon="👥">
+        <div className="bulk-bar">
+          <label className="check-row">
+            <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+            <span>전체선택</span>
+          </label>
+          <span className="muted small">선택 {selectedIds.length}명</span>
+          <button className="btn btn-danger btn-sm" onClick={deleteSelected} disabled={selectedIds.length === 0}>선택삭제</button>
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={selectedIds.length !== 1}
+            onClick={() => {
+              const employee = employees.find((item) => item.id === selectedIds[0]);
+              if (employee) openEdit(employee);
+            }}
+          >
+            선택수정
+          </button>
+        </div>
+
         {loading ? (
           <div className="muted small" style={{ textAlign: "center", padding: "20px 0" }}>
             불러오는 중...
@@ -112,6 +286,9 @@ export default function EmployeeList() {
 
               return (
                 <div className="list-row" key={emp.id} style={{ flexWrap: "wrap" }}>
+                  <label className="check-row" style={{ flex: "0 0 auto" }}>
+                    <input type="checkbox" checked={selectedIds.includes(emp.id)} onChange={() => toggleSelected(emp.id)} />
+                  </label>
                   <span className="avatar">{emp.name[0]}</span>
                   <div style={{ flex: 1, minWidth: 180 }}>
                     <div className="bold small">
@@ -124,29 +301,32 @@ export default function EmployeeList() {
                     </div>
                   </div>
 
-                  {uid ? (
-                    <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <Badge tone={roleTone(appRole)}>{roleLabel(appRole)}</Badge>
-                      {appRole === "admin" ? (
-                        <span className="muted small">관리자 권한은 콘솔에서 관리</span>
-                      ) : (
-                        <div className="segmented" aria-label={`${emp.name} 권한 변경`}>
-                          {ROLE_OPTIONS.map((option) => (
-                            <button
-                              key={option}
-                              className={appRole === option ? "on" : ""}
-                              disabled={savingUid === uid || appRole === option}
-                              onClick={() => void changeRole(uid, option)}
-                            >
-                              {roleLabel(option)}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <Badge tone="gray">계정 미연결</Badge>
-                  )}
+                  <div className="row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(emp)}>수정</button>
+                    {uid ? (
+                      <>
+                        <Badge tone={roleTone(appRole)}>{roleLabel(appRole)}</Badge>
+                        {appRole === "admin" ? (
+                          <span className="muted small">관리자 권한은 콘솔에서 관리</span>
+                        ) : (
+                          <div className="segmented" aria-label={`${emp.name} 권한 변경`}>
+                            {ROLE_OPTIONS.map((option) => (
+                              <button
+                                key={option}
+                                className={appRole === option ? "on" : ""}
+                                disabled={savingUid === uid || appRole === option}
+                                onClick={() => void changeRole(uid, option)}
+                              >
+                                {roleLabel(option)}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <Badge tone="gray">계정 미연결</Badge>
+                    )}
+                  </div>
                 </div>
               );
             })}

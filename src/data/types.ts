@@ -118,6 +118,7 @@ export interface PayrollRow {
 
 export interface Notice {
   id: number;
+  docId?: string;
   text: string;
   date: string;
   pinned?: boolean;
