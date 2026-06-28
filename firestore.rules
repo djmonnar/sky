@@ -249,6 +249,10 @@ service cloud.firestore {
         allow create: if inStore(storeId); // 전달사항은 누구나 남길 수 있음
         allow update, delete: if canManageOps(storeId);
       }
+
+      match /chatbotUsers/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
     }
   }
 }
