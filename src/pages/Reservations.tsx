@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useStore } from "../store";
 import { Card, StatusBadge, Badge } from "../components/ui";
 import {
-  Reservation, ResvStatus, RESV_STATUSES, SEATS, Seat,
+  Reservation, ResvStatus, RESV_STATUSES,
   TODAY_STR, DOW_KO, TODAY_DOW,
 } from "../data";
 
@@ -21,7 +21,7 @@ const EMPTY_FORM: Omit<Reservation, "id"> = {
   name: "",
   phone: "",
   people: 2,
-  seat: "홀A",
+  seat: "",
   status: "예약확정",
   writer: "직원",
   createdAt: "",
@@ -186,6 +186,7 @@ export default function Reservations() {
       time,
       name: form.name.trim(),
       phone: form.phone.trim(),
+      seat: form.seat.trim(),
       writer: form.writer || writerName,
       createdAt: form.createdAt || nowStamp(),
       status: form.people >= 8 && form.status === "예약확정" ? "단체" : form.status,
@@ -293,9 +294,12 @@ export default function Reservations() {
             </div>
             <div>
               <label className="field-label">좌석</label>
-              <select className="select" value={form.seat} onChange={(e) => setForm({ ...form, seat: e.target.value as Seat })}>
-                {SEATS.map((seat) => <option key={seat} value={seat}>{seat}</option>)}
-              </select>
+              <input
+                className="input"
+                value={form.seat}
+                onChange={(e) => setForm({ ...form, seat: e.target.value })}
+                placeholder="예: 창가, 룸1, 12번 테이블"
+              />
             </div>
             <div>
               <label className="field-label">작성자</label>

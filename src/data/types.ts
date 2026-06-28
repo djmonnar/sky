@@ -15,7 +15,7 @@ export type ResvStatus =
   | "확인전화필요"
   | "예약대기";
 
-export type Seat = "홀A" | "홀B" | "홀C" | "룸1" | "룸2" | "창가" | "단체석";
+export type Seat = string;
 
 export type PunchStatus = "before" | "working" | "done";
 
