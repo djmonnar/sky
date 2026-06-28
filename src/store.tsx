@@ -29,6 +29,7 @@ import {
   subscribeUserProfiles, fsUpdateUserRole,
   subscribeVendors, subscribeRecipes,
   fsUpsertVendor, fsDeleteVendor, fsUpsertRecipe, fsDeleteRecipe,
+  fsUpdateMyProfile,
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
 
@@ -55,9 +56,17 @@ interface Store {
   profile: UserProfile | null;
   authLoading: boolean;
   login: (email: string, password: string, rememberLogin?: boolean) => Promise<void>;
-  signup: (data: { name: string; email: string; password: string; phone: string; bank: string; account: string }) => Promise<void>;
+  signup: (data: {
+    name: string; email: string; password: string; phone: string;
+    address: string; residentRegistrationNumber: string; bank: string; account: string;
+  }) => Promise<void>;
   /** 로그인됐지만 프로필이 없는 계정의 프로필을 완성 (가입 트랜잭션 실패 복구) */
-  completeProfile: (data: { name: string; phone: string; bank: string; account: string }) => Promise<void>;
+  completeProfile: (data: {
+    name: string; phone: string; address: string; residentRegistrationNumber: string; bank: string; account: string;
+  }) => Promise<void>;
+  updateMyProfile: (data: {
+    name: string; phone: string; address: string; residentRegistrationNumber: string; bank: string; account: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
 
   loading: boolean;
@@ -623,13 +632,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signup = useCallback(
-    async (data: { name: string; email: string; password: string; phone: string; bank: string; account: string }) => {
+    async (data: {
+      name: string; email: string; password: string; phone: string;
+      address: string; residentRegistrationNumber: string; bank: string; account: string;
+    }) => {
       signupInProgress.current = true;
       try {
         const { uid, email: createdEmail } = await signUpEmail(data.email, data.password);
         try {
           const { profile: newProfile } = await createStaffProfile(uid, {
-            name: data.name, phone: data.phone, bank: data.bank, account: data.account,
+            name: data.name,
+            phone: data.phone,
+            address: data.address,
+            residentRegistrationNumber: data.residentRegistrationNumber,
+            bank: data.bank,
+            account: data.account,
           });
           setProfile(newProfile);
           setRoleState("staff");
@@ -652,7 +669,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const completeProfile = useCallback(
-    async (data: { name: string; phone: string; bank: string; account: string }) => {
+    async (data: {
+      name: string; phone: string; address: string; residentRegistrationNumber: string; bank: string; account: string;
+    }) => {
       if (!authUser) throw new Error("로그인이 필요합니다.");
       const { profile: newProfile } = await createStaffProfile(authUser.uid, data);
       setProfile(newProfile);
@@ -661,6 +680,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       showToast("프로필이 완성되었습니다.");
     },
     [authUser, showToast]
+  );
+
+  const updateMyProfile = useCallback(
+    async (data: {
+      name: string; phone: string; address: string; residentRegistrationNumber: string; bank: string; account: string;
+    }) => {
+      if (APP_MODE === "live") {
+        if (!authUser || !profile) throw new Error("로그인이 필요합니다.");
+        await fsUpdateMyProfile(authUser.uid, profile.employeeId, data);
+      }
+      setProfile((prev) => (prev ? { ...prev, ...data } : prev));
+      setEmployees((prev) =>
+        prev.map((employee) =>
+          employee.id === (APP_MODE === "demo" ? CURRENT_STAFF_ID : profile?.employeeId)
+            ? { ...employee, ...data }
+            : employee
+        )
+      );
+      showToast("내 정보를 저장했습니다");
+    },
+    [authUser, profile, showToast]
   );
 
   const logout = useCallback(async () => {
@@ -681,7 +721,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       mode: APP_MODE, demoReason,
       role, setRole,
-      authUser, profile, authLoading, login, signup, completeProfile, logout,
+      authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
       loading, error,
       employees, upsertEmployee, deleteEmployee, deactivateUserProfile,
       userProfiles, updateUserRole, currentEmployee,
@@ -696,7 +736,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
-    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, logout,
+    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
      reservations, shifts, records, payroll, notices, handovers, vendors, recipes,
      punchStatus, punchInAt, punchOutAt, toast,

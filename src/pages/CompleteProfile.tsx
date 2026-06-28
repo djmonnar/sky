@@ -15,6 +15,8 @@ export default function CompleteProfile() {
   const { authUser, completeProfile, logout } = useStore();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [residentRegistrationNumber, setResidentRegistrationNumber] = useState("");
   const [bank, setBank] = useState("");
   const [account, setAccount] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -24,6 +26,10 @@ export default function CompleteProfile() {
     e.preventDefault();
     if (!name.trim()) { setErr("이름을 입력해주세요."); return; }
     if (!phone.trim()) { setErr("연락처를 입력해주세요."); return; }
+    if (!address.trim()) { setErr("주소를 입력해주세요."); return; }
+    if (!/^\d{6}-?\d{7}$/.test(residentRegistrationNumber.trim())) {
+      setErr("주민번호는 000000-0000000 형식으로 입력해주세요."); return;
+    }
     if (!bank) { setErr("은행을 선택해주세요."); return; }
     if (!account.trim()) { setErr("계좌번호를 입력해주세요."); return; }
     if (!/^[0-9-]{6,}$/.test(account.trim())) {
@@ -32,7 +38,14 @@ export default function CompleteProfile() {
     setBusy(true);
     setErr(null);
     try {
-      await completeProfile({ name: name.trim(), phone: phone.trim(), bank, account: account.trim() });
+      await completeProfile({
+        name: name.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        residentRegistrationNumber: residentRegistrationNumber.trim(),
+        bank,
+        account: account.trim(),
+      });
     } catch (ex) {
       setErr(authErrorMessage(ex));
     } finally {
@@ -63,6 +76,14 @@ export default function CompleteProfile() {
         <label className="field-label" style={{ marginTop: 14 }}>연락처</label>
         <input className="input" type="tel" inputMode="numeric" placeholder="010-0000-0000"
           value={phone} onChange={(e) => setPhone(e.target.value)} />
+
+        <label className="field-label" style={{ marginTop: 14 }}>주소</label>
+        <input className="input" autoComplete="street-address" placeholder="주소"
+          value={address} onChange={(e) => setAddress(e.target.value)} />
+
+        <label className="field-label" style={{ marginTop: 14 }}>주민번호</label>
+        <input className="input" inputMode="numeric" autoComplete="off" placeholder="000000-0000000"
+          value={residentRegistrationNumber} onChange={(e) => setResidentRegistrationNumber(e.target.value)} />
 
         <label className="field-label" style={{ marginTop: 14 }}>급여 입금 계좌</label>
         <div className="row" style={{ alignItems: "stretch" }}>

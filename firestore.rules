@@ -80,7 +80,7 @@ service cloud.firestore {
         && (!("employeeId" in request.resource.data) || request.resource.data.employeeId is number)
         && request.resource.data.keys().hasOnly([
           "name", "role", "storeId", "employeeId", "active",
-          "phone", "bank", "account", "createdAt", "updatedAt"
+          "phone", "address", "residentRegistrationNumber", "bank", "account", "createdAt", "updatedAt"
         ]);
     }
 
@@ -120,7 +120,7 @@ service cloud.firestore {
             )
             && request.resource.data.keys().hasOnly([
               "name", "role", "storeId", "employeeId", "active",
-              "phone", "bank", "account", "createdAt", "updatedAt"
+              "phone", "address", "residentRegistrationNumber", "bank", "account", "createdAt", "updatedAt"
             ])
           )
           || (
@@ -187,6 +187,8 @@ service cloud.firestore {
                         && request.resource.data.name is string
                         && request.resource.data.name.size() > 0
                         && request.resource.data.phone is string
+                        && request.resource.data.address is string
+                        && request.resource.data.residentRegistrationNumber is string
                         && request.resource.data.bank is string
                         && request.resource.data.account is string
                         && (request.resource.data.role == "홀" || request.resource.data.role == "주방")
@@ -195,10 +197,21 @@ service cloud.firestore {
                         && request.resource.data.hourly is number
                         && request.resource.data.keys().hasOnly([
                           "id", "name", "role", "employmentType", "salaryType", "hourly",
-                          "phone", "bank", "account", "uid", "active", "createdAt", "updatedAt"
+                          "phone", "address", "residentRegistrationNumber", "bank", "account", "uid", "active", "createdAt", "updatedAt"
                         ])
                       );
-        allow update, delete: if isAdmin(storeId);
+        allow update: if isAdmin(storeId)
+                      || (
+                        signedIn()
+                        && isHaneulttangStore(storeId)
+                        && resource.data.uid == request.auth.uid
+                        && request.resource.data.uid == resource.data.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                          "name", "phone", "address", "residentRegistrationNumber",
+                          "bank", "account", "updatedAt"
+                        ])
+                      );
+        allow delete: if isAdmin(storeId);
       }
 
       match /reservations/{id} {

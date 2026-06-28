@@ -1,21 +1,49 @@
-# 하늘땅 카카오 챗봇 시나리오 초안
+# 하늘땅 카카오 챗봇 연결 가이드
 
 ## 구조
 
-- 카카오 챗봇 관리자센터 스킬 URL → Firebase Functions `kakaoSkill`
-- Function → Firestore `stores/haneulttang/*`
-- 챗봇 권한 → `stores/haneulttang/chatbotUsers/{botUserKey}`
+- 카카오 챗봇 관리자센터 스킬 URL: Firebase Functions `kakaoSkill`
+- Firestore 접근 경로: `stores/haneulttang/*`
+- 챗봇 사용자 권한: `stores/haneulttang/chatbotUsers/{botUserKey}`
+
+## 배포 상태
+
+Functions 배포 명령:
+
+```bash
+firebase deploy --only functions --project skyearth-84a78
+```
+
+현재 `skyearth-84a78` 프로젝트는 Blaze 요금제가 아니라서 Functions 배포가 막힙니다.
+Firebase가 `artifactregistry.googleapis.com` API를 켜야 하는데, 이 API는 Blaze(pay-as-you-go) 업그레이드가 필요합니다.
+
+업그레이드 후 같은 명령을 다시 실행하면 됩니다.
+
+## 스킬 URL
+
+배포 후 카카오 챗봇 관리자센터에 아래 URL을 등록합니다.
+
+```text
+https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill
+```
+
+비밀값을 사용할 경우:
+
+```text
+https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill?secret={KAKAO_SKILL_SECRET}
+```
+
+`KAKAO_SKILL_SECRET` 환경변수가 설정되어 있으면, 같은 secret이 들어온 요청만 처리합니다.
 
 ## 챗봇 사용자 등록
 
-카카오 요청은 Firebase Auth 로그인 상태가 아니므로, 챗봇 사용자는 별도 등록이 필요합니다.
+카카오 요청은 Firebase Auth 로그인 상태가 아니므로 챗봇 사용자는 별도로 등록해야 합니다.
+처음 챗봇을 호출하면 응답으로 `botUserKey`가 표시됩니다.
 
 Firestore에 아래 문서를 만듭니다.
 
-경로:
-
 ```text
-stores/haneulttang/chatbotUsers/{카카오가 알려준 키}
+stores/haneulttang/chatbotUsers/{botUserKey}
 ```
 
 예시:
@@ -29,176 +57,144 @@ stores/haneulttang/chatbotUsers/{카카오가 알려준 키}
 }
 ```
 
-역할:
+권한:
 
-- `admin`: 전체 조회/변경, 급여 요약 가능
-- `manager`: 예약, 근무표, 직원 목록, 공지/전달 관리 가능
-- `staff`: 예약 조회/등록/상태 변경, 본인 근무표, 전달사항 가능
-
-## 스킬 서버 보안
-
-스킬 URL에는 비밀값을 붙이거나 헤더를 설정합니다.
-
-```text
-https://{region}-{project}.cloudfunctions.net/kakaoSkill?secret={KAKAO_SKILL_SECRET}
-```
-
-Functions 환경변수 `KAKAO_SKILL_SECRET`가 설정되어 있으면, 값이 맞는 요청만 처리합니다.
+- `admin`: 전체 기능
+- `manager`: 예약, 근무표, 직원 목록, 공지/전달 관리
+- `staff`: 예약 조회/등록/상태 변경, 본인 근무표 조회, 전달사항 등록
 
 ## 공통 파라미터
 
-챗봇 관리자센터 블록에서 아래 파라미터를 재사용합니다.
-
 | 파라미터 | 용도 |
 | --- | --- |
-| `action` | 수행 작업. 예: `예약등록`, `오늘현황` |
-| `date` | 날짜. 예: `오늘`, `내일`, `2026-06-28`, `6/28` |
-| `period` | `오전` 또는 `오후` |
-| `time` | 수기 시간. 예: `7:30`, `730` |
-| `name` | 예약자/직원 이름 |
-| `phone` | 예약 연락처 |
+| `action` | 수행 작업 |
+| `date` | 오늘, 내일, 2026-06-28, 6/28 |
+| `period` | 오전 또는 오후 |
+| `time` | 7:30, 730 |
+| `id` | 문서/예약/직원/거래처/레시피 번호 |
+| `name` | 이름, 예약자, 직원명, 거래처명, 레시피명 |
+| `phone` | 연락처 |
 | `people` | 예약 인원 |
-| `seat` | 좌석 수기 입력 |
-| `status` | 예약 상태. 예: `방문완료`, `취소` |
-| `id` | 예약번호 |
+| `seat` | 좌석 |
+| `status` | 예약확정, 방문완료, 취소, 노쇼, 단체, 확인전화필요, 예약대기 |
 | `text` | 공지/전달사항 내용 |
 | `password` | 급여 요약 비밀번호 |
 
-## 1차 시나리오
+## 지원 액션
 
-### 오늘 현황
-
-발화 예시:
+### 현황
 
 - 오늘 현황
 - 대시보드
 - 요약
 
-응답:
+### 예약
 
-- 오늘 예약 건수
-- 오늘 근무 배치 건수
-- 직원 수
-- 확인 필요한 근무기록 수
-
-### 예약 조회
-
-발화 예시:
-
-- 오늘 예약
-- 내일 예약
-- 6/28 오후 예약
-
-필요 파라미터:
-
-- `date`
-- `period` 선택
-- `status` 선택
-
-### 예약 등록
-
-발화 예시:
-
+- 예약 목록
 - 예약 등록
-- 오늘 오후 7시 30분 홍길동 4명 창가 예약
+- 예약 수정
+- 예약 상태 변경
+- 예약 삭제
 
-필수 파라미터:
-
-- `name`
-- `phone`
-- `period`
-- `time`
-
-선택 파라미터:
-
-- `date`
-- `people`
-- `seat`
-- `request`
-
-저장 위치:
+예시:
 
 ```text
-stores/haneulttang/reservations/{id}
+예약 등록 / 홍길동 / 010-1234-5678 / 오후 / 7:30 / 4명 / 창가
+예약 수정 / 1780000000000 / 오후 / 8:00 / 룸1
+예약 1780000000000 방문완료
+예약 삭제 / 1780000000000
 ```
 
-### 예약 상태 변경
-
-발화 예시:
-
-- 예약 1780000000000 방문완료
-- 예약 1780000000000 취소
-
-필수 파라미터:
-
-- `id`
-- `status`
-
-### 근무표 조회
-
-발화 예시:
+### 근무표
 
 - 오늘 근무표
-- 내일 근무표
+- 근무표 추가
+- 근무표 삭제
 
-관리자/매니저는 전체 근무표를 보고, 실무자는 본인 `employeeId`와 일치하는 근무표만 봅니다.
+예시:
 
-### 직원 목록
+```text
+근무표 추가 / 내일 / 오전 / 홀 / 홍길동
+근무표 삭제 / 내일 / 오전 / 홀 / 홍길동
+```
 
-발화 예시:
+### 직원
 
 - 직원 목록
-- 직원
+- 직원 등록
+- 직원 수정
+- 직원 삭제
 
-권한:
+예시:
 
-- 관리자/매니저
+```text
+직원 등록 / 홍길동 / 홀 / 시급 10000
+직원 수정 / 홍길동 / 연락처 010-0000-0000
+직원 삭제 / 홍길동
+```
 
 ### 공지/전달사항
 
-발화 예시:
+- 공지 목록
+- 공지 등록/수정/삭제
+- 전달사항 목록
+- 전달사항 등록/수정/삭제
 
-- 공지
-- 공지 등록
-- 전달사항
-- 전달사항 등록
+예시:
 
-권한:
+```text
+공지 등록 / 오늘 단체 예약 많으니 세팅 확인
+전달사항 등록 / 주방 재료 입고 확인 필요
+공지 삭제 / 1780000000000
+```
 
-- 공지 등록: 관리자/매니저
-- 전달사항 등록: 전체 등록 사용자
-
-### 급여 요약
-
-발화 예시:
+### 급여
 
 - 급여 요약
 
-권한:
+예시:
 
-- 관리자
+```text
+급여 요약 / 비밀번호 qaz@qwer4312
+```
 
-필수 파라미터:
+### 거래처
 
-- `password`
+- 거래처 목록
+- 거래처 등록
+- 거래처 수정
+- 거래처 삭제
 
-비밀번호는 앱의 급여관리 비밀번호 문서 `stores/haneulttang/meta/payrollPassword` 값을 사용합니다.
+예시:
 
-## 챗봇 관리자센터 작업 순서
+```text
+거래처 등록 / 하늘식자재 / 사업자번호 123-45-67890 / 주소 광주 북구 / 연락처 062-000-0000
+거래처 수정 / 1 / 주소 광주 서구
+거래처 삭제 / 1
+```
 
-1. 카카오톡 채널 챗봇 생성
-2. 스킬 생성 후 Firebase Functions URL 등록
-3. 스킬 테스트에서 `action` 값을 넣고 응답 확인
-4. 블록 생성
-5. 발화 패턴과 파라미터 연결
-6. 각 블록에 같은 스킬을 연결하고 `action` 값만 다르게 전달
-7. 실제 카카오톡에서 첫 호출
-8. 챗봇이 알려주는 `botUserKey`를 Firestore `chatbotUsers`에 등록
+### 레시피/원가
 
-## 다음 단계 후보
+- 레시피 목록
+- 레시피 등록
+- 레시피 수정
+- 레시피 삭제
 
-- 관리자 화면에서 챗봇 사용자 등록 UI 추가
-- 예약 등록 슬롯필링 질문 문구 정리
-- 근무표 배치/삭제 챗봇 액션 추가
-- 직원 등록/수정/삭제 챗봇 액션 추가
-- 버튼형 quickReplies를 블록 연결 방식으로 세분화
+예시:
+
+```text
+레시피 등록 / 김치찌개 / 판매가 32000 / 인건비 3000 / 운영비 2000 / 재료 돼지고기 0.6 12000, 김치 1 4500
+레시피 수정 / 1 / 판매가 35000
+레시피 삭제 / 1
+```
+
+## 카카오 관리자센터 작업 순서
+
+1. Firebase 프로젝트를 Blaze 요금제로 업그레이드
+2. `firebase deploy --only functions --project skyearth-84a78` 실행
+3. 카카오 챗봇 관리자센터에서 스킬 생성
+4. 스킬 URL에 `kakaoSkill` URL 등록
+5. 챗봇에서 첫 메시지 전송
+6. 응답에 표시되는 `botUserKey` 확인
+7. Firestore `stores/haneulttang/chatbotUsers/{botUserKey}` 문서 생성
+8. 다시 챗봇 호출 후 권한별 기능 테스트

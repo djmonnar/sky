@@ -73,6 +73,8 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
       standardStart: d.standardStart,
       standardEnd: d.standardEnd,
       phone: d.phone,
+      address: d.address,
+      residentRegistrationNumber: d.residentRegistrationNumber,
       bank: d.bank,
       account: d.account,
       uid: d.uid,
@@ -428,4 +430,31 @@ export async function fsDeactivateUserProfile(uid: string): Promise<void> {
     active: false,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function fsUpdateMyProfile(
+  uid: string,
+  employeeId: number | undefined,
+  data: {
+    name: string;
+    phone: string;
+    address: string;
+    residentRegistrationNumber: string;
+    bank: string;
+    account: string;
+  }
+): Promise<void> {
+  const patch = {
+    name: data.name,
+    phone: data.phone,
+    address: data.address,
+    residentRegistrationNumber: data.residentRegistrationNumber,
+    bank: data.bank,
+    account: data.account,
+    updatedAt: serverTimestamp(),
+  };
+  await updateDoc(doc(requireDb(), "users", uid), patch);
+  if (employeeId !== undefined) {
+    await updateDoc(doc(col("employees"), String(employeeId)), patch);
+  }
 }

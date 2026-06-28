@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useStore } from "../store";
 
 interface NavDef { to: string; icon: string; label: string; title: string; mobile?: boolean; mobileLabel?: string }
@@ -40,7 +40,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const nav = role === "admin" ? ADMIN_NAV : role === "manager" ? MANAGER_NAV : STAFF_NAV;
   const current = nav.find((n) => n.to === loc.pathname);
-  const title = current?.title ?? "하늘땅 매장관리";
+  const title = current?.title ?? (loc.pathname === "/profile" ? "내 정보 수정" : "하늘땅 매장관리");
 
   const userName =
     mode === "live"
@@ -105,13 +105,15 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
           <div className="topbar-right">
             <button className="icon-btn" aria-label="알림">🔔<span className="dot" /></button>
-            <button
-              className="avatar"
-              onClick={mode === "demo" ? switchRole : handleLogout}
-              title={mode === "demo" ? "역할 전환" : "로그아웃"}
-            >
-              {userName[0]}
-            </button>
+            {mode === "demo" ? (
+              <button className="avatar" onClick={switchRole} title="역할 전환">
+                {userName[0]}
+              </button>
+            ) : (
+              <Link className="avatar" to="/profile" title="내 정보 수정">
+                {userName[0]}
+              </Link>
+            )}
           </div>
         </header>
 
@@ -128,11 +130,11 @@ export default function Layout({ children }: { children: ReactNode }) {
           <h1>{title}{loading && <span className="muted small" style={{ marginLeft: 10, fontWeight: 500 }}>불러오는 중...</span>}</h1>
           <div className="topbar-right hide-mobile">
             <button className="icon-btn" aria-label="알림">🔔<span className="dot" /></button>
-            <div className="user-chip">
+            <Link className="user-chip" to="/profile" style={{ textDecoration: "none", color: "inherit" }}>
               <span className="avatar">{userName[0]}</span>
               {userName}
               <span className="role-tag">{userRole}</span>
-            </div>
+            </Link>
           </div>
         </div>
 

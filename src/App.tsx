@@ -16,6 +16,7 @@ import EmployeeList from "./pages/EmployeeList";
 import Guide from "./pages/Guide";
 import Vendors from "./pages/Vendors";
 import Recipes from "./pages/Recipes";
+import MyProfile from "./pages/MyProfile";
 
 function Splash({ text }: { text: string }) {
   return (
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/employees" element={role === "admin" ? <EmployeeList /> : <Navigate to="/" replace />} />
         <Route path="/vendors" element={role === "admin" ? <Vendors /> : <Navigate to="/" replace />} />
         <Route path="/recipes" element={role === "admin" ? <Recipes /> : <Navigate to="/" replace />} />
+        <Route path="/profile" element={<MyProfile />} />
         <Route path="/guide" element={canManageOps ? <Guide /> : <Navigate to="/" replace />} />
         <Route path="/notices" element={<Notices />} />
         {/* 로그인 상태(또는 데모 모드)에서 /signup 접근 시 홈으로 */}

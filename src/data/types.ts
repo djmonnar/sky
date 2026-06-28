@@ -48,6 +48,8 @@ export interface Employee {
   standardEnd?: string;
   // 회원가입(자가 등록) 직원 정보
   phone?: string;
+  address?: string;
+  residentRegistrationNumber?: string;
   bank?: string;
   account?: string; // 계좌번호
   uid?: string; // 연결된 Firebase Auth uid

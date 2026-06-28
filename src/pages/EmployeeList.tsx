@@ -97,6 +97,11 @@ export default function EmployeeList() {
       hourly: draft.salaryType === "hourly" ? Number(draft.hourly ?? 0) : 0,
       monthlySalary: draft.salaryType === "monthly" ? Number(draft.monthlySalary ?? 0) : undefined,
       slotRate: draft.salaryType === "perSlot" ? Number(draft.slotRate ?? 0) : undefined,
+      phone: draft.phone?.trim(),
+      address: draft.address?.trim(),
+      residentRegistrationNumber: draft.residentRegistrationNumber?.trim(),
+      bank: draft.bank?.trim(),
+      account: draft.account?.trim(),
       standardStart: draft.employmentType === "fullTime" ? draft.standardStart : undefined,
       standardEnd: draft.employmentType === "fullTime" ? draft.standardEnd : undefined,
     };
@@ -224,6 +229,17 @@ export default function EmployeeList() {
               <input className="input" value={draft.phone ?? ""} onChange={(e) => updateDraft("phone", e.target.value || undefined)} />
             </div>
             <div>
+              <label className="field-label">주소</label>
+              <input className="input" value={draft.address ?? ""} onChange={(e) => updateDraft("address", e.target.value || undefined)} />
+            </div>
+            <div>
+              <label className="field-label">주민번호</label>
+              <input className="input" value={draft.residentRegistrationNumber ?? ""} onChange={(e) => updateDraft("residentRegistrationNumber", e.target.value || undefined)} placeholder="000000-0000000" />
+            </div>
+          </div>
+
+          <div className="grid grid-2" style={{ gap: 12, marginTop: 14 }}>
+            <div>
               <label className="field-label">은행</label>
               <input className="input" value={draft.bank ?? ""} onChange={(e) => updateDraft("bank", e.target.value || undefined)} />
             </div>
@@ -298,6 +314,7 @@ export default function EmployeeList() {
                     <div className="muted small">
                       {emp.role} · {employmentLabel(emp)} · {salaryTypeLabel(emp)}
                       {emp.phone && ` · ${emp.phone}`}
+                      {emp.address && ` · ${emp.address}`}
                     </div>
                   </div>
 

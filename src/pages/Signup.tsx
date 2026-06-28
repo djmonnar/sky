@@ -16,6 +16,8 @@ export default function Signup() {
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [residentRegistrationNumber, setResidentRegistrationNumber] = useState("");
   const [bank, setBank] = useState("");
   const [account, setAccount] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -32,6 +34,10 @@ export default function Signup() {
     if (password.length < 6) { setErr("비밀번호는 6자 이상이어야 합니다."); return; }
     if (password !== password2) { setErr("비밀번호가 서로 일치하지 않습니다."); return; }
     if (!phone.trim()) { setErr("연락처를 입력해주세요."); return; }
+    if (!address.trim()) { setErr("주소를 입력해주세요."); return; }
+    if (!/^\d{6}-?\d{7}$/.test(residentRegistrationNumber.trim())) {
+      setErr("주민번호는 000000-0000000 형식으로 입력해주세요."); return;
+    }
     if (!bank) { setErr("은행을 선택해주세요."); return; }
     if (!account.trim()) { setErr("계좌번호를 입력해주세요."); return; }
     if (!/^[0-9-]{6,}$/.test(account.trim())) {
@@ -43,7 +49,11 @@ export default function Signup() {
     try {
       await signup({
         name: name.trim(), email: email.trim(), password,
-        phone: phone.trim(), bank, account: account.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        residentRegistrationNumber: residentRegistrationNumber.trim(),
+        bank,
+        account: account.trim(),
       });
       // 성공 시 authUser가 설정되며 App이 자동으로 홈으로 이동시킴
     } catch (ex) {
@@ -113,6 +123,28 @@ export default function Signup() {
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
         />
+
+        <label className="field-label" style={{ marginTop: 14 }}>주소</label>
+        <input
+          className="input"
+          autoComplete="street-address"
+          placeholder="주소"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+        />
+
+        <label className="field-label" style={{ marginTop: 14 }}>주민번호</label>
+        <input
+          className="input"
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="000000-0000000"
+          value={residentRegistrationNumber}
+          onChange={(e) => setResidentRegistrationNumber(e.target.value)}
+        />
+        <p className="muted small" style={{ margin: "6px 0 0" }}>
+          급여·인사 처리용으로만 사용됩니다. 본인과 관리자만 확인할 수 있습니다.
+        </p>
 
         <label className="field-label" style={{ marginTop: 14 }}>급여 입금 계좌</label>
         <div className="row" style={{ alignItems: "stretch" }}>

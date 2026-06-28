@@ -52,6 +52,8 @@ export async function createUserProfile(
 export interface StaffSignupData {
   name: string;
   phone: string;
+  address: string;
+  residentRegistrationNumber: string;
   bank: string;
   account: string;
 }
@@ -84,6 +86,8 @@ export async function createStaffProfile(
       salaryType: "hourly",
       hourly: 0,
       phone: data.phone,
+      address: data.address,
+      residentRegistrationNumber: data.residentRegistrationNumber,
       bank: data.bank,
       account: data.account,
       uid,
@@ -98,6 +102,8 @@ export async function createStaffProfile(
       storeId: STORE_ID,
       employeeId: next,
       phone: data.phone,
+      address: data.address,
+      residentRegistrationNumber: data.residentRegistrationNumber,
       bank: data.bank,
       account: data.account,
       active: true,
@@ -114,6 +120,8 @@ export async function createStaffProfile(
     employeeId,
     active: true,
     phone: data.phone,
+    address: data.address,
+    residentRegistrationNumber: data.residentRegistrationNumber,
     bank: data.bank,
     account: data.account,
   };

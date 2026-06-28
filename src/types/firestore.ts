@@ -33,6 +33,8 @@ export interface UserProfile {
   employeeId?: number;
   active: boolean;
   phone?: string;
+  address?: string;
+  residentRegistrationNumber?: string;
   bank?: string;
   account?: string;
 }
