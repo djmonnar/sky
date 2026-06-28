@@ -1206,16 +1206,20 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 18px;
   padding: 7px;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
   box-shadow: var(--shadow-pop);
 }
+.bottom-nav::-webkit-scrollbar { display: none; }
 .bnav-item {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   color: #aab397; font-size: 10.5px; font-weight: 600;
   text-decoration: none; padding: 5px 4px; border-radius: 11px;
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 0 58px;
+  min-width: 58px;
   white-space: nowrap;
 }
 .bnav-item .ic { font-size: 19px; }
