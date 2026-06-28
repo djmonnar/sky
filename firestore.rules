@@ -273,6 +273,18 @@ service cloud.firestore {
         allow read, write: if isAdmin(storeId);
       }
 
+      match /inventoryItems/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
+      match /purchaseOrders/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
+      match /stockLogs/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
       match /recipes/{id} {
         allow read, write: if isAdmin(storeId);
       }

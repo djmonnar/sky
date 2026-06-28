@@ -14,13 +14,13 @@
 
 import {
   collection, doc, query, where, onSnapshot,
-  setDoc, updateDoc, addDoc, deleteDoc, getDoc, serverTimestamp,
+  setDoc, updateDoc, addDoc, deleteDoc, getDoc, serverTimestamp, writeBatch,
   type QueryConstraint, type DocumentData,
 } from "firebase/firestore";
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
-  Vendor, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
+  Vendor, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
@@ -248,6 +248,60 @@ export function subscribeVendors(cb: (v: Vendor[]) => void, onError: ErrCb): Uns
   );
 }
 
+export function subscribeInventoryItems(cb: (v: InventoryItem[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "inventoryItems",
+    (d, id) => ({
+      ...(d as InventoryItem),
+      id: Number(d.id ?? id),
+      vendorId: Number(d.vendorId ?? 0),
+      name: String(d.name ?? ""),
+      category: d.category ?? "식재료",
+      storageType: d.storageType ?? "실온",
+      unit: String(d.unit ?? ""),
+      currentQty: Number(d.currentQty ?? 0),
+      minQty: Number(d.minQty ?? 0),
+      defaultOrderQty: Number(d.defaultOrderQty ?? 0),
+      unitPrice: Number(d.unitPrice ?? 0),
+      active: d.active ?? true,
+      createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
+      updatedAt: asDisplayDate(d.updatedAt) || String(d.updatedAt ?? ""),
+    }),
+    (items) => cb(items.sort((a, b) => a.vendorId - b.vendorId || a.name.localeCompare(b.name))),
+    onError
+  );
+}
+
+export function subscribePurchaseOrders(cb: (v: PurchaseOrder[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "purchaseOrders",
+    (d, id) => ({
+      id: Number(d.id ?? id),
+      vendorId: Number(d.vendorId ?? 0),
+      vendorName: String(d.vendorName ?? ""),
+      status: d.status === "ordered" || d.status === "received" || d.status === "canceled" ? d.status : "draft",
+      items: Array.isArray(d.items)
+        ? d.items.map((item: DocumentData) => ({
+            inventoryItemId: Number(item.inventoryItemId ?? 0),
+            name: String(item.name ?? ""),
+            qty: Number(item.qty ?? 0),
+            unit: String(item.unit ?? ""),
+            unitPrice: Number(item.unitPrice ?? 0),
+            totalPrice: Number(item.totalPrice ?? 0),
+          }))
+        : [],
+      totalAmount: Number(d.totalAmount ?? 0),
+      memo: d.memo,
+      createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
+      orderedAt: asDisplayDate(d.orderedAt) || String(d.orderedAt ?? ""),
+      receivedAt: asDisplayDate(d.receivedAt) || String(d.receivedAt ?? ""),
+      createdBy: d.createdBy,
+    }),
+    (items) => cb(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)),
+    onError
+  );
+}
+
 export function subscribeRecipes(cb: (v: Recipe[]) => void, onError: ErrCb): Unsub {
   return subscribe(
     "recipes",
@@ -371,6 +425,54 @@ export async function fsUpsertVendor(v: Vendor): Promise<void> {
 
 export async function fsDeleteVendor(id: number): Promise<void> {
   await deleteDoc(doc(col("vendors"), String(id)));
+}
+
+export async function fsUpsertInventoryItem(item: InventoryItem): Promise<void> {
+  await setDoc(
+    doc(col("inventoryItems"), String(item.id)),
+    { ...item, active: item.active ?? true, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteInventoryItem(id: number): Promise<void> {
+  await deleteDoc(doc(col("inventoryItems"), String(id)));
+}
+
+export async function fsUpsertPurchaseOrder(order: PurchaseOrder): Promise<void> {
+  await setDoc(
+    doc(col("purchaseOrders"), String(order.id)),
+    { ...order, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsDeletePurchaseOrder(id: number): Promise<void> {
+  await deleteDoc(doc(col("purchaseOrders"), String(id)));
+}
+
+export async function fsReceivePurchaseOrder(
+  order: PurchaseOrder,
+  updatedItems: InventoryItem[],
+  logs: StockLog[]
+): Promise<void> {
+  const batch = writeBatch(requireDb());
+  updatedItems.forEach((item) => {
+    batch.set(
+      doc(col("inventoryItems"), String(item.id)),
+      { ...item, active: item.active ?? true, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+  });
+  logs.forEach((log) => {
+    batch.set(doc(col("stockLogs"), log.id), { ...log, createdAt: serverTimestamp() });
+  });
+  batch.set(
+    doc(col("purchaseOrders"), String(order.id)),
+    { ...order, status: "received", receivedAt: order.receivedAt ?? new Date().toISOString(), updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+  await batch.commit();
 }
 
 export async function fsUpsertRecipe(r: Recipe): Promise<void> {

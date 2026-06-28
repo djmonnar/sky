@@ -8,12 +8,14 @@
    ============================================================ */
 
 import {
-  Employee, Recipe, Reservation, Shift, WorkRecord, PayrollRow, Notice, Vendor,
+  Employee, InventoryItem, Recipe, Reservation, Shift, WorkRecord, PayrollRow, Notice, Vendor,
+  PurchaseOrder,
   SalesOrder, SalesSyncRun,
 } from "./types";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
   SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
+  SEED_INVENTORY_ITEMS, SEED_PURCHASE_ORDERS,
   SEED_SALES_ORDERS, SEED_SALES_SYNC_RUNS,
 } from "./mock";
 
@@ -49,6 +51,14 @@ export interface Repository {
   saveVendor(v: Vendor): Promise<void>;
   deleteVendor(id: number): Promise<void>;
 
+  listInventoryItems(): Promise<InventoryItem[]>;
+  saveInventoryItem(item: InventoryItem): Promise<void>;
+  deleteInventoryItem(id: number): Promise<void>;
+
+  listPurchaseOrders(): Promise<PurchaseOrder[]>;
+  savePurchaseOrder(order: PurchaseOrder): Promise<void>;
+  deletePurchaseOrder(id: number): Promise<void>;
+
   listRecipes(): Promise<Recipe[]>;
   saveRecipe(r: Recipe): Promise<void>;
   deleteRecipe(id: number): Promise<void>;
@@ -68,6 +78,8 @@ export function createMockRepository(): Repository {
     notices: structuredClone(SEED_NOTICES),
     handovers: structuredClone(SEED_HANDOVERS),
     vendors: structuredClone(SEED_VENDORS),
+    inventoryItems: structuredClone(SEED_INVENTORY_ITEMS),
+    purchaseOrders: structuredClone(SEED_PURCHASE_ORDERS),
     recipes: structuredClone(SEED_RECIPES),
     salesOrders: structuredClone(SEED_SALES_ORDERS),
     salesSyncRuns: structuredClone(SEED_SALES_SYNC_RUNS),
@@ -151,6 +163,28 @@ export function createMockRepository(): Repository {
     async deleteVendor(id) {
       const i = db.vendors.findIndex((x) => x.id === id);
       if (i !== -1) db.vendors.splice(i, 1);
+    },
+
+    async listInventoryItems() { return [...db.inventoryItems]; },
+    async saveInventoryItem(item) {
+      const i = db.inventoryItems.findIndex((x) => x.id === item.id);
+      if (i === -1) db.inventoryItems.unshift(item);
+      else db.inventoryItems[i] = item;
+    },
+    async deleteInventoryItem(id) {
+      const i = db.inventoryItems.findIndex((x) => x.id === id);
+      if (i !== -1) db.inventoryItems.splice(i, 1);
+    },
+
+    async listPurchaseOrders() { return [...db.purchaseOrders]; },
+    async savePurchaseOrder(order) {
+      const i = db.purchaseOrders.findIndex((x) => x.id === order.id);
+      if (i === -1) db.purchaseOrders.unshift(order);
+      else db.purchaseOrders[i] = order;
+    },
+    async deletePurchaseOrder(id) {
+      const i = db.purchaseOrders.findIndex((x) => x.id === id);
+      if (i !== -1) db.purchaseOrders.splice(i, 1);
     },
 
     async listRecipes() { return [...db.recipes]; },

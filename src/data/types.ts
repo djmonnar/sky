@@ -141,6 +141,66 @@ export interface Vendor {
   createdAt?: string;
 }
 
+export type InventoryCategory = "식재료" | "주류" | "음료" | "소모품" | "기타";
+export type StorageType = "냉장" | "냉동" | "실온" | "기타";
+
+export interface InventoryItem {
+  id: number;
+  vendorId: number;
+  name: string;
+  category: InventoryCategory;
+  storageType: StorageType;
+  unit: string;
+  currentQty: number;
+  minQty: number;
+  defaultOrderQty: number;
+  unitPrice: number;
+  memo?: string;
+  active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "canceled";
+
+export interface PurchaseOrderItem {
+  inventoryItemId: number;
+  name: string;
+  qty: number;
+  unit: string;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+export interface PurchaseOrder {
+  id: number;
+  vendorId: number;
+  vendorName: string;
+  status: PurchaseOrderStatus;
+  items: PurchaseOrderItem[];
+  totalAmount: number;
+  memo?: string;
+  createdAt: string;
+  orderedAt?: string;
+  receivedAt?: string;
+  createdBy?: string;
+}
+
+export type StockLogType = "in" | "out" | "adjust" | "waste";
+
+export interface StockLog {
+  id: string;
+  inventoryItemId: number;
+  type: StockLogType;
+  qty: number;
+  beforeQty: number;
+  afterQty: number;
+  memo?: string;
+  createdAt: string;
+  createdBy?: string;
+  purchaseOrderId?: number;
+}
+
 export interface RecipeIngredient {
   id: string;
   name: string;

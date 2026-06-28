@@ -4,8 +4,10 @@ import { TODAY, TODAY_STR, fmtDate, weekDates } from "../lib/time";
 import type {
   Department,
   Employee,
+  InventoryItem,
   Notice,
   PayrollRow,
+  PurchaseOrder,
   Recipe,
   Reservation,
   SalesOrder,
@@ -224,6 +226,64 @@ export const SEED_RECIPES: Recipe[] = [
       { id: "pork", name: "돼지고기", quantity: 0.6, unit: "kg", unitCost: 12000, vendorId: 2 },
       { id: "kimchi", name: "김치", quantity: 1, unit: "kg", unitCost: 4500, vendorId: 1 },
       { id: "tofu", name: "두부", quantity: 2, unit: "모", unitCost: 1200, vendorId: 1 },
+    ],
+  },
+];
+
+export const SEED_INVENTORY_ITEMS: InventoryItem[] = [
+  {
+    id: 1,
+    vendorId: 1,
+    name: "김치",
+    category: "식재료",
+    storageType: "냉장",
+    unit: "kg",
+    currentQty: 8,
+    minQty: 10,
+    defaultOrderQty: 20,
+    unitPrice: 4500,
+    memo: "찌개/반찬 공용",
+    active: true,
+  },
+  {
+    id: 2,
+    vendorId: 1,
+    name: "두부",
+    category: "식재료",
+    storageType: "냉장",
+    unit: "모",
+    currentQty: 18,
+    minQty: 12,
+    defaultOrderQty: 24,
+    unitPrice: 1200,
+    active: true,
+  },
+  {
+    id: 3,
+    vendorId: 2,
+    name: "돼지고기",
+    category: "식재료",
+    storageType: "냉장",
+    unit: "kg",
+    currentQty: 4,
+    minQty: 6,
+    defaultOrderQty: 10,
+    unitPrice: 12000,
+    active: true,
+  },
+];
+
+export const SEED_PURCHASE_ORDERS: PurchaseOrder[] = [
+  {
+    id: 1,
+    vendorId: 1,
+    vendorName: "하늘식자재",
+    status: "draft",
+    createdAt: `${TODAY_STR}T09:00:00+09:00`,
+    totalAmount: 90000,
+    memo: "데모 발주서",
+    items: [
+      { inventoryItemId: 1, name: "김치", qty: 20, unit: "kg", unitPrice: 4500, totalPrice: 90000 },
     ],
   },
 ];

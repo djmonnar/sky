@@ -1594,6 +1594,55 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   min-height: 46px;
 }
 
+.inventory-table {
+  min-width: 980px;
+}
+.vendor-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) repeat(3, minmax(110px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-alt);
+}
+.inventory-form {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.vendor-orders {
+  margin-top: 18px;
+}
+.vendor-order-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.vendor-order-card + .vendor-order-card {
+  margin-top: 12px;
+}
+.order-line-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.order-line-edit {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 90px 110px 110px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--card-alt);
+}
+
 .recipe-ingredient-list {
   display: flex;
   flex-direction: column;
@@ -1712,6 +1761,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .employee-multi-add { grid-template-columns: 1fr; }
   .employee-multi-list { max-height: 300px; }
   .employee-multi-add .btn { width: 100%; }
+  .vendor-detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .order-line-edit {
+    grid-template-columns: 1fr 1fr;
+  }
+  .order-line-edit .num {
+    text-align: left;
+  }
   .recipe-ingredient-row { grid-template-columns: 1fr 1fr; }
   .recipe-ingredient-cost {
     grid-column: 1 / -1;

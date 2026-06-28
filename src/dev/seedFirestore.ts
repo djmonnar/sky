@@ -16,13 +16,14 @@ import { requireDb, STORE_ID } from "../lib/firebase";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
   SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
+  SEED_INVENTORY_ITEMS, SEED_PURCHASE_ORDERS,
   SEED_SALES_ORDERS, SEED_SALES_SYNC_RUNS,
 } from "../data/mock";
 
 // attendanceLogs는 규칙상 삭제 불가(출퇴근 로그 불변)이므로 재설정 대상에서 제외
 const COLLECTIONS = [
   "employees", "reservations", "shifts", "workRecords",
-  "payroll", "notices", "handovers", "vendors", "recipes",
+  "payroll", "notices", "handovers", "vendors", "inventoryItems", "purchaseOrders", "stockLogs", "recipes",
   "salesOrders", "salesDailySummaries", "salesSyncRuns",
 ];
 
@@ -65,6 +66,12 @@ function buildSeedBatches(db: ReturnType<typeof requireDb>) {
   );
   SEED_VENDORS.forEach((v) =>
     ops.push(() => batch.set(doc(colRef("vendors"), String(v.id)), { ...v, active: true, ...ts() }))
+  );
+  SEED_INVENTORY_ITEMS.forEach((item) =>
+    ops.push(() => batch.set(doc(colRef("inventoryItems"), String(item.id)), { ...item, active: true, ...ts() }))
+  );
+  SEED_PURCHASE_ORDERS.forEach((order) =>
+    ops.push(() => batch.set(doc(colRef("purchaseOrders"), String(order.id)), { ...order, ...ts() }))
   );
   SEED_RECIPES.forEach((r) =>
     ops.push(() => batch.set(doc(colRef("recipes"), String(r.id)), { ...r, active: true, ...ts() }))
@@ -136,6 +143,8 @@ export async function resetFirestore(): Promise<string> {
   SEED_NOTICES.forEach((n) => writes.push({ ref: doc(colRef2("notices"), String(n.id)), data: { ...n, ...ts() } }));
   SEED_HANDOVERS.forEach((h) => writes.push({ ref: doc(colRef2("handovers"), String(h.id)), data: { ...h, createdBy: "seed", createdAt: serverTimestamp() } }));
   SEED_VENDORS.forEach((v) => writes.push({ ref: doc(colRef2("vendors"), String(v.id)), data: { ...v, active: true, ...ts() } }));
+  SEED_INVENTORY_ITEMS.forEach((item) => writes.push({ ref: doc(colRef2("inventoryItems"), String(item.id)), data: { ...item, active: true, ...ts() } }));
+  SEED_PURCHASE_ORDERS.forEach((order) => writes.push({ ref: doc(colRef2("purchaseOrders"), String(order.id)), data: { ...order, ...ts() } }));
   SEED_RECIPES.forEach((r) => writes.push({ ref: doc(colRef2("recipes"), String(r.id)), data: { ...r, active: true, ...ts() } }));
   SEED_SALES_ORDERS.forEach((order) => writes.push({ ref: doc(colRef2("salesOrders"), order.id), data: { ...order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() } }));
   SEED_SALES_SYNC_RUNS.forEach((run) => writes.push({ ref: doc(colRef2("salesSyncRuns"), run.id), data: { ...run, createdAt: serverTimestamp(), updatedAt: serverTimestamp() } }));

@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
-  Notice, Employee, Vendor, Recipe, SalesOrder, SalesSyncRun,
+  Notice, Employee, Vendor, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
@@ -29,6 +29,9 @@ import {
   subscribeUserProfiles, fsUpdateUserRole,
   subscribeVendors, subscribeRecipes,
   fsUpsertVendor, fsDeleteVendor, fsUpsertRecipe, fsDeleteRecipe,
+  subscribeInventoryItems, subscribePurchaseOrders,
+  fsUpsertInventoryItem, fsDeleteInventoryItem,
+  fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
   subscribeSalesOrders, subscribeSalesSyncRuns, fsSyncOkposSales,
   fsUpdateMyProfile,
 } from "./services/firestore";
@@ -106,6 +109,13 @@ interface Store {
   vendors: Vendor[];
   upsertVendor: (vendor: Vendor) => void;
   deleteVendor: (id: number) => void;
+  inventoryItems: InventoryItem[];
+  upsertInventoryItem: (item: InventoryItem) => void;
+  deleteInventoryItem: (id: number) => void;
+  purchaseOrders: PurchaseOrder[];
+  upsertPurchaseOrder: (order: PurchaseOrder) => void;
+  deletePurchaseOrder: (id: number) => void;
+  receivePurchaseOrder: (id: number) => void;
   recipes: Recipe[];
   upsertRecipe: (recipe: Recipe) => void;
   deleteRecipe: (id: number) => void;
@@ -147,6 +157,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [handovers, setHandovers] = useState<Notice[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [salesSyncRuns, setSalesSyncRuns] = useState<SalesSyncRun[]>([]);
@@ -171,7 +183,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "demo") return;
     (async () => {
-      const [emp, resv, sh, rec, pay, not, hand, ven, recipeList, sales, syncRuns] = await Promise.all([
+      const [emp, resv, sh, rec, pay, not, hand, ven, inv, orders, recipeList, sales, syncRuns] = await Promise.all([
         repository.listEmployees(),
         repository.listReservations(),
         repository.listShifts(),
@@ -180,6 +192,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         repository.listNotices(),
         repository.listHandovers(),
         repository.listVendors(),
+        repository.listInventoryItems(),
+        repository.listPurchaseOrders(),
         repository.listRecipes(),
         repository.listSalesOrders(),
         repository.listSalesSyncRuns(),
@@ -192,6 +206,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setNotices(not);
       setHandovers(hand);
       setVendors(ven);
+      setInventoryItems(inv);
+      setPurchaseOrders(orders);
       setRecipes(recipeList);
       setSalesOrders(sales);
       setSalesSyncRuns(syncRuns);
@@ -288,6 +304,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribePayroll(setPayroll, onErr),
             subscribeUserProfiles(setUserProfiles, onErr),
             subscribeVendors(setVendors, onErr),
+            subscribeInventoryItems(setInventoryItems, onErr),
+            subscribePurchaseOrders(setPurchaseOrders, onErr),
             subscribeRecipes(setRecipes, onErr),
             subscribeSalesOrders(setSalesOrders, onErr),
             subscribeSalesSyncRuns(setSalesSyncRuns, onErr),
@@ -475,6 +493,125 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void repository.deleteVendor(id);
     setVendors((prev) => prev.filter((v) => v.id !== id));
   }, [fail]);
+
+  const upsertInventoryItem = useCallback((item: InventoryItem) => {
+    const normalized: InventoryItem = {
+      ...item,
+      name: item.name.trim(),
+      unit: item.unit.trim(),
+      currentQty: Number(item.currentQty) || 0,
+      minQty: Number(item.minQty) || 0,
+      defaultOrderQty: Number(item.defaultOrderQty) || 0,
+      unitPrice: Number(item.unitPrice) || 0,
+      memo: item.memo?.trim(),
+      active: item.active ?? true,
+      updatedAt: new Date().toISOString(),
+    };
+    if (APP_MODE === "live") {
+      fsUpsertInventoryItem(normalized).catch(fail("재고 품목 저장"));
+      return;
+    }
+    void repository.saveInventoryItem(normalized);
+    setInventoryItems((prev) => {
+      const i = prev.findIndex((x) => x.id === normalized.id);
+      if (i === -1) return [...prev, normalized].sort((a, b) => a.vendorId - b.vendorId || a.name.localeCompare(b.name));
+      const next = [...prev];
+      next[i] = normalized;
+      return next.sort((a, b) => a.vendorId - b.vendorId || a.name.localeCompare(b.name));
+    });
+  }, [fail]);
+
+  const deleteInventoryItem = useCallback((id: number) => {
+    if (APP_MODE === "live") {
+      fsDeleteInventoryItem(id).catch(fail("재고 품목 삭제"));
+      return;
+    }
+    void repository.deleteInventoryItem(id);
+    setInventoryItems((prev) => prev.filter((item) => item.id !== id));
+  }, [fail]);
+
+  const upsertPurchaseOrder = useCallback((order: PurchaseOrder) => {
+    const items = order.items.map((item) => ({
+      ...item,
+      qty: Number(item.qty) || 0,
+      unitPrice: Number(item.unitPrice) || 0,
+      totalPrice: (Number(item.qty) || 0) * (Number(item.unitPrice) || 0),
+    }));
+    const normalized: PurchaseOrder = {
+      ...order,
+      items,
+      totalAmount: items.reduce((sum, item) => sum + item.totalPrice, 0),
+      memo: order.memo?.trim(),
+    };
+    if (APP_MODE === "live") {
+      fsUpsertPurchaseOrder(normalized).catch(fail("발주서 저장"));
+      return;
+    }
+    void repository.savePurchaseOrder(normalized);
+    setPurchaseOrders((prev) => {
+      const i = prev.findIndex((x) => x.id === normalized.id);
+      if (i === -1) return [normalized, ...prev].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id);
+      const next = [...prev];
+      next[i] = normalized;
+      return next.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id);
+    });
+  }, [fail]);
+
+  const deletePurchaseOrder = useCallback((id: number) => {
+    if (APP_MODE === "live") {
+      fsDeletePurchaseOrder(id).catch(fail("발주서 삭제"));
+      return;
+    }
+    void repository.deletePurchaseOrder(id);
+    setPurchaseOrders((prev) => prev.filter((order) => order.id !== id));
+  }, [fail]);
+
+  const receivePurchaseOrder = useCallback((id: number) => {
+    const order = purchaseOrders.find((x) => x.id === id);
+    if (!order || order.status === "received") return;
+    const now = new Date().toISOString();
+    const updatedItems: InventoryItem[] = [];
+    const logs: StockLog[] = [];
+
+    order.items.forEach((line) => {
+      const item = inventoryItems.find((x) => x.id === line.inventoryItemId);
+      if (!item) return;
+      const beforeQty = Number(item.currentQty) || 0;
+      const qty = Number(line.qty) || 0;
+      const afterQty = beforeQty + qty;
+      updatedItems.push({ ...item, currentQty: afterQty, updatedAt: now });
+      logs.push({
+        id: `${order.id}_${line.inventoryItemId}_${Date.now()}`,
+        inventoryItemId: line.inventoryItemId,
+        type: "in",
+        qty,
+        beforeQty,
+        afterQty,
+        memo: `${order.vendorName} 입고`,
+        createdAt: now,
+        createdBy: profile?.name ?? "관리자",
+        purchaseOrderId: order.id,
+      });
+    });
+
+    const received: PurchaseOrder = { ...order, status: "received", receivedAt: now };
+    if (APP_MODE === "live") {
+      fsReceivePurchaseOrder(received, updatedItems, logs).then(() => {
+        showToast("입고 처리했습니다");
+      }).catch(fail("입고 처리"));
+      return;
+    }
+
+    updatedItems.forEach((item) => void repository.saveInventoryItem(item));
+    void repository.savePurchaseOrder(received);
+    setInventoryItems((prev) =>
+      prev.map((item) => updatedItems.find((updated) => updated.id === item.id) ?? item)
+    );
+    setPurchaseOrders((prev) =>
+      prev.map((orderItem) => (orderItem.id === id ? received : orderItem))
+    );
+    showToast("입고 처리했습니다");
+  }, [fail, inventoryItems, profile, purchaseOrders, showToast]);
 
   const upsertRecipe = useCallback((recipe: Recipe) => {
     const normalized: Recipe = {
@@ -765,6 +902,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       payroll, updatePayroll, getPayrollPassword, setPayrollPassword,
       notices, handovers, upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
       vendors, upsertVendor, deleteVendor,
+      inventoryItems, upsertInventoryItem, deleteInventoryItem,
+      purchaseOrders, upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
       recipes, upsertRecipe, deleteRecipe,
       salesOrders, salesSyncRuns, syncOkposSales,
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
@@ -772,14 +911,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
-     reservations, shifts, records, payroll, notices, handovers, vendors, recipes, salesOrders, salesSyncRuns,
+     reservations, shifts, records, payroll, notices, handovers, vendors, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertEmployee, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
      setShift, deleteShift, addRecord, approveRecord, updatePayroll,
      getPayrollPassword, setPayrollPassword,
      upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
-     upsertVendor, deleteVendor, upsertRecipe, deleteRecipe,
+     upsertVendor, deleteVendor,
+     upsertInventoryItem, deleteInventoryItem,
+     upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
+     upsertRecipe, deleteRecipe,
      syncOkposSales,
      punchIn, punchOut, showToast]
   );
