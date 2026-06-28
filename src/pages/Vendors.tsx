@@ -26,6 +26,7 @@ export default function Vendors() {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Vendor>(EMPTY_VENDOR);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -49,6 +50,7 @@ export default function Vendors() {
   const editVendor = (vendor: Vendor) => {
     setDraft({ ...vendor });
     setEditingId(vendor.id);
+    setOpenId(vendor.id);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -93,6 +95,7 @@ export default function Vendors() {
     if (!window.confirm(`${vendor.name} 거래처를 삭제할까요?`)) return;
     deleteVendor(vendor.id);
     if (editingId === vendor.id) resetForm();
+    if (openId === vendor.id) setOpenId(null);
     showToast("거래처를 삭제했습니다");
   };
 
@@ -171,7 +174,7 @@ export default function Vendors() {
           />
         }
       >
-        <div className="table-wrap">
+        <div className="table-wrap hide-mobile">
           <table className="table vendor-table">
             <thead>
               <tr>
@@ -186,14 +189,18 @@ export default function Vendors() {
             </thead>
             <tbody>
               {filtered.map((vendor) => (
-                <tr key={vendor.id}>
+                <tr
+                  key={vendor.id}
+                  className={openId === vendor.id ? "sel" : ""}
+                  onClick={() => setOpenId(openId === vendor.id ? null : vendor.id)}
+                >
                   <td className="bold">{vendor.name}</td>
                   <td className="num">{vendor.businessNumber}</td>
                   <td>{vendor.address}</td>
                   <td>{vendor.contactName || "-"}</td>
                   <td className="num">{vendor.phone || "-"}</td>
                   <td>{vendor.bank || vendor.account ? `${vendor.bank ?? ""} ${vendor.account ?? ""}`.trim() : "-"}</td>
-                  <td>
+                  <td onClick={(event) => event.stopPropagation()}>
                     <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                       <button className="btn btn-outline btn-sm" onClick={() => editVendor(vendor)}>수정</button>
                       <button className="btn btn-danger btn-sm" onClick={() => removeVendor(vendor)}>삭제</button>
@@ -210,6 +217,50 @@ export default function Vendors() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="vendor-mobile-list hide-desktop">
+          {filtered.map((vendor) => {
+            const open = openId === vendor.id;
+            const account = vendor.bank || vendor.account
+              ? `${vendor.bank ?? ""} ${vendor.account ?? ""}`.trim()
+              : "-";
+            return (
+              <div className={`vendor-card ${open ? "open" : ""}`} key={vendor.id}>
+                <button className="vendor-card-head" onClick={() => setOpenId(open ? null : vendor.id)}>
+                  <div>
+                    <strong>{vendor.name}</strong>
+                    <span>{vendor.businessNumber}</span>
+                  </div>
+                  <span className={`chev ${open ? "open" : ""}`}>›</span>
+                </button>
+                {open && (
+                  <div className="vendor-card-body">
+                    <div className="detail-line"><span className="k">주소</span><span className="v">{vendor.address || "-"}</span></div>
+                    <div className="detail-line"><span className="k">담당자</span><span className="v">{vendor.contactName || "-"}</span></div>
+                    <div className="detail-line">
+                      <span className="k">연락처</span>
+                      <span className="v">{vendor.phone ? <a href={`tel:${vendor.phone}`}>{vendor.phone}</a> : "-"}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="k">이메일</span>
+                      <span className="v">{vendor.email ? <a href={`mailto:${vendor.email}`}>{vendor.email}</a> : "-"}</span>
+                    </div>
+                    <div className="detail-line"><span className="k">계좌</span><span className="v">{account}</span></div>
+                    <div className="detail-line"><span className="k">메모</span><span className="v">{vendor.memo || "-"}</span></div>
+                    <div className="vendor-card-actions">
+                      <button className="btn btn-outline" onClick={() => editVendor(vendor)}>수정</button>
+                      <button className="btn btn-danger" onClick={() => removeVendor(vendor)}>삭제</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="muted" style={{ textAlign: "center", padding: "20px 0" }}>
+              등록된 거래처가 없습니다.
+            </div>
+          )}
         </div>
       </Card>
     </>

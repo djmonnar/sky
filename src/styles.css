@@ -1442,6 +1442,61 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 }
 
 /* ============ Vendors / recipes ============ */
+.vendor-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vendor-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.vendor-card.open {
+  border-color: var(--green-600);
+  box-shadow: var(--shadow);
+}
+.vendor-card-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  text-align: left;
+}
+.vendor-card-head strong,
+.vendor-card-head span {
+  display: block;
+}
+.vendor-card-head strong {
+  font-size: 15px;
+}
+.vendor-card-head div > span {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.vendor-card-body {
+  padding: 2px 14px 14px;
+  border-top: 1px dashed var(--border);
+}
+.vendor-card-body a {
+  color: var(--green-700);
+  font-weight: 800;
+}
+.vendor-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.vendor-card-actions .btn {
+  min-height: 46px;
+}
+
 .recipe-ingredient-list {
   display: flex;
   flex-direction: column;
