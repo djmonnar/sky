@@ -593,10 +593,11 @@ async function handleReservationUpdate(body, mode = "update") {
   if (status) patch.status = status;
   if (time) patch.time = time;
   if (dateRaw) patch.date = resolveDate(dateRaw);
-  await ref.set(patch, { merge: true });
   if (patch.status === "취소") {
-    return textResponse(`예약 ${id}번을 취소했습니다.`, ["오늘 예약"]);
+    await ref.delete();
+    return textResponse(`예약 ${id}번을 삭제했습니다.`, ["오늘 예약"]);
   }
+  await ref.set(patch, { merge: true });
   if (patch.status === "방문완료") {
     return textResponse(`예약 ${id}번을 방문완료로 변경했습니다.`, ["오늘 예약"]);
   }

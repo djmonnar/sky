@@ -75,7 +75,7 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill
 | `phone` | 연락처 |
 | `people` | 예약 인원 |
 | `seat` | 좌석 |
-| `status` | 예약확정, 방문완료, 취소, 노쇼, 단체, 확인전화필요, 예약대기 |
+| `status` | 예약확정, 방문완료, 노쇼, 단체, 확인전화필요, 예약대기 (`취소` 입력 시 예약 삭제) |
 | `department` | 홀 또는 주방 |
 | `text` | 공지/전달사항 내용 |
 | `password` | 급여 요약 비밀번호 |
@@ -89,8 +89,8 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill
 | 예약 목록 | 오늘 예약, 내일 예약 | `reservation.list` | `date`, `period`, `status` 선택 |
 | 예약 등록 | 예약 등록, 예약 잡아줘 | `reservation.create` | `date`, `name`, `phone`, `period`, `time`, `people`, `seat` |
 | 예약 수정 | 예약 수정 | `reservation.update` | `id`, 변경할 `period`, `time`, `people`, `seat`, `status` |
-| 예약 상태 변경 | 방문완료, 예약 취소 | `reservation.status` | `id`, `status` 또는 `date`, `name`, `status` |
-| 예약 삭제 | 예약 삭제 | `reservation.delete` | `id` |
+| 예약 상태 변경 | 방문완료, 노쇼 | `reservation.status` | `id`, `status` 또는 `date`, `name`, `status` |
+| 예약 삭제 | 예약 삭제, 예약 취소 | `reservation.delete` 또는 `reservation.status`+취소 | `id` 또는 `date`, `name` |
 | 근무표 보기 | 오늘 근무표, 내일 근무 | `schedule.list` | `date` |
 | 근무표 추가 | 근무표 추가 | `schedule.add` | `date`, `period`, `department`, `name` |
 | 근무표 삭제 | 근무표 삭제 | `schedule.delete` | `date`, `period`, `department`, `name` 또는 `id` |

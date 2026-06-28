@@ -11,9 +11,10 @@ type TimePeriod = "AM" | "PM";
 
 const QUICK_STATUS: { s: ResvStatus; cls: string; ic: string }[] = [
   { s: "방문완료", cls: "btn-primary", ic: "✓" },
-  { s: "취소", cls: "btn-danger", ic: "×" },
   { s: "노쇼", cls: "btn-outline", ic: "!" },
 ];
+
+const ACTIVE_STATUSES = RESV_STATUSES.filter((status) => status !== "취소");
 
 const EMPTY_FORM: Omit<Reservation, "id"> = {
   date: TODAY_STR,
@@ -67,7 +68,8 @@ function addDays(value: string, amount: number): string {
 
 export default function Reservations() {
   const {
-    reservations, upsertReservation, showToast, mode, profile, currentEmployee,
+    reservations, upsertReservation, deleteReservation, deleteReservations,
+    showToast, mode, profile, currentEmployee,
   } = useStore();
   const writerName =
     mode === "live" ? profile?.name ?? "직원" : currentEmployee?.name ?? "직원";
@@ -85,7 +87,7 @@ export default function Reservations() {
   const [formClock, setFormClock] = useState(initialTime.clock);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
-  const dayReservations = reservations.filter((r) => r.date === selectedDate);
+  const dayReservations = reservations.filter((r) => r.date === selectedDate && r.status !== "취소");
   const list = useMemo(() => {
     let l = [...dayReservations].sort((a, b) => a.time.localeCompare(b.time));
     const q = query.trim();
@@ -112,7 +114,7 @@ export default function Reservations() {
     total: dayReservations.filter((r) => r.status !== "취소" && r.status !== "노쇼").length,
     done: dayReservations.filter((r) => r.status === "방문완료").length,
     call: dayReservations.filter((r) => r.status === "확인전화필요").length,
-    bad: dayReservations.filter((r) => r.status === "취소" || r.status === "노쇼").length,
+    bad: dayReservations.filter((r) => r.status === "노쇼").length,
   }), [dayReservations]);
 
   const isWarn = (r: Reservation) =>
@@ -181,6 +183,10 @@ export default function Reservations() {
   };
 
   const changeStatus = (r: Reservation, status: ResvStatus) => {
+    if (status === "취소") {
+      deleteOneReservation(r);
+      return;
+    }
     upsertReservation({ ...r, status });
     showToast(`'${r.name}' 예약을 ${status} 처리했습니다`);
   };
@@ -192,6 +198,42 @@ export default function Reservations() {
     }
     selectedReservations.forEach((r) => upsertReservation({ ...r, status }));
     showToast(`${selectedReservations.length}건을 ${status} 처리했습니다`);
+  };
+
+  const deleteOneReservation = (r: Reservation) => {
+    const ok = window.confirm(`${r.time} ${r.name} 예약을 삭제할까요?\n삭제하면 예약 목록에 표시되지 않습니다.`);
+    if (!ok) return;
+    deleteReservation(r.id);
+    setSelectedIds((prev) => prev.filter((id) => id !== r.id));
+    if (selId === r.id) {
+      setSelId(null);
+      setMemo("");
+    }
+    if (openId === r.id) setOpenId(null);
+    showToast(`'${r.name}' 예약을 삭제했습니다`);
+  };
+
+  const deleteSelectedReservations = () => {
+    if (selectedReservations.length === 0) {
+      showToast("삭제할 예약을 선택해주세요");
+      return;
+    }
+    const names = selectedReservations
+      .slice(0, 5)
+      .map((r) => `${r.time} ${r.name}`)
+      .join(", ");
+    const suffix = selectedReservations.length > 5 ? ` 외 ${selectedReservations.length - 5}건` : "";
+    const ok = window.confirm(`${selectedReservations.length}건의 예약을 삭제할까요?\n${names}${suffix}\n삭제하면 예약 목록에 표시되지 않습니다.`);
+    if (!ok) return;
+    const ids = selectedReservations.map((r) => r.id);
+    deleteReservations(ids);
+    if (selId !== null && ids.includes(selId)) {
+      setSelId(null);
+      setMemo("");
+    }
+    if (openId !== null && ids.includes(openId)) setOpenId(null);
+    setSelectedIds([]);
+    showToast(`${ids.length}건의 예약을 삭제했습니다`);
   };
 
   const saveMemo = (r: Reservation) => {
@@ -297,7 +339,7 @@ export default function Reservations() {
           <div className="stat-icon amber">☎</div>
         </div>
         <div className="stat-card">
-          <div><div className="stat-label">취소·노쇼</div><div className="stat-value">{stats.bad}<span className="unit">건</span></div></div>
+          <div><div className="stat-label">노쇼</div><div className="stat-value">{stats.bad}<span className="unit">건</span></div></div>
           <div className="stat-icon red">!</div>
         </div>
       </div>
@@ -334,7 +376,7 @@ export default function Reservations() {
             <div>
               <label className="field-label">상태</label>
               <select className="select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as ResvStatus })}>
-                {RESV_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                {ACTIVE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
               </select>
             </div>
           </div>
@@ -390,7 +432,7 @@ export default function Reservations() {
         </label>
         <span className="muted small">선택 {selectedIds.length}건</span>
         <button className="btn btn-soft btn-sm" onClick={() => bulkStatus("방문완료")} disabled={selectedIds.length === 0}>방문완료</button>
-        <button className="btn btn-danger btn-sm" onClick={() => bulkStatus("취소")} disabled={selectedIds.length === 0}>취소</button>
+        <button className="btn btn-danger btn-sm" onClick={deleteSelectedReservations} disabled={selectedIds.length === 0}>삭제</button>
         <button className="btn btn-outline btn-sm" onClick={editSelected} disabled={selectedIds.length !== 1}>수정</button>
         <button className="btn btn-outline btn-sm" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>선택해제</button>
       </div>
@@ -418,7 +460,10 @@ export default function Reservations() {
                     <td>{r.seat}</td>
                     <td><StatusBadge status={r.status} /></td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-outline btn-sm" onClick={() => openEditForm(r)}>수정</button>
+                      <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                        <button className="btn btn-outline btn-sm" onClick={() => openEditForm(r)}>수정</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => deleteOneReservation(r)}>삭제</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -472,6 +517,9 @@ export default function Reservations() {
                           {q.ic} {q.s}
                         </button>
                       ))}
+                      <button className="btn btn-danger" onClick={() => deleteOneReservation(r)}>
+                        × 삭제
+                      </button>
                     </div>
                     <textarea
                       className="textarea" style={{ marginTop: 10, minHeight: 56 }}
@@ -505,12 +553,16 @@ export default function Reservations() {
 
               <label className="field-label" style={{ marginTop: 14 }}>상태 변경</label>
               <div className="chip-row">
-                {RESV_STATUSES.map((s) => (
+                {ACTIVE_STATUSES.map((s) => (
                   <button key={s} className={`chip ${sel.status === s ? "on" : ""}`} style={{ padding: "6px 11px", fontSize: 12.5, minHeight: 32 }} onClick={() => changeStatus(sel, s)}>
                     {s}
                   </button>
                 ))}
               </div>
+
+              <button className="btn btn-danger btn-block" style={{ marginTop: 12 }} onClick={() => deleteOneReservation(sel)}>
+                예약 삭제
+              </button>
 
               <label className="field-label" style={{ marginTop: 14 }}>메모</label>
               <textarea className="textarea" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="메모를 입력하세요" />
