@@ -766,6 +766,40 @@ async function handleNoticeList(kind) {
   return textResponse(`${label}\n${docs.map((n) => `${n.docId}. ${n.text}`).join("\n")}`, ["오늘 현황"]);
 }
 
+function stripNoticeCommand(raw, kind, mode) {
+  const subject = kind === "handover"
+    ? "(?:전달사항|전달|인수인계|인수)"
+    : "(?:공지사항|공지)";
+  const action = mode === "create"
+    ? "(?:등록|작성|추가)?"
+    : mode === "update"
+      ? "(?:수정|변경)"
+      : "(?:삭제)";
+  const pattern = new RegExp(`^\\s*${subject}\\s*${action}\\s*(?:/|:|-)?\\s*`, "i");
+  return String(raw ?? "").replace(pattern, "").trim();
+}
+
+function noticeIdFromUtterance(body, kind, mode) {
+  const direct = paramOf(body, ["id", "docId", "문서번호"]);
+  if (direct) return direct;
+  const remainder = stripNoticeCommand(utteranceOf(body), kind, mode);
+  return remainder.match(/\d+/)?.[0] ?? "";
+}
+
+function noticeTextFromUtterance(body, kind, mode, docId = "") {
+  const direct = paramOf(body, ["text", "내용", "공지", "전달사항", "메모"]);
+  if (direct) return direct;
+  let remainder = stripNoticeCommand(utteranceOf(body), kind, mode);
+  if (!remainder) return "";
+  if (mode === "update") {
+    const withoutId = docId
+      ? remainder.replace(new RegExp(`^\\s*${docId}\\s*(?:/|:|-)?\\s*`), "")
+      : remainder.replace(/^\s*\d+\s*(?:\/|:|-)?\s*/, "");
+    return withoutId.trim();
+  }
+  return remainder.replace(/^(?:\/|:|-)\s*/, "").trim();
+}
+
 async function handleNoticeWrite(body, chatUser, kind, mode = "create") {
   if (kind === "notice") {
     const denied = requireOps(chatUser);
@@ -777,16 +811,21 @@ async function handleNoticeWrite(body, chatUser, kind, mode = "create") {
   }
   const collectionName = kind === "handover" ? "handovers" : "notices";
   const label = kind === "handover" ? "전달사항" : "공지";
-  const docId = paramOf(body, ["id", "docId", "문서번호"]);
+  const docId = noticeIdFromUtterance(body, kind, mode);
   if (mode === "delete") {
-    if (!docId) return failResponse("삭제할 문서번호가 필요합니다.");
+    if (!docId) return failResponse(`삭제할 문서번호가 필요합니다.\n예: ${label} 삭제 / 123`);
     await storeDoc(collectionName, docId).delete();
     return textResponse(`${label}을 삭제했습니다.`, [label]);
   }
-  const text = paramOf(body, ["text", "내용", "공지", "전달사항", "메모"]);
-  if (!text) return failResponse(`${label} 내용을 입력해주세요.`);
+  const text = noticeTextFromUtterance(body, kind, mode, docId);
+  if (!text) {
+    const example = mode === "update"
+      ? `${label} 수정 / 123 / 수정할 내용`
+      : `${label} 등록 / 주방 재료 입고 확인 필요`;
+    return failResponse(`${label} 내용을 입력해주세요.\n예: ${example}`);
+  }
   const id = mode === "update" ? docId : String(Date.now());
-  if (!id) return failResponse("수정할 문서번호가 필요합니다.");
+  if (!id) return failResponse(`수정할 문서번호가 필요합니다.\n예: ${label} 수정 / 123 / 수정할 내용`);
   await storeDoc(collectionName, id).set({
     id: Number(id) || Date.now(),
     text,
@@ -795,7 +834,10 @@ async function handleNoticeWrite(body, chatUser, kind, mode = "create") {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     ...(mode === "create" ? { createdAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
   }, { merge: true });
-  return textResponse(`${label}을 ${mode === "update" ? "수정" : "등록"}했습니다.`, [label, "오늘 현황"]);
+  return textResponse(
+    mode === "update" ? `${label}을 수정했습니다.` : `${label}을 등록했습니다.\n번호: ${id}`,
+    [label, "오늘 현황"]
+  );
 }
 
 async function handlePayrollSummary(body, chatUser) {
@@ -989,6 +1031,8 @@ async function routeAction(action, body, chatUser) {
         "직원 목록 / 직원 등록 / 직원 수정 / 직원 삭제",
         "공지 / 공지 등록 / 공지 수정 / 공지 삭제",
         "전달사항 / 전달사항 등록 / 전달사항 수정 / 전달사항 삭제",
+        "예: 공지 등록 오늘 단체 예약 세팅 확인",
+        "예: 전달사항 등록 주방 재료 입고 확인",
         "급여 요약 / 비밀번호 입력",
         "거래처 목록 / 거래처 등록 / 거래처 수정 / 거래처 삭제",
         "레시피 목록 / 레시피 등록 / 레시피 수정 / 레시피 삭제",
