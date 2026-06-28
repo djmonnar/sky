@@ -621,7 +621,7 @@ async function handlePayrollSummary(body, chatUser) {
   const password = paramOf(body, ["password", "비밀번호"]) || passwordFromUtterance;
   const passwordSnap = await storeDoc("meta", "payrollPassword").get();
   const expected = passwordSnap.exists ? String(passwordSnap.data().value ?? "qaz@qwer4312") : "qaz@qwer4312";
-  if (password !== expected) return failResponse("급여 확인 비밀번호가 필요합니다.\n예: 급여 요약 / 비밀번호 qaz@qwer4312");
+  if (password !== expected) return failResponse("급여 확인 비밀번호가 필요합니다.\n급여관리에서 설정한 비밀번호를 입력해주세요.");
   const docs = (await storeCol("payroll").get()).docs.map((doc) => doc.data());
   const total = docs.reduce((sum, row) => sum + Number(row.base ?? 0) + Number(row.extra ?? 0) - Number(row.deduct ?? 0), 0);
   return textResponse(`급여 요약\n대상: ${docs.length}명\n예상 지급액: ${Math.round(total / 10000)}만원`, ["오늘 현황"]);
@@ -805,7 +805,7 @@ async function routeAction(action, body, chatUser) {
         "직원 목록 / 직원 등록 / 직원 수정 / 직원 삭제",
         "공지 / 공지 등록 / 공지 수정 / 공지 삭제",
         "전달사항 / 전달사항 등록 / 전달사항 수정 / 전달사항 삭제",
-        "급여 요약 / 비밀번호 qaz@qwer4312",
+        "급여 요약 / 비밀번호 입력",
         "거래처 목록 / 거래처 등록 / 거래처 수정 / 거래처 삭제",
         "레시피 목록 / 레시피 등록 / 레시피 수정 / 레시피 삭제",
       ].join("\n"), ["오늘 현황", "오늘 예약", "오늘 근무표"]);

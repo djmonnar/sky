@@ -183,7 +183,7 @@ export default function Payroll() {
       <div className="payroll-lock-wrap">
         <Card title="급여관리 잠금" icon="🔒">
           <p className="muted small" style={{ marginTop: 0 }}>
-            급여 정보는 비밀번호 확인 후 볼 수 있습니다. 초기 비밀번호는 qaz@qwer4312입니다.
+            급여 정보는 비밀번호 확인 후 볼 수 있습니다.
           </p>
           <label className="field-label">비밀번호</label>
           <input
