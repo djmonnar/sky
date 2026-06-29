@@ -255,7 +255,7 @@ export default function Payroll() {
       setUnlocked(true);
       setPasswordError(null);
       setPasswordInput("");
-      showToast("급여 관리 잠금을 해제했습니다");
+      showToast("관리자 모드 잠금을 해제했습니다");
       return;
     }
     setPasswordError("비밀번호가 맞지 않습니다");
@@ -269,7 +269,7 @@ export default function Payroll() {
     }
     await setPayrollPassword(next);
     setNewPassword("");
-    showToast("급여 관리 비밀번호를 변경했습니다");
+    showToast("관리자 모드 비밀번호를 변경했습니다");
   };
 
   const renderScheduleItem = (item: OwnerSchedule) => (
@@ -462,9 +462,9 @@ export default function Payroll() {
 
   const renderPayrollLock = () => (
     <div className="payroll-lock-wrap">
-      <Card title="급여 관리 잠금" icon="🔐">
+      <Card title="관리자 모드 잠금" icon="🔐">
         <p className="muted small" style={{ marginTop: 0 }}>
-          급여 정보는 비밀번호 확인 후 볼 수 있습니다.
+          대표 일정표와 급여 관리는 비밀번호 확인 후 볼 수 있습니다.
         </p>
         <label className="field-label">비밀번호</label>
         <input
@@ -484,14 +484,13 @@ export default function Payroll() {
           </div>
         )}
         <button className="btn btn-primary btn-block" style={{ marginTop: 14 }} onClick={() => void unlockPayroll()}>
-          확인
+          관리자 모드 열기
         </button>
       </Card>
     </div>
   );
 
   const renderPayrollPanel = () => {
-    if (!unlocked) return renderPayrollLock();
     return (
       <>
         <div className="row" style={{ marginBottom: 16, alignItems: "center", gap: 10 }}>
@@ -505,7 +504,7 @@ export default function Payroll() {
           />
         </div>
 
-        <Card title="급여 관리 비밀번호 설정" icon="🔑">
+        <Card title="관리자 모드 비밀번호 설정" icon="🔑">
           <div className="row" style={{ alignItems: "stretch", flexWrap: "wrap" }}>
             <input
               className="input"
@@ -519,7 +518,7 @@ export default function Payroll() {
               비밀번호 변경
             </button>
             <button className="btn btn-soft" onClick={() => setUnlocked(false)}>
-              다시 잠그기
+              관리자 모드 잠그기
             </button>
           </div>
         </Card>
@@ -698,6 +697,8 @@ export default function Payroll() {
     );
   };
 
+  if (!unlocked) return renderPayrollLock();
+
   return (
     <div className="stack">
       <div className="admin-mode-head">
@@ -713,6 +714,9 @@ export default function Payroll() {
             💰 급여 관리
           </button>
         </div>
+        <button className="btn btn-outline" onClick={() => setUnlocked(false)}>
+          🔒 잠그기
+        </button>
       </div>
       {activeTab === "schedule" ? renderSchedulePanel() : renderPayrollPanel()}
     </div>
