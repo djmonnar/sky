@@ -1,0 +1,9 @@
+{
+  "name": "하늘땅 매장관리",
+  "short_name": "하늘땅",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3efe3",
+  "theme_color": "#2e3b2b"
+}

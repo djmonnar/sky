@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useStore } from "../store";
+import PushNotificationBell from "./PushNotificationBell";
 
 interface NavDef { to: string; icon: string; label: string; title: string; mobile?: boolean; mobileLabel?: string }
 
@@ -105,7 +106,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="topbar-right">
-            <button className="icon-btn" aria-label="알림">🔔<span className="dot" /></button>
+            <PushNotificationBell />
             {mode === "demo" ? (
               <button className="avatar" onClick={switchRole} title="역할 전환">
                 {userName[0]}
@@ -130,7 +131,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="topbar">
           <h1>{title}{loading && <span className="muted small" style={{ marginLeft: 10, fontWeight: 500 }}>불러오는 중...</span>}</h1>
           <div className="topbar-right hide-mobile">
-            <button className="icon-btn" aria-label="알림">🔔<span className="dot" /></button>
+            <PushNotificationBell />
             <Link className="user-chip" to="/profile" style={{ textDecoration: "none", color: "inherit" }}>
               <span className="avatar">{userName[0]}</span>
               {userName}

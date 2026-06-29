@@ -35,19 +35,21 @@ function cleanEnvValue(value: unknown): string {
 /** 매장 ID (Firestore 최상위 stores/{storeId}) */
 export const STORE_ID = cleanEnvValue(env.VITE_FIREBASE_STORE_ID) || "haneulttang";
 
+export const firebaseWebConfig = {
+  apiKey: cleanEnvValue(env.VITE_FIREBASE_API_KEY),
+  authDomain: cleanEnvValue(env.VITE_FIREBASE_AUTH_DOMAIN),
+  projectId: cleanEnvValue(env.VITE_FIREBASE_PROJECT_ID),
+  storageBucket: cleanEnvValue(env.VITE_FIREBASE_STORAGE_BUCKET),
+  messagingSenderId: cleanEnvValue(env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+  appId: cleanEnvValue(env.VITE_FIREBASE_APP_ID),
+};
+
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
 
 if (firebaseConfigured) {
-  app = initializeApp({
-    apiKey: env.VITE_FIREBASE_API_KEY,
-    authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: env.VITE_FIREBASE_APP_ID,
-  });
+  app = initializeApp(firebaseWebConfig);
   // ignoreUndefinedProperties: 선택 필드(roleLabel 등)가 undefined여도 쓰기 허용
   db = initializeFirestore(app, { ignoreUndefinedProperties: true });
   auth = getAuth(app);
@@ -58,6 +60,15 @@ if (firebaseConfigured) {
       `누락: ${missingFirebaseKeys.join(", ")}\n` +
       `.env 파일을 생성하고 .env.example을 참고해 값을 채워주세요.`
   );
+}
+
+export function requireApp(): FirebaseApp {
+  if (!app) {
+    throw new Error(
+      `Firebase媛 ?ㅼ젙?섏? ?딆븯?듬땲?? ?꾨씫???섍꼍蹂?? ${missingFirebaseKeys.join(", ")}`
+    );
+  }
+  return app;
 }
 
 export function requireDb(): Firestore {

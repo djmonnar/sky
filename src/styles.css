@@ -154,6 +154,40 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   width: 7px; height: 7px; border-radius: 50%;
   background: #d4543a; border: 1.5px solid var(--card);
 }
+.icon-btn.push-enabled {
+  border-color: var(--green-200);
+  background: var(--green-50);
+}
+.push-bell {
+  position: relative;
+  flex-shrink: 0;
+}
+.push-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-pop);
+}
+.push-panel-title {
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.push-panel p {
+  margin: 0 0 9px;
+  color: var(--text-sub);
+  font-size: 12.5px;
+}
+.push-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
 .user-chip {
   display: flex; align-items: center; gap: 8px;
   background: var(--card); border: 1px solid var(--border);

@@ -1,5 +1,6 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const admin = require("firebase-admin");
 
@@ -66,6 +67,18 @@ function formatDate(date = new Date()) {
   }).formatToParts(date);
   const get = (type) => parts.find((part) => part.type === type)?.value;
   return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function formatTime(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return `${get("hour")}-${get("minute")}`.replace("-", ":");
 }
 
 function addDays(dateText, days) {
@@ -1014,6 +1027,304 @@ async function adminFromRequest(req) {
   }
 }
 
+const NOTIFICATION_DEFAULTS = {
+  reservationCreatedEnabled: true,
+  reservationReminderEnabled: true,
+  reservationReminderMinutes: 30,
+  shiftStartEnabled: true,
+  shiftStartMinutes: 30,
+  shiftEndEnabled: true,
+  shiftEndMinutes: 10,
+};
+
+const APP_BASE_URL = process.env.APP_BASE_URL || "https://sky-two-mu.vercel.app";
+const PUSH_BATCH_SIZE = 500;
+const SCHEDULE_WINDOW_MINUTES = 5;
+
+function appUrl(path = "/") {
+  return new URL(path, APP_BASE_URL).toString();
+}
+
+function addMinutes(date, minutes) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function minutesOf(time) {
+  const match = String(time || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function timeInWindow(time, targetMinute, windowMinutes = SCHEDULE_WINDOW_MINUTES) {
+  const minute = minutesOf(time);
+  if (minute === null || targetMinute === null) return false;
+  const end = targetMinute + windowMinutes;
+  if (end <= 24 * 60) return minute >= targetMinute && minute < end;
+  return minute >= targetMinute || minute < (end % (24 * 60));
+}
+
+function pushTokenDocId(token) {
+  return Buffer.from(String(token)).toString("base64url");
+}
+
+function notificationEventId(...parts) {
+  return parts
+    .map((part) => String(part ?? "").replace(/[^A-Za-z0-9_-]/g, "_"))
+    .filter(Boolean)
+    .join("_")
+    .slice(0, 900);
+}
+
+function isActiveReservation(reservation) {
+  const status = String(reservation.status || "");
+  return !/취소|노쇼|cancel/i.test(status);
+}
+
+function isInvalidPushToken(errorCode) {
+  return [
+    "messaging/invalid-registration-token",
+    "messaging/registration-token-not-registered",
+  ].includes(errorCode);
+}
+
+async function profileFromRequest(req) {
+  const header = req.get("authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return { ok: false, message: "로그인이 필요합니다." };
+  try {
+    const token = await admin.auth().verifyIdToken(match[1]);
+    const snap = await db.doc(`users/${token.uid}`).get();
+    const profile = snap.data() || {};
+    const configuredAdmin = token.email === "iu431214@gmail.com" || token.email === "djmonnar4@gmail.com";
+    if (profile.storeId === STORE_ID && profile.active !== false) {
+      return {
+        ok: true,
+        uid: token.uid,
+        email: token.email || "",
+        role: profile.role || (configuredAdmin ? "admin" : "staff"),
+        employeeId: Number(profile.employeeId ?? 0),
+        name: profile.name || token.email || "사용자",
+      };
+    }
+    if (configuredAdmin) {
+      return {
+        ok: true,
+        uid: token.uid,
+        email: token.email || "",
+        role: "admin",
+        employeeId: 0,
+        name: token.email || "관리자",
+      };
+    }
+    return { ok: false, message: "하늘땅 사용자 권한이 필요합니다." };
+  } catch (error) {
+    return { ok: false, message: "인증 토큰을 확인하지 못했습니다." };
+  }
+}
+
+async function loadNotificationSettings() {
+  const snap = await storeDoc("meta", "notificationSettings").get();
+  return { ...NOTIFICATION_DEFAULTS, ...(snap.exists ? snap.data() : {}) };
+}
+
+async function enabledPushTokensFor({ targetRoles = [], targetEmployeeIds = [], targetUids = [] } = {}) {
+  const snap = await storeCol("pushTokens").where("enabled", "==", true).get();
+  const roleSet = new Set(targetRoles);
+  const uidSet = new Set(targetUids);
+  const employeeSet = new Set(targetEmployeeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0));
+  return snap.docs
+    .map((doc) => ({ docId: doc.id, ...doc.data() }))
+    .filter((item) => {
+      if (!item.token) return false;
+      if (uidSet.size > 0 && uidSet.has(item.uid)) return true;
+      if (roleSet.size > 0 && roleSet.has(item.role)) return true;
+      if (employeeSet.size > 0 && employeeSet.has(Number(item.employeeId))) return true;
+      return uidSet.size === 0 && roleSet.size === 0 && employeeSet.size === 0;
+    });
+}
+
+async function disableInvalidPushToken(token, errorCode) {
+  const id = pushTokenDocId(token);
+  await storeDoc("pushTokens", id).set({
+    enabled: false,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await storeDoc("invalidPushTokens", id).set({
+    token,
+    errorCode,
+    lastFailureAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+async function sendNotificationEvent(eventId, payload) {
+  const id = notificationEventId(eventId);
+  const ref = storeDoc("notificationEvents", id);
+  const existing = await ref.get();
+  if (existing.exists && existing.data().notificationStatus === "sent") {
+    return { ok: true, skipped: true, message: "already sent" };
+  }
+
+  await ref.set({
+    id,
+    type: payload.type || "general",
+    sourceId: payload.sourceId || "",
+    title: payload.title,
+    body: payload.body,
+    url: payload.url || "/",
+    targetRoles: payload.targetRoles || [],
+    targetEmployeeIds: payload.targetEmployeeIds || [],
+    targetUids: payload.targetUids || [],
+    notificationStatus: "sending",
+    notificationAttempts: admin.firestore.FieldValue.increment(1),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(existing.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+  }, { merge: true });
+
+  const tokenRows = await enabledPushTokensFor(payload);
+  const tokens = [...new Set(tokenRows.map((row) => row.token).filter(Boolean))];
+  if (tokens.length === 0) {
+    await ref.set({
+      notificationStatus: "skipped",
+      sentCount: 0,
+      failedCount: 0,
+      message: "enabled token not found",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { ok: true, skipped: true, message: "enabled token not found" };
+  }
+
+  let sentCount = 0;
+  let failedCount = 0;
+  const invalidTokens = [];
+  for (let i = 0; i < tokens.length; i += PUSH_BATCH_SIZE) {
+    const chunk = tokens.slice(i, i + PUSH_BATCH_SIZE);
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens: chunk,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+      },
+      data: {
+        type: payload.type || "general",
+        eventId: id,
+        url: payload.url || "/",
+      },
+      webpush: {
+        fcmOptions: {
+          link: appUrl(payload.url || "/"),
+        },
+        notification: {
+          tag: id,
+          renotify: true,
+        },
+      },
+    });
+    sentCount += response.successCount;
+    failedCount += response.failureCount;
+    response.responses.forEach((result, index) => {
+      const code = result.error?.code;
+      if (code && isInvalidPushToken(code)) invalidTokens.push({ token: chunk[index], code });
+    });
+  }
+
+  await Promise.all(invalidTokens.map((item) => disableInvalidPushToken(item.token, item.code)));
+  await ref.set({
+    notificationStatus: sentCount > 0 ? "sent" : "failed",
+    sentCount,
+    failedCount,
+    invalidTokenCount: invalidTokens.length,
+    notifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return { ok: sentCount > 0, sentCount, failedCount, invalidTokenCount: invalidTokens.length };
+}
+
+function reservationPushBody(reservation) {
+  const people = Number(reservation.people || 0);
+  const seat = reservation.seat ? ` ${reservation.seat}` : "";
+  return `${reservation.date || ""} ${reservation.time || ""} ${reservation.name || "예약"} ${people}명${seat}`.trim();
+}
+
+async function sendReservationCreatedPush(reservationId, reservation) {
+  if (!isActiveReservation(reservation)) return;
+  const settings = await loadNotificationSettings();
+  if (settings.reservationCreatedEnabled === false) return;
+  await sendNotificationEvent(`reservationCreated_${reservationId}`, {
+    type: "reservation.created",
+    sourceId: String(reservationId),
+    title: "새 예약이 등록되었습니다",
+    body: reservationPushBody(reservation),
+    url: "/reservations",
+    targetRoles: ["admin", "manager"],
+  });
+}
+
+async function sendReservationReminders() {
+  const settings = await loadNotificationSettings();
+  if (settings.reservationReminderEnabled === false) return;
+  const leadMinutes = Number(settings.reservationReminderMinutes ?? NOTIFICATION_DEFAULTS.reservationReminderMinutes);
+  const target = addMinutes(new Date(), leadMinutes);
+  const targetDate = formatDate(target);
+  const targetMinute = minutesOf(formatTime(target));
+  const snap = await storeCol("reservations").where("date", "==", targetDate).get();
+  await Promise.all(snap.docs.map(async (doc) => {
+    const reservation = { id: doc.id, ...doc.data() };
+    if (!isActiveReservation(reservation)) return;
+    if (!timeInWindow(reservation.time, targetMinute)) return;
+    await sendNotificationEvent(`reservationReminder_${doc.id}_${targetDate}_${reservation.time}_${leadMinutes}`, {
+      type: "reservation.reminder",
+      sourceId: String(doc.id),
+      title: `${leadMinutes}분 후 예약이 있습니다`,
+      body: reservationPushBody(reservation),
+      url: "/reservations",
+      targetRoles: ["admin", "manager"],
+    });
+  }));
+}
+
+async function sendShiftReminder(kind, leadMinutes) {
+  const target = addMinutes(new Date(), leadMinutes);
+  const targetDate = formatDate(target);
+  const targetMinute = minutesOf(formatTime(target));
+  const field = kind === "start" ? "start" : "end";
+  const snap = await storeCol("shifts").where("date", "==", targetDate).get();
+  await Promise.all(snap.docs.map(async (doc) => {
+    const shift = { id: doc.id, ...doc.data() };
+    const employeeId = Number(shift.employeeId ?? shift.empId ?? 0);
+    if (employeeId <= 0) return;
+    if (!timeInWindow(shift[field], targetMinute)) return;
+    const period = shift.period === "afternoon" ? "오후" : "오전";
+    const dept = shift.department === "kitchen" ? "주방" : "홀";
+    const title = kind === "start"
+      ? `${leadMinutes}분 후 근무 시작입니다`
+      : `${leadMinutes}분 후 퇴근 시간입니다`;
+    const body = `${targetDate} ${period} ${dept} ${shift[field]} ${shift.employeeName || "근무자"}`;
+    await sendNotificationEvent(`shift_${kind}_${doc.id}_${targetDate}_${shift[field]}_${leadMinutes}`, {
+      type: kind === "start" ? "shift.start" : "shift.end",
+      sourceId: String(doc.id),
+      title,
+      body,
+      url: kind === "start" ? "/schedule" : "/worklog",
+      targetEmployeeIds: [employeeId],
+    });
+  }));
+}
+
+async function sendShiftReminders() {
+  const settings = await loadNotificationSettings();
+  const tasks = [];
+  if (settings.shiftStartEnabled !== false) {
+    tasks.push(sendShiftReminder("start", Number(settings.shiftStartMinutes ?? NOTIFICATION_DEFAULTS.shiftStartMinutes)));
+  }
+  if (settings.shiftEndEnabled !== false) {
+    tasks.push(sendShiftReminder("end", Number(settings.shiftEndMinutes ?? NOTIFICATION_DEFAULTS.shiftEndMinutes)));
+  }
+  await Promise.all(tasks);
+}
+
 function isoNow() {
   return new Date().toISOString();
 }
@@ -1336,6 +1647,63 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 10, memory: "256MiB" }, async (
     res.status(200).json(failResponse("처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."));
   }
 });
+
+exports.sendTestPush = onRequest({ timeoutSeconds: 30, memory: "256MiB" }, async (req, res) => {
+  setCors(res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    res.status(405).json({ ok: false, message: "POST 요청만 사용할 수 있습니다." });
+    return;
+  }
+  const auth = await profileFromRequest(req);
+  if (!auth.ok) {
+    res.status(403).json({ ok: false, message: auth.message });
+    return;
+  }
+  const tokens = await enabledPushTokensFor({ targetUids: [auth.uid] });
+  if (tokens.length === 0) {
+    res.status(404).json({ ok: false, message: "이 계정에 켜진 푸시 기기가 없습니다. 먼저 푸시 켜기를 눌러주세요." });
+    return;
+  }
+  const result = await sendNotificationEvent(`test_${auth.uid}_${Date.now()}`, {
+    type: "test",
+    sourceId: auth.uid,
+    title: "하늘땅 테스트 알림",
+    body: `${auth.name}님, 이 기기에서 푸시 알림이 켜졌어요.`,
+    url: "/",
+    targetUids: [auth.uid],
+  });
+  res.status(result.ok ? 200 : 500).json({
+    ok: result.ok,
+    message: result.ok ? "테스트 푸시를 보냈습니다." : "테스트 푸시 발송에 실패했습니다.",
+    ...result,
+  });
+});
+
+exports.onReservationCreatedPush = onDocumentCreated(
+  { document: "stores/{storeId}/reservations/{reservationId}", timeoutSeconds: 30, memory: "256MiB" },
+  async (event) => {
+    if (event.params.storeId !== STORE_ID || !event.data) return;
+    await sendReservationCreatedPush(event.params.reservationId, event.data.data() || {});
+  }
+);
+
+exports.reservationReminderPushScheduled = onSchedule(
+  { schedule: "every 5 minutes", timeZone: TZ, timeoutSeconds: 60, memory: "256MiB" },
+  async () => {
+    await sendReservationReminders();
+  }
+);
+
+exports.shiftReminderPushScheduled = onSchedule(
+  { schedule: "every 5 minutes", timeZone: TZ, timeoutSeconds: 60, memory: "256MiB" },
+  async () => {
+    await sendShiftReminders();
+  }
+);
 
 exports.syncOkposSales = onRequest({ timeoutSeconds: 60, memory: "256MiB" }, async (req, res) => {
   setCors(res);

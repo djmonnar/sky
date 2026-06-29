@@ -67,6 +67,33 @@ service cloud.firestore {
       return role == "staff" || role == "manager";
     }
 
+    function pushEmployeeIdMatches() {
+      return (
+        ("employeeId" in me()) && request.resource.data.employeeId == me().employeeId
+      ) || (
+        !("employeeId" in me()) && request.resource.data.employeeId == null
+      );
+    }
+
+    function isValidOwnPushToken() {
+      return inStore(request.resource.data.storeId)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.token is string
+        && request.resource.data.token.size() > 20
+        && request.resource.data.role == me().role
+        && pushEmployeeIdMatches()
+        && request.resource.data.enabled is bool
+        && request.resource.data.email is string
+        && (request.resource.data.email == request.auth.token.email || request.resource.data.email == "")
+        && request.resource.data.platform is string
+        && request.resource.data.userAgent is string
+        && request.resource.data.keys().hasOnly([
+          "storeId", "token", "uid", "email", "role", "employeeId",
+          "platform", "userAgent", "enabled",
+          "createdAt", "updatedAt", "lastSeenAt"
+        ]);
+    }
+
     function myEmpId() {
       return me().employeeId;
     }
@@ -157,6 +184,10 @@ service cloud.firestore {
                     || (
                       isAdmin(storeId)
                       && docId == "payrollPassword"
+                    )
+                    || (
+                      isAdmin(storeId)
+                      && docId == "notificationSettings"
                     );
         allow write: if (
                        signedIn()
@@ -171,7 +202,35 @@ service cloud.firestore {
                        && request.resource.data.value is string
                        && request.resource.data.value.size() >= 4
                        && request.resource.data.keys().hasOnly(["value", "updatedAt"])
+                     )
+                     || (
+                       isAdmin(storeId)
+                       && docId == "notificationSettings"
                      );
+      }
+
+      match /pushTokens/{id} {
+        allow get: if isAdmin(storeId)
+                   || (signedIn() && resource.data.uid == request.auth.uid);
+        allow list: if isAdmin(storeId);
+        allow create: if signedIn()
+                      && request.resource.data.storeId == storeId
+                      && isValidOwnPushToken();
+        allow update: if signedIn()
+                      && resource.data.uid == request.auth.uid
+                      && request.resource.data.storeId == resource.data.storeId
+                      && request.resource.data.uid == resource.data.uid
+                      && request.resource.data.token == resource.data.token
+                      && isValidOwnPushToken();
+        allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      }
+
+      match /notificationEvents/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
+      match /invalidPushTokens/{id} {
+        allow read, write: if isAdmin(storeId);
       }
 
       match /employees/{id} {
