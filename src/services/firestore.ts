@@ -21,6 +21,7 @@ import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
   Vendor, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
+  OwnerSchedule,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
@@ -219,6 +220,30 @@ export function subscribeNotices(cb: (v: Notice[]) => void, onError: ErrCb): Uns
     "notices",
     (d, id) => ({ ...(d as Notice), id: Number(d.id ?? id), docId: id }),
     (items) => cb(items.sort((a, b) => b.id - a.id)),
+    onError
+  );
+}
+
+export function subscribeOwnerSchedules(cb: (v: OwnerSchedule[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "ownerSchedules",
+    (d, id) => ({
+      id: Number(d.id ?? id),
+      date: String(d.date ?? ""),
+      startTime: String(d.startTime ?? ""),
+      endTime: d.endTime ? String(d.endTime) : "",
+      title: String(d.title ?? ""),
+      category: d.category === "store" || d.category === "meeting" || d.category === "finance" || d.category === "other"
+        ? d.category
+        : "personal",
+      location: d.location ? String(d.location) : "",
+      memo: d.memo ? String(d.memo) : "",
+      important: d.important === true,
+      done: d.done === true,
+      createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
+      updatedAt: asDisplayDate(d.updatedAt) || String(d.updatedAt ?? ""),
+    }),
+    (items) => cb(items.sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`))),
     onError
   );
 }
@@ -523,6 +548,25 @@ export async function fsUpdatePayroll(
     { ...patch, empId, updatedAt: serverTimestamp() },
     { merge: true }
   );
+}
+
+export async function fsUpsertOwnerSchedule(item: OwnerSchedule): Promise<void> {
+  await setDoc(
+    doc(col("ownerSchedules"), String(item.id)),
+    {
+      ...item,
+      title: item.title.trim(),
+      location: item.location?.trim() ?? "",
+      memo: item.memo?.trim() ?? "",
+      updatedAt: serverTimestamp(),
+      ...(item.createdAt ? {} : { createdAt: serverTimestamp() }),
+    },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteOwnerSchedule(id: number): Promise<void> {
+  await deleteDoc(doc(col("ownerSchedules"), String(id)));
 }
 
 export async function fsGetPayrollPassword(): Promise<string> {

@@ -311,6 +311,10 @@ service cloud.firestore {
         allow write: if isAdmin(storeId);
       }
 
+      match /ownerSchedules/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
       match /salesOrders/{id} {
         allow read, write: if isAdmin(storeId);
       }

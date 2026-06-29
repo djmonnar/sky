@@ -5,6 +5,7 @@ import {
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
   Notice, Employee, Vendor, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun,
+  OwnerSchedule,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
@@ -24,6 +25,7 @@ import {
   fsUpsertEmployee, fsDeleteEmployee, fsDeactivateUserProfile,
   fsSetShift, fsDeleteShift, fsAddRecord, fsApproveRecord,
   fsUpdatePayroll, fsGetPayrollPassword, fsSetPayrollPassword,
+  subscribeOwnerSchedules, fsUpsertOwnerSchedule, fsDeleteOwnerSchedule,
   fsUpsertNotice, fsDeleteNotice,
   fsUpsertHandover, fsDeleteHandover, fsAddAttendanceLog,
   subscribeUserProfiles, fsUpdateUserRole,
@@ -99,6 +101,9 @@ interface Store {
   updatePayroll: (empId: number, patch: Partial<PayrollRow>) => void;
   getPayrollPassword: () => Promise<string>;
   setPayrollPassword: (nextPassword: string) => Promise<void>;
+  ownerSchedules: OwnerSchedule[];
+  upsertOwnerSchedule: (item: OwnerSchedule) => void;
+  deleteOwnerSchedule: (id: number) => void;
   notices: Notice[];
   handovers: Notice[];
   upsertNotice: (notice: Notice) => void;
@@ -154,6 +159,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [records, setRecords] = useState<WorkRecord[]>([]);
   const [payroll, setPayroll] = useState<PayrollRow[]>([]);
+  const [ownerSchedules, setOwnerSchedules] = useState<OwnerSchedule[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [handovers, setHandovers] = useState<Notice[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -302,6 +308,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...(profile.role === "admin"
         ? [
             subscribePayroll(setPayroll, onErr),
+            subscribeOwnerSchedules(setOwnerSchedules, onErr),
             subscribeUserProfiles(setUserProfiles, onErr),
             subscribeVendors(setVendors, onErr),
             subscribeInventoryItems(setInventoryItems, onErr),
@@ -461,6 +468,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPayroll((prev) =>
       prev.map((p) => (p.empId === empId ? { ...p, ...patch } : p))
     );
+  }, [fail]);
+
+  const upsertOwnerSchedule = useCallback((item: OwnerSchedule) => {
+    const normalized: OwnerSchedule = {
+      ...item,
+      title: item.title.trim(),
+      location: item.location?.trim(),
+      memo: item.memo?.trim(),
+      important: item.important ?? false,
+      done: item.done ?? false,
+      updatedAt: new Date().toISOString(),
+    };
+    if (APP_MODE === "live") {
+      fsUpsertOwnerSchedule(normalized).catch(fail("대표 일정 저장"));
+      return;
+    }
+    setOwnerSchedules((prev) => {
+      const index = prev.findIndex((x) => x.id === normalized.id);
+      const next = index === -1
+        ? [...prev, normalized]
+        : prev.map((x) => (x.id === normalized.id ? normalized : x));
+      return next.sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`));
+    });
+  }, [fail]);
+
+  const deleteOwnerSchedule = useCallback((id: number) => {
+    if (APP_MODE === "live") {
+      fsDeleteOwnerSchedule(id).catch(fail("대표 일정 삭제"));
+      return;
+    }
+    setOwnerSchedules((prev) => prev.filter((item) => item.id !== id));
   }, [fail]);
 
   const upsertVendor = useCallback((vendor: Vendor) => {
@@ -900,6 +938,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteShift,
       records, addRecord, approveRecord,
       payroll, updatePayroll, getPayrollPassword, setPayrollPassword,
+      ownerSchedules, upsertOwnerSchedule, deleteOwnerSchedule,
       notices, handovers, upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
       vendors, upsertVendor, deleteVendor,
       inventoryItems, upsertInventoryItem, deleteInventoryItem,
@@ -911,12 +950,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
-     reservations, shifts, records, payroll, notices, handovers, vendors, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
+     reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertEmployee, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
      setShift, deleteShift, addRecord, approveRecord, updatePayroll,
      getPayrollPassword, setPayrollPassword,
+     upsertOwnerSchedule, deleteOwnerSchedule,
      upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
      upsertVendor, deleteVendor,
      upsertInventoryItem, deleteInventoryItem,

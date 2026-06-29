@@ -118,6 +118,23 @@ export interface PayrollRow {
   editedRecords: number;
 }
 
+export type OwnerScheduleCategory = "personal" | "store" | "meeting" | "finance" | "other";
+
+export interface OwnerSchedule {
+  id: number;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime?: string; // HH:mm
+  title: string;
+  category: OwnerScheduleCategory;
+  location?: string;
+  memo?: string;
+  important?: boolean;
+  done?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Notice {
   id: number;
   docId?: string;

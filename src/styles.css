@@ -1020,6 +1020,141 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   margin: 52px auto 0;
 }
 .payroll-table { min-width: 1100px; }
+
+.admin-mode-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0 2px;
+}
+.admin-mode-head h2 {
+  font-size: 22px;
+  letter-spacing: 0;
+}
+.admin-mode-head p {
+  margin: 6px 0 0;
+  color: var(--text-sub);
+}
+.admin-mode-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--card-alt);
+  flex-shrink: 0;
+}
+.admin-mode-tabs button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  color: var(--text-sub);
+  font-weight: 800;
+}
+.admin-mode-tabs button.on {
+  background: var(--green-700);
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.admin-owner-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.owner-schedule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.owner-schedule-form-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 10px;
+}
+.owner-schedule-form-grid.two {
+  grid-template-columns: 0.8fr 1.2fr;
+}
+.owner-schedule-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.owner-schedule-options .check-item {
+  margin: 0;
+  text-decoration: none;
+}
+.owner-schedule-options input {
+  display: none;
+}
+.checkbox.checked {
+  background: var(--green-700);
+  border-color: var(--green-700);
+  color: #fff;
+}
+.owner-date-control {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+}
+.owner-date-control .btn {
+  padding-left: 0;
+  padding-right: 0;
+}
+.owner-quick-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 12px;
+}
+.owner-schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.owner-schedule-list.compact .owner-schedule-item {
+  padding: 10px;
+}
+.owner-schedule-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-alt);
+}
+.owner-schedule-item.done {
+  opacity: 0.64;
+}
+.owner-schedule-item.done .owner-schedule-main strong {
+  text-decoration: line-through;
+}
+.owner-schedule-main {
+  min-width: 0;
+}
+.owner-schedule-memo {
+  margin-top: 6px;
+  color: var(--text-sub);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+.owner-schedule-actions {
+  display: flex;
+  gap: 6px;
+}
+.empty-state {
+  padding: 22px;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
 .sales-sync-panel {
   display: grid;
   grid-template-columns: minmax(180px, 260px) 1fr;
@@ -1820,6 +1955,32 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   }
 
   /* 실무자 모바일 우선: 터치 타겟 확대 (최소 44~48px) */
+  .admin-mode-head {
+    flex-direction: column;
+  }
+  .admin-mode-tabs {
+    width: 100%;
+  }
+  .admin-mode-tabs button {
+    flex: 1;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .admin-owner-grid,
+  .owner-schedule-form-grid,
+  .owner-schedule-form-grid.two {
+    grid-template-columns: 1fr;
+  }
+  .owner-schedule-item {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+  .owner-schedule-actions {
+    grid-column: 2;
+    width: 100%;
+  }
+  .owner-schedule-actions .btn {
+    flex: 1;
+  }
   .chip { padding: 12px 16px; min-height: 48px; font-size: 14px; flex: 1 0 auto; }
   .step-btn { padding: 12px 16px; min-height: 48px; font-size: 14px; }
   .punch-row .btn { min-height: 54px; }
