@@ -223,12 +223,29 @@ function isInventoryOcrCandidate(line) {
   return /(kg|㎏|개|박스|box|돈|갈비|목살|거세|우진|한우|목심|냉동|냉장|국내산|CAB|IBP)/i.test(line);
 }
 
+function inventoryRowSignature(row) {
+  return [
+    String(row.name || "").replace(/\s+/g, "").toLowerCase(),
+    Number(row.qty || 0),
+    Number(row.unitPrice || 0),
+    Number(row.totalPrice || 0),
+  ].join("|");
+}
+
 function parseInventoryOcrRows(text) {
   const lines = String(text ?? "")
     .split(/\r?\n/)
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
   const rows = [];
+  const seen = new Set();
+  const pushRow = (row) => {
+    if (!row.name || row.name.length < 2 || Number(row.qty) <= 0) return;
+    const signature = inventoryRowSignature(row);
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    rows.push(row);
+  };
   lines.forEach((line, index) => {
     if (!isInventoryOcrCandidate(line)) return;
     const unitMatch = line.match(/\b(kg|㎏|개|박스|box|BOX|병|팩|봉)\b/i);
@@ -266,8 +283,7 @@ function parseInventoryOcrRows(text) {
       totalPrice = moneyTokens[1]?.value ?? Math.round(qty * unitPrice);
     }
 
-    if (!name || name.length < 2 || qty <= 0) return;
-    rows.push({
+    pushRow({
       key: `${Date.now()}_${index}`,
       name,
       unit,
@@ -276,6 +292,52 @@ function parseInventoryOcrRows(text) {
       totalPrice,
       storageType: inferStorageType(name),
       memo: line,
+      selected: true,
+    });
+  });
+
+  lines.forEach((line, index) => {
+    if (!isInventoryOcrCandidate(line)) return;
+    const ownNumbers = inventoryNumberTokens(line);
+    const hasOwnQty = ownNumbers.some((token) => token.raw.includes(".") && token.value > 0 && token.value < 10000);
+    if (hasOwnQty) return;
+
+    const name = cleanOcrItemName(line);
+    if (!name || name.length < 2) return;
+    let unit = "kg";
+    const numbers = [];
+    const memoLines = [line];
+    for (let offset = 1; offset <= 8; offset += 1) {
+      const next = lines[index + offset];
+      if (!next) break;
+      if (offset > 1 && isInventoryOcrCandidate(next)) break;
+      memoLines.push(next);
+      const unitOnly = next.match(/^(kg|㎏|개|박스|box|BOX|병|팩|봉)$/i);
+      if (unitOnly) {
+        unit = inventoryUnitLabel(unitOnly[1]);
+        continue;
+      }
+      inventoryNumberTokens(next).forEach((token) => numbers.push(token));
+    }
+    const qtyTokenIndex = numbers.findIndex((token) =>
+      token.raw.includes(".") && token.value > 0 && token.value < 10000
+    );
+    if (qtyTokenIndex < 0) return;
+    const qty = numbers[qtyTokenIndex].value;
+    const moneyTokens = numbers
+      .slice(qtyTokenIndex + 1)
+      .filter((token) => token.value >= 1000 || token.raw.includes(","));
+    const unitPrice = moneyTokens[0]?.value ?? 0;
+    const totalPrice = moneyTokens[1]?.value ?? Math.round(qty * unitPrice);
+    pushRow({
+      key: `${Date.now()}_${index}_block`,
+      name,
+      unit,
+      qty,
+      unitPrice,
+      totalPrice,
+      storageType: inferStorageType(name),
+      memo: memoLines.join(" / "),
       selected: true,
     });
   });
@@ -333,14 +395,25 @@ function getVisionClient() {
 
 async function recognizeInventoryBufferWithVision(buffer) {
   const client = getVisionClient();
-  const [result] = await client.documentTextDetection({
+  const [documentResult] = await client.documentTextDetection({
     image: { content: buffer },
   });
-  return String(
-    result?.fullTextAnnotation?.text
-    || result?.textAnnotations?.[0]?.description
+  const documentText = String(
+    documentResult?.fullTextAnnotation?.text
+    || documentResult?.textAnnotations?.[0]?.description
     || ""
   ).trim();
+  if (documentText.split(/\r?\n/).filter(Boolean).length >= 10) return documentText;
+
+  const [textResult] = await client.textDetection({
+    image: { content: buffer },
+  });
+  const text = String(
+    textResult?.fullTextAnnotation?.text
+    || textResult?.textAnnotations?.[0]?.description
+    || ""
+  ).trim();
+  return text.length > documentText.length ? text : documentText;
 }
 
 async function recognizeInventoryBufferWithTesseract(buffer) {
@@ -2476,11 +2549,13 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
       res.status(413).json({ ok: false, message: "이미지는 8MB 이하로 올려주세요." });
       return;
     }
+    const debugOcr = String(req.query.debugOcr || "") === "1" && chatUser.role === "admin";
     const ocrText = await recognizeInventoryBuffer(buffer);
     const result = await saveInventoryOcrTextToSession({ chatUser, mode, imageUrl: "browser-upload", ocrText });
     res.status(200).json({
       ok: result.ok,
       message: `${result.text}\n\n카톡으로 돌아가 ${result.ok ? "'확인'" : "'재고확인'"}이라고 보내주세요.`,
+      ...(debugOcr ? { ocrText: ocrText.slice(0, 6000) } : {}),
     });
   } catch (error) {
     console.error("chatbotInventoryUpload failed", error);
