@@ -1650,13 +1650,15 @@ async function handleInventoryOcrSession(body, chatUser) {
   if (session.type !== "inventoryOcr") return null;
   const text = utteranceOf(body).trim();
   const isOcrStartText = /^(재고확인|발주확인)$/.test(text);
+  const isOcrResult = isInventoryOcrResultText(text);
   const wantsCurrentOcr = isInventoryOcrResultText(text)
     && session.status === "awaiting_image"
     && session.lastOcrText;
   if (isOcrStartText && ["awaiting_image", "awaiting_confirm"].includes(session.status)) return null;
   const hasActiveOcrSession = ["processing", "awaiting_confirm"].includes(session.status) || wantsCurrentOcr;
   if (isOcrStartText && !hasActiveOcrSession) return null;
-  if (/취소|중단|그만/i.test(text)) {
+  const isCancelText = /취소|중단|그만/i.test(text);
+  if (isCancelText) {
     await chatbotSessionRef(chatUser).delete();
     return textResponse("재고 OCR 작업을 취소했습니다.", ["오늘 현황"]);
   }
@@ -1664,6 +1666,7 @@ async function handleInventoryOcrSession(body, chatUser) {
   if (imageUrl) return queueInventoryOcrImage(body, chatUser, session.mode || "inventory");
 
   if (session.status === "processing") {
+    if (!isOcrResult) return null;
     return textResponse(
       "아직 OCR 처리 중입니다.\n잠시 뒤 '결과'를 다시 눌러주세요.",
       ["결과", "취소"]
@@ -1671,6 +1674,7 @@ async function handleInventoryOcrSession(body, chatUser) {
   }
 
   if (session.status === "awaiting_image") {
+    if (!isOcrResult && !wantsCurrentOcr) return null;
     if (session.lastError && (isInventoryOcrResultText(text) || wantsCurrentOcr)) {
       return textResponse(
         `사진을 읽지 못했습니다.\n${session.lastError}\n\n원본 사진으로 다시 처리하려면 아래 링크로 업로드해주세요.\n${chatbotUploadUrl(chatUser, session.mode || "inventory")}`,
@@ -1686,18 +1690,16 @@ async function handleInventoryOcrSession(body, chatUser) {
       });
       return textResponse(result.text, result.ok ? ["확인", "거래처 목록", "취소"] : ["취소"]);
     }
-    console.info("inventory OCR awaiting image without URL", {
-      utterance: utteranceOf(body).slice(0, 200),
-      actionName: body.action?.name ?? "",
-      paramKeys: Object.keys(body.action?.params ?? {}),
-      detailParamKeys: Object.keys(body.action?.detailParams ?? {}),
-      requestParams: body.userRequest?.params ?? {},
-    });
     return textResponse("사진을 올려주세요.\n거래명세서나 입고 내역이 보이면 됩니다.\n이미 보냈는데 답이 없으면 '결과'라고 보내주세요.", ["결과", "취소"]);
   }
 
   const vendorText = text.match(/^거래처\s+(.+)$/)?.[1] || paramOf(body, ["vendor", "거래처"]);
-  if (/^거래처\s*목록$/.test(text)) {
+  const isVendorListText = /^거래처\s*목록$/.test(text);
+  const isApplyText = /^확인$|^저장$|^반영$/.test(text);
+  if (session.status === "awaiting_confirm" && !isOcrResult && !isVendorListText && !vendorText && !isApplyText) {
+    return null;
+  }
+  if (isVendorListText) {
     const vendors = await listVendors();
     const lines = vendors
       .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
@@ -1718,7 +1720,7 @@ async function handleInventoryOcrSession(body, chatUser) {
     return textResponse(`거래처를 ${vendor.name}으로 지정했습니다.\n${inventoryOcrSummary(next)}\n\n맞으면 '확인'이라고 보내주세요.`, ["확인", "취소"]);
   }
 
-  if (/^확인$|^저장$|^반영$/.test(text)) {
+  if (isApplyText) {
     const denied = requireOps(chatUser);
     return denied ? failResponse(denied) : applyInventoryOcrSession(session, chatUser);
   }
