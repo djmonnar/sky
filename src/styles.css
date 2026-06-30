@@ -1974,6 +1974,70 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-size: 12px;
 }
 
+/* ============ Settlements ============ */
+.settlement-filter-row {
+  display: grid;
+  grid-template-columns: 150px minmax(170px, 1fr) 150px minmax(200px, 1.2fr);
+  gap: 12px;
+  align-items: end;
+}
+.settlement-vendor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.settlement-vendor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 128px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  text-align: left;
+}
+.settlement-vendor-card:hover {
+  border-color: var(--green-600);
+  background: var(--green-50);
+}
+.settlement-vendor-card.on {
+  border-color: var(--green-700);
+  box-shadow: 0 0 0 1.5px var(--green-700);
+}
+.settlement-vendor-amount {
+  font-size: 21px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+.settlement-table {
+  min-width: 1320px;
+}
+.settlement-table input[type="date"],
+.settlement-table select {
+  min-width: 128px;
+}
+.settlement-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 240px;
+}
+.settlement-items span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--card-alt);
+  color: var(--text-sub);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.settlement-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 92px;
+}
+
 /* ============ Side panel ============ */
 .side-panel { position: sticky; top: 16px; }
 
@@ -2093,6 +2157,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .inventory-ocr-actions .btn {
     flex: 1 1 100%;
     min-height: 50px;
+  }
+  .settlement-filter-row {
+    grid-template-columns: 1fr;
+  }
+  .settlement-vendor-grid {
+    grid-template-columns: 1fr;
+  }
+  .settlement-vendor-card {
+    min-height: 112px;
   }
   .order-line-edit {
     grid-template-columns: 1fr 1fr;

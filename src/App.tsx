@@ -18,6 +18,7 @@ import Vendors from "./pages/Vendors";
 import Inventory from "./pages/Inventory";
 import Recipes from "./pages/Recipes";
 import Sales from "./pages/Sales";
+import Settlements from "./pages/Settlements";
 import MyProfile from "./pages/MyProfile";
 
 function Splash({ text }: { text: string }) {
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/sales" element={role === "admin" ? <Sales /> : <Navigate to="/" replace />} />
         <Route path="/vendors" element={role === "admin" ? <Vendors /> : <Navigate to="/" replace />} />
         <Route path="/inventory" element={role === "admin" ? <Inventory /> : <Navigate to="/" replace />} />
+        <Route path="/settlements" element={role === "admin" ? <Settlements /> : <Navigate to="/" replace />} />
         <Route path="/recipes" element={role === "admin" ? <Recipes /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<MyProfile />} />
         <Route path="/guide" element={canManageOps ? <Guide /> : <Navigate to="/" replace />} />

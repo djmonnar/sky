@@ -22,6 +22,7 @@ import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
   Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
   OwnerSchedule,
+  SettlementMethod, SettlementStatus,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
@@ -337,10 +338,23 @@ export function subscribePurchaseOrders(cb: (v: PurchaseOrder[]) => void, onErro
       orderedAt: asDisplayDate(d.orderedAt) || String(d.orderedAt ?? ""),
       receivedAt: asDisplayDate(d.receivedAt) || String(d.receivedAt ?? ""),
       createdBy: d.createdBy,
+      settlementStatus: normalizeSettlementStatus(d.settlementStatus),
+      settledAt: String(d.settledAt ?? ""),
+      settlementMethod: normalizeSettlementMethod(d.settlementMethod),
+      settlementMemo: String(d.settlementMemo ?? ""),
     }),
     (items) => cb(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)),
     onError
   );
+}
+
+function normalizeSettlementMethod(raw: unknown): SettlementMethod | undefined {
+  if (raw === "bank" || raw === "cash" || raw === "card" || raw === "other") return raw;
+  return undefined;
+}
+
+function normalizeSettlementStatus(raw: unknown): SettlementStatus {
+  return raw === "settled" ? "settled" : "unsettled";
 }
 
 export function subscribeRecipes(cb: (v: Recipe[]) => void, onError: ErrCb): Unsub {

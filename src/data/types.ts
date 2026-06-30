@@ -188,6 +188,8 @@ export interface InventoryItem {
 }
 
 export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "canceled";
+export type SettlementStatus = "unsettled" | "settled";
+export type SettlementMethod = "bank" | "cash" | "card" | "other";
 
 export interface PurchaseOrderItem {
   inventoryItemId: number;
@@ -210,6 +212,10 @@ export interface PurchaseOrder {
   orderedAt?: string;
   receivedAt?: string;
   createdBy?: string;
+  settlementStatus?: SettlementStatus;
+  settledAt?: string; // YYYY-MM-DD
+  settlementMethod?: SettlementMethod;
+  settlementMemo?: string;
 }
 
 export type StockLogType = "in" | "out" | "adjust" | "waste";

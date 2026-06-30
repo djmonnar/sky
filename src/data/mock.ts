@@ -294,6 +294,7 @@ export const SEED_PURCHASE_ORDERS: PurchaseOrder[] = [
     createdAt: `${TODAY_STR}T09:00:00+09:00`,
     totalAmount: 90000,
     memo: "데모 발주서",
+    settlementStatus: "unsettled",
     items: [
       { inventoryItemId: 1, name: "김치", qty: 20, unit: "kg", unitPrice: 4500, totalPrice: 90000 },
     ],
