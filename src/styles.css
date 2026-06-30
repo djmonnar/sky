@@ -1739,6 +1739,61 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   padding: 3px 0;
   font-size: 12.5px;
 }
+.pay-adjust-box {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-alt);
+}
+.pay-adjust-type {
+  margin-bottom: 10px;
+}
+.pay-adjust-type button.danger {
+  color: var(--red-tx);
+}
+.pay-adjust-form {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.8fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.pay-adjust-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+.pay-adjust-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+}
+.pay-adjust-item strong {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+.pay-adjust-item.extra strong {
+  color: var(--green-700);
+}
+.pay-adjust-item.deduct strong {
+  color: var(--red-tx);
+}
+.pay-adjust-item span {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.pay-adjust-list .empty-state {
+  padding: 12px;
+  background: transparent;
+}
 
 .profile-wrap {
   width: min(760px, 100%);
@@ -2296,6 +2351,19 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   }
   .owner-schedule-actions .btn {
     flex: 1;
+  }
+  .pay-adjust-form {
+    grid-template-columns: 1fr;
+  }
+  .pay-adjust-form .btn {
+    width: 100%;
+  }
+  .pay-adjust-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pay-adjust-item .btn {
+    width: 100%;
   }
   .chip { padding: 12px 16px; min-height: 48px; font-size: 14px; flex: 1 0 auto; }
   .step-btn { padding: 12px 16px; min-height: 48px; font-size: 14px; }

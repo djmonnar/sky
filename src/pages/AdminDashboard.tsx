@@ -38,7 +38,8 @@ export default function AdminDashboard() {
     }
   };
 
-  const activeResv = reservations.filter((r) => r.status !== "취소" && r.status !== "노쇼");
+  const todayReservations = reservations.filter((r) => r.date === TODAY_STR);
+  const activeResv = todayReservations.filter((r) => r.status !== "취소" && r.status !== "노쇼");
   const todayShifts = shiftsForDay(shifts, TODAY_STR, TODAY_DOW);
   const todayWorkers = Array.from(new Set(todayShifts.map((s) => s.employeeId)))
     .map((employeeId) => ({
@@ -50,8 +51,8 @@ export default function AdminDashboard() {
     const emp = employees.find((e) => e.id === r.empId);
     return !emp || !isMonthlyEmployee(emp);
   });
-  const warnResv = reservations.filter((r) => r.status === "확인전화필요");
-  const groupResv = reservations.filter((r) => r.status === "단체");
+  const warnResv = todayReservations.filter((r) => r.status === "확인전화필요");
+  const groupResv = todayReservations.filter((r) => r.status === "단체");
   const todaySales = ordersForDate(salesOrders, TODAY_STR);
   const todaySalesSummary = salesSummary(todaySales);
   const latestSalesSync = latestSyncRun(salesSyncRuns);
@@ -88,7 +89,7 @@ export default function AdminDashboard() {
 
       {/* KPI */}
       <div className="grid grid-4">
-        <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="전일 대비 4건" trendUp icon="📋" />
+        <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="오늘 기준" trendUp icon="📋" />
         {canViewPayroll && <StatCard label="오늘 매출" value={money(todaySalesSummary.netAmount)} unit="원" trend={`${todaySalesSummary.orderCount}건 · 객단가 ${money(todaySalesSummary.averageOrderAmount)}원`} trendUp icon="💳" tone="blue" />}
         <StatCard label="오늘 근무 직원" value={todayWorkers.length} unit="명" trend="슬롯 배치 기준" trendUp icon="👥" tone="blue" />
         <StatCard label="미확인 근무기록" value={pendingRecords.length} unit="건" trend="승인 대기 중" trendUp={false} icon="🗂️" tone="amber" />
@@ -102,16 +103,20 @@ export default function AdminDashboard() {
             icon="📋"
             action={<Link to="/reservations" className="card-link">전체 예약 보기 ›</Link>}
           >
-            {activeResv.slice(0, 6).map((r) => (
-              <div className="list-row" key={r.id}>
-                <span className="list-time">{r.time}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="bold">{r.name} <span className="muted small">· {r.people}명 · {r.seat}</span></div>
-                  {r.request && <div className="muted small">{r.request}</div>}
+            {activeResv.length > 0 ? (
+              activeResv.slice(0, 6).map((r) => (
+                <div className="list-row" key={r.id}>
+                  <span className="list-time">{r.time}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="bold">{r.name} <span className="muted small">· {r.people}명 · {r.seat}</span></div>
+                    {r.request && <div className="muted small">{r.request}</div>}
+                  </div>
+                  <StatusBadge status={r.status} />
                 </div>
-                <StatusBadge status={r.status} />
-              </div>
-            ))}
+              ))
+            ) : (
+              <div className="empty-state">오늘 표시할 예약이 없습니다.</div>
+            )}
           </Card>
 
           {/* 직원 출근 현황 */}

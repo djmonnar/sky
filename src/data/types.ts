@@ -98,6 +98,16 @@ export interface WorkRecord {
   status: "미작성" | "제출" | "승인대기" | "승인완료";
 }
 
+export type PayrollAdjustmentType = "extra" | "deduct";
+
+export interface PayrollAdjustment {
+  id: string;
+  type: PayrollAdjustmentType;
+  amount: number;
+  memo?: string;
+  createdAt?: string;
+}
+
 export interface PayrollRow {
   empId: number;
   month?: string; // YYYY-MM
@@ -111,6 +121,8 @@ export interface PayrollRow {
   base: number;
   extra: number;
   deduct: number;
+  adjustments?: PayrollAdjustment[];
+  note?: string;
   status: "승인대기" | "검토중" | "승인완료";
   normalH: number;
   overH: number;

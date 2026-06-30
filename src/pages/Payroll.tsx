@@ -1,8 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { Card, StatCard, Badge } from "../components/ui";
 import { won } from "../data";
-import type { Employee, OwnerSchedule, OwnerScheduleCategory, PayrollRow } from "../data/types";
+import type {
+  Employee,
+  OwnerSchedule,
+  OwnerScheduleCategory,
+  PayrollAdjustment,
+  PayrollAdjustmentType,
+  PayrollRow,
+} from "../data/types";
 import { countSlots } from "../lib/shifts";
 import { TODAY_STR } from "../lib/time";
 import {
@@ -84,11 +91,52 @@ function defaultPayroll(emp: Employee, counts: ReturnType<typeof countSlots>): P
   };
 }
 
+function payrollAdjustments(pay: PayrollRow | undefined): PayrollAdjustment[] {
+  if (!pay) return [];
+  if (Array.isArray(pay.adjustments)) {
+    return pay.adjustments.filter((item) => item.amount > 0);
+  }
+
+  const entries: PayrollAdjustment[] = [];
+  if (pay.extra > 0) {
+    entries.push({
+      id: "legacy-extra",
+      type: "extra",
+      amount: pay.extra,
+      memo: "기존 추가수당",
+    });
+  }
+  if (pay.deduct > 0) {
+    entries.push({
+      id: "legacy-deduct",
+      type: "deduct",
+      amount: pay.deduct,
+      memo: "기존 차감",
+    });
+  }
+  return entries;
+}
+
+function adjustmentTotals(adjustments: PayrollAdjustment[]) {
+  return adjustments.reduce(
+    (sum, item) => {
+      if (item.type === "extra") return { ...sum, extra: sum.extra + item.amount };
+      return { ...sum, deduct: sum.deduct + item.amount };
+    },
+    { extra: 0, deduct: 0 }
+  );
+}
+
 function hydratePayroll(emp: Employee, pay: PayrollRow | undefined, counts: ReturnType<typeof countSlots>): PayrollRow {
   const base = defaultPayroll(emp, counts);
+  const adjustments = payrollAdjustments(pay);
+  const totals = adjustmentTotals(adjustments);
   return {
     ...base,
     ...(pay ?? {}),
+    adjustments,
+    extra: totals.extra,
+    deduct: totals.deduct,
     morningCount: counts.morningCount,
     afternoonCount: counts.afternoonCount,
     slotCount: counts.slotCount,
@@ -140,8 +188,10 @@ export default function Payroll() {
 
   const [filter, setFilter] = useState<PayFilter>("all");
   const [selId, setSelId] = useState<number | null>(null);
-  const [extraInput, setExtraInput] = useState("");
-  const [deductInput, setDeductInput] = useState("");
+  const [adjustType, setAdjustType] = useState<PayrollAdjustmentType>("extra");
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustMemo, setAdjustMemo] = useState("");
+  const [payNoteInput, setPayNoteInput] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(TODAY_STR.slice(0, 7));
   const [unlocked, setUnlocked] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
@@ -176,6 +226,10 @@ export default function Payroll() {
     ?? filteredRows[0]
     ?? rows[0]
     ?? null;
+
+  useEffect(() => {
+    setPayNoteInput(sel?.pay.note ?? "");
+  }, [sel?.emp.id, sel?.pay.note]);
 
   const daySchedules = ownerSchedules.filter((item) => item.date === scheduleDate);
   const monthScheduleCount = ownerSchedules.filter((item) => item.date.startsWith(scheduleDate.slice(0, 7))).length;
@@ -236,26 +290,55 @@ export default function Payroll() {
     });
   };
 
+  const persistAdjustments = (emp: Employee, pay: PayrollRow, adjustments: PayrollAdjustment[]) => {
+    const totals = adjustmentTotals(adjustments);
+    persistPayroll(emp, pay, {
+      adjustments,
+      extra: totals.extra,
+      deduct: totals.deduct,
+    });
+  };
+
   const approve = () => {
     if (!sel) return;
     persistPayroll(sel.emp, sel.pay, { status: PAY_APPROVED });
     showToast(`${sel.emp.name} 급여가 확정되었습니다`);
   };
 
-  const addExtra = () => {
-    const n = parseInt(extraInput.replace(/[^0-9]/g, ""), 10);
-    if (!sel || !n) return;
-    persistPayroll(sel.emp, sel.pay, { extra: sel.pay.extra + n });
-    setExtraInput("");
-    showToast(`추가수당 ${won(n)} 반영`);
+  const addAdjustment = () => {
+    const amount = parseInt(adjustAmount.replace(/[^0-9]/g, ""), 10);
+    if (!sel) return;
+    if (!amount) {
+      showToast("금액을 입력해주세요");
+      return;
+    }
+    const next: PayrollAdjustment[] = [
+      ...(sel.pay.adjustments ?? []),
+      {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        type: adjustType,
+        amount,
+        memo: adjustMemo.trim(),
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    persistAdjustments(sel.emp, sel.pay, next);
+    setAdjustAmount("");
+    setAdjustMemo("");
+    showToast(`${adjustType === "extra" ? "추가수당" : "차감"} ${won(amount)} 반영`);
   };
 
-  const addDeduct = () => {
-    const n = parseInt(deductInput.replace(/[^0-9]/g, ""), 10);
-    if (!sel || !n) return;
-    persistPayroll(sel.emp, sel.pay, { deduct: sel.pay.deduct + n });
-    setDeductInput("");
-    showToast(`차감 ${won(n)} 반영`);
+  const removeAdjustment = (id: string) => {
+    if (!sel) return;
+    const next = (sel.pay.adjustments ?? []).filter((item) => item.id !== id);
+    persistAdjustments(sel.emp, sel.pay, next);
+    showToast("급여 조정 항목을 삭제했습니다");
+  };
+
+  const savePayrollNote = () => {
+    if (!sel) return;
+    persistPayroll(sel.emp, sel.pay, { note: payNoteInput.trim() });
+    showToast("비고를 저장했습니다");
   };
 
   const renderInsuranceDeduction = (pay: PayrollRow, emp: Employee) => {
@@ -699,17 +782,70 @@ export default function Payroll() {
                 {renderInsuranceDeduction(sel.pay, sel.emp)}
                 <div className="pay-line total"><span className="k">최종 지급액</span><span className="v">{finalPay(sel.pay, sel.emp).toLocaleString()}원</span></div>
 
-                <label className="field-label" style={{ marginTop: 16 }}>추가수당 입력</label>
-                <div className="row">
-                  <input className="input" placeholder="금액" value={extraInput} onChange={(e) => setExtraInput(e.target.value)} inputMode="numeric" />
-                  <button className="btn btn-soft" onClick={addExtra}>추가</button>
+                <div className="pay-adjust-box">
+                  <label className="field-label">추가/차감 입력</label>
+                  <div className="segmented fill pay-adjust-type">
+                    <button className={adjustType === "extra" ? "on" : ""} onClick={() => setAdjustType("extra")}>
+                      추가
+                    </button>
+                    <button className={adjustType === "deduct" ? "on danger" : ""} onClick={() => setAdjustType("deduct")}>
+                      차감
+                    </button>
+                  </div>
+                  <div className="pay-adjust-form">
+                    <input
+                      className="input"
+                      placeholder="금액"
+                      value={adjustAmount}
+                      onChange={(e) => setAdjustAmount(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addAdjustment();
+                      }}
+                      inputMode="numeric"
+                    />
+                    <input
+                      className="input"
+                      placeholder="사유"
+                      value={adjustMemo}
+                      onChange={(e) => setAdjustMemo(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addAdjustment();
+                      }}
+                    />
+                    <button className={adjustType === "extra" ? "btn btn-soft" : "btn btn-danger"} onClick={addAdjustment}>
+                      추가
+                    </button>
+                  </div>
+
+                  <div className="pay-adjust-list">
+                    {(sel.pay.adjustments ?? []).length > 0 ? (
+                      (sel.pay.adjustments ?? []).map((item) => (
+                        <div className={`pay-adjust-item ${item.type}`} key={item.id}>
+                          <div>
+                            <strong>{item.type === "extra" ? "+" : "-"}{item.amount.toLocaleString()}원</strong>
+                            <span>{item.memo || "사유 없음"}</span>
+                          </div>
+                          <button className="btn btn-outline btn-sm" onClick={() => removeAdjustment(item.id)}>
+                            삭제
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-state small">등록된 추가/차감 내역이 없습니다.</div>
+                    )}
+                  </div>
                 </div>
 
-                <label className="field-label" style={{ marginTop: 12 }}>차감 입력</label>
-                <div className="row">
-                  <input className="input" placeholder="금액" value={deductInput} onChange={(e) => setDeductInput(e.target.value)} inputMode="numeric" />
-                  <button className="btn btn-danger" onClick={addDeduct}>차감</button>
-                </div>
+                <label className="field-label" style={{ marginTop: 12 }}>비고</label>
+                <textarea
+                  className="textarea"
+                  value={payNoteInput}
+                  onChange={(e) => setPayNoteInput(e.target.value)}
+                  placeholder="급여 정산 메모를 한 칸에 남겨주세요"
+                />
+                <button className="btn btn-outline btn-block" style={{ marginTop: 8 }} onClick={savePayrollNote}>
+                  비고 저장
+                </button>
 
                 <div className="row" style={{ marginTop: 14 }}>
                   <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { persistPayroll(sel.emp, sel.pay, { status: PAY_REVIEW }); showToast("검토중으로 변경했습니다"); }}>
