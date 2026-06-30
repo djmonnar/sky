@@ -15,6 +15,7 @@ const db = admin.firestore();
 const STORE_ID = "haneulttang";
 const STORE_PATH = `stores/${STORE_ID}`;
 const TZ = "Asia/Seoul";
+let visionClient = null;
 
 const ROLE_LABEL = {
   admin: "관리자",
@@ -322,10 +323,43 @@ async function recognizeInventoryImage(url) {
   return recognizeInventoryBuffer(buffer);
 }
 
-async function recognizeInventoryBuffer(buffer) {
+function getVisionClient() {
+  if (!visionClient) {
+    const vision = require("@google-cloud/vision");
+    visionClient = new vision.ImageAnnotatorClient();
+  }
+  return visionClient;
+}
+
+async function recognizeInventoryBufferWithVision(buffer) {
+  const client = getVisionClient();
+  const [result] = await client.documentTextDetection({
+    image: { content: buffer },
+  });
+  return String(
+    result?.fullTextAnnotation?.text
+    || result?.textAnnotations?.[0]?.description
+    || ""
+  ).trim();
+}
+
+async function recognizeInventoryBufferWithTesseract(buffer) {
   const { recognize } = require("tesseract.js");
   const result = await recognize(buffer, "kor+eng");
   return String(result?.data?.text ?? "").trim();
+}
+
+async function recognizeInventoryBuffer(buffer) {
+  try {
+    const visionText = await recognizeInventoryBufferWithVision(buffer);
+    if (visionText) return visionText;
+    console.warn("Google Vision OCR returned empty text; falling back to Tesseract.");
+  } catch (error) {
+    console.warn("Google Vision OCR failed; falling back to Tesseract.", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return recognizeInventoryBufferWithTesseract(buffer);
 }
 
 function chatbotUploadUrl(chatUser, mode = "inventory") {
