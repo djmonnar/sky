@@ -109,6 +109,7 @@ export default function EmployeeList() {
       hourly: draft.salaryType === "hourly" ? Number(draft.hourly ?? 0) : 0,
       monthlySalary: draft.salaryType === "monthly" ? Number(draft.monthlySalary ?? 0) : undefined,
       slotRate: draft.salaryType === "perSlot" ? Number(draft.slotRate ?? 0) : undefined,
+      socialInsurance: draft.socialInsurance === true,
       phone: draft.phone?.trim(),
       address: draft.address?.trim(),
       residentRegistrationNumber: draft.residentRegistrationNumber?.trim(),
@@ -261,6 +262,21 @@ export default function EmployeeList() {
             </div>
           </div>
 
+          <label className="insurance-toggle-card" style={{ marginTop: 14 }}>
+            <input
+              type="checkbox"
+              checked={draft.socialInsurance === true}
+              onChange={(e) => updateDraft("socialInsurance", e.target.checked)}
+            />
+            <span className={`checkbox ${draft.socialInsurance ? "checked" : ""}`}>
+              {draft.socialInsurance ? "✓" : ""}
+            </span>
+            <span>
+              <strong>4대보험 적용 대상자</strong>
+              <small>체크한 직원만 급여관리에서 근로자 부담분을 자동 차감합니다.</small>
+            </span>
+          </label>
+
           {draft.employmentType === "fullTime" && (
             <div className="grid grid-2" style={{ gap: 12, marginTop: 14 }}>
               <div>
@@ -338,6 +354,7 @@ export default function EmployeeList() {
                       {emp.role} · {employmentLabel(emp)} · {salaryTypeLabel(emp)}
                       {emp.phone && ` · ${emp.phone}`}
                       {emp.address && ` · ${emp.address}`}
+                      {emp.socialInsurance && " · 4대보험"}
                     </div>
                   </div>
 

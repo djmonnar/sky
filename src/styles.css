@@ -310,6 +310,32 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   height: 16px;
   accent-color: var(--green-700);
 }
+.insurance-toggle-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--green-50);
+  cursor: pointer;
+  user-select: none;
+}
+.insurance-toggle-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.insurance-toggle-card strong {
+  display: block;
+  font-size: 14px;
+}
+.insurance-toggle-card small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-sub);
+  line-height: 1.45;
+}
 
 /* ============ Badges ============ */
 .badge {
@@ -1019,7 +1045,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   max-width: 420px;
   margin: 52px auto 0;
 }
-.payroll-table { min-width: 1100px; }
+.payroll-table { min-width: 1220px; }
 
 .admin-mode-head {
   display: flex;
@@ -1702,6 +1728,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-size: 15px;
 }
 .pay-line.minus .v { color: var(--red-tx); }
+.pay-line.insurance .v { color: var(--amber-tx); }
+.insurance-breakdown {
+  margin: 4px 0 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: var(--card-alt);
+}
+.insurance-breakdown .pay-line {
+  padding: 3px 0;
+  font-size: 12.5px;
+}
 
 .profile-wrap {
   width: min(760px, 100%);

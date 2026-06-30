@@ -43,6 +43,7 @@ export interface Employee {
   salaryType: SalaryType;
   hourly: number; // 시급
   monthlySalary?: number;
+  socialInsurance?: boolean; // 4대보험 근로자 부담 공제 적용 여부
   slotRate?: number; // 오전/오후 슬롯 1회당 수당
   standardStart?: string;
   standardEnd?: string;

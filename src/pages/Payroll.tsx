@@ -5,7 +5,14 @@ import { won } from "../data";
 import type { Employee, OwnerSchedule, OwnerScheduleCategory, PayrollRow } from "../data/types";
 import { countSlots } from "../lib/shifts";
 import { TODAY_STR } from "../lib/time";
-import { basePay, finalPay, isMonthlyEmployee, isSlotPaidEmployee } from "../lib/payroll";
+import {
+  basePay,
+  finalPay,
+  isMonthlyEmployee,
+  isSlotPaidEmployee,
+  socialInsuranceBreakdown,
+  socialInsuranceDeduction,
+} from "../lib/payroll";
 
 type AdminTab = "schedule" | "payroll";
 type PayFilter = "all" | "fullTime" | "partTime";
@@ -178,6 +185,8 @@ export default function Payroll() {
   const importantCount = ownerSchedules.filter((item) => item.important && !item.done).length;
 
   const totalPay = rows.reduce((a, { emp, pay }) => a + finalPay(pay, emp), 0);
+  const insuranceCount = rows.filter(({ emp }) => emp.socialInsurance).length;
+  const totalInsuranceDeduct = rows.reduce((a, { emp, pay }) => a + socialInsuranceDeduction(pay, emp), 0);
   const monthlyCount = rows.filter(({ emp }) => isMonthlyEmployee(emp)).length;
   const partTimeCount = rows.length - monthlyCount;
   const totalSlots = rows.reduce((a, { pay }) => a + (pay.slotCount ?? 0), 0);
@@ -247,6 +256,27 @@ export default function Payroll() {
     persistPayroll(sel.emp, sel.pay, { deduct: sel.pay.deduct + n });
     setDeductInput("");
     showToast(`차감 ${won(n)} 반영`);
+  };
+
+  const renderInsuranceDeduction = (pay: PayrollRow, emp: Employee) => {
+    if (!emp.socialInsurance) {
+      return <div className="pay-line"><span className="k">4대보험</span><span className="v muted">미적용</span></div>;
+    }
+    const insurance = socialInsuranceBreakdown(pay, emp);
+    return (
+      <>
+        <div className="pay-line insurance">
+          <span className="k">4대보험 공제</span>
+          <span className="v">-{insurance.total.toLocaleString()}원</span>
+        </div>
+        <div className="insurance-breakdown">
+          <div className="pay-line"><span className="k">국민연금</span><span className="v">-{insurance.nationalPension.toLocaleString()}원</span></div>
+          <div className="pay-line"><span className="k">건강보험</span><span className="v">-{insurance.healthInsurance.toLocaleString()}원</span></div>
+          <div className="pay-line"><span className="k">장기요양</span><span className="v">-{insurance.longTermCare.toLocaleString()}원</span></div>
+          <div className="pay-line"><span className="k">고용보험</span><span className="v">-{insurance.employmentInsurance.toLocaleString()}원</span></div>
+        </div>
+      </>
+    );
   };
 
   const unlockPayroll = async () => {
@@ -525,6 +555,7 @@ export default function Payroll() {
 
         <div className="grid grid-4">
           <StatCard label={`${selectedMonth} 총 급여 예상`} value={Math.round(totalPay / 10000).toLocaleString()} unit="만원" trend="월급+시급+칸수당" trendUp icon="💰" />
+          <StatCard label="4대보험 공제 예상" value={Math.round(totalInsuranceDeduct / 10000).toLocaleString()} unit="만원" trend={`${insuranceCount}명 적용`} trendUp={insuranceCount === 0} icon="🧾" tone="red" />
           <StatCard label="총 근무 칸" value={totalSlots} unit="칸" trend="오전/오후 합산" trendUp icon="📅" tone="blue" />
           <StatCard label="정직원" value={monthlyCount} unit="명" trend="월급 고정" trendUp icon="🧑‍💼" tone="blue" />
           <StatCard label="아르바이트" value={partTimeCount} unit="명" trend="시급/칸수당" trendUp icon="👥" tone="amber" />
@@ -562,6 +593,7 @@ export default function Payroll() {
                       <th>기본급</th>
                       <th>추가</th>
                       <th>차감</th>
+                      <th>4대보험</th>
                       <th>지급액</th>
                       <th>상태</th>
                     </tr>
@@ -588,13 +620,16 @@ export default function Payroll() {
                         <td className="num" style={{ color: pay.deduct ? "var(--red-tx)" : undefined }}>
                           {pay.deduct ? `-${pay.deduct.toLocaleString()}` : "-"}
                         </td>
+                        <td className="num" style={{ color: emp.socialInsurance ? "var(--amber-tx)" : undefined }}>
+                          {emp.socialInsurance ? `-${socialInsuranceDeduction(pay, emp).toLocaleString()}` : "-"}
+                        </td>
                         <td className="num bold">{finalPay(pay, emp).toLocaleString()}</td>
                         <td><Badge tone={statusTone(pay.status)}>{statusText(pay.status)}</Badge></td>
                       </tr>
                     ))}
                     {filteredRows.length === 0 && (
                       <tr>
-                        <td colSpan={12} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                        <td colSpan={13} className="muted" style={{ textAlign: "center", padding: 24 }}>
                           표시할 직원이 없습니다
                         </td>
                       </tr>
@@ -661,6 +696,7 @@ export default function Payroll() {
                 </div>
                 <div className="pay-line"><span className="k">추가수당</span><span className="v" style={{ color: "var(--green-700)" }}>+{sel.pay.extra.toLocaleString()}원</span></div>
                 <div className="pay-line minus"><span className="k">차감</span><span className="v">{sel.pay.deduct ? `-${sel.pay.deduct.toLocaleString()}원` : "0원"}</span></div>
+                {renderInsuranceDeduction(sel.pay, sel.emp)}
                 <div className="pay-line total"><span className="k">최종 지급액</span><span className="v">{finalPay(sel.pay, sel.emp).toLocaleString()}원</span></div>
 
                 <label className="field-label" style={{ marginTop: 16 }}>추가수당 입력</label>

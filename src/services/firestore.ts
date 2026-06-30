@@ -71,6 +71,7 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
       salaryType: d.salaryType ?? (d.monthlySalary ? "monthly" : d.slotRate ? "perSlot" : "hourly"),
       hourly: d.hourly ?? 0,
       monthlySalary: d.monthlySalary,
+      socialInsurance: d.socialInsurance === true,
       slotRate: d.slotRate,
       standardStart: d.standardStart,
       standardEnd: d.standardEnd,
