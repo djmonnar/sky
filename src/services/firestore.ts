@@ -20,7 +20,7 @@ import {
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
-  Vendor, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
+  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
   OwnerSchedule,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
@@ -297,6 +297,22 @@ export function subscribeInventoryItems(cb: (v: InventoryItem[]) => void, onErro
   );
 }
 
+export function subscribeInventoryCategories(cb: (v: InventoryCategoryItem[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "inventoryCategories",
+    (d, id) => ({
+      id,
+      name: String(d.name ?? ""),
+      color: d.color ? String(d.color) : undefined,
+      sortOrder: Number(d.sortOrder ?? 0),
+      createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
+      updatedAt: asDisplayDate(d.updatedAt) || String(d.updatedAt ?? ""),
+    }),
+    (items) => cb(items.filter((item) => item.name).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name))),
+    onError
+  );
+}
+
 export function subscribePurchaseOrders(cb: (v: PurchaseOrder[]) => void, onError: ErrCb): Unsub {
   return subscribe(
     "purchaseOrders",
@@ -462,6 +478,23 @@ export async function fsUpsertInventoryItem(item: InventoryItem): Promise<void> 
 
 export async function fsDeleteInventoryItem(id: number): Promise<void> {
   await deleteDoc(doc(col("inventoryItems"), String(id)));
+}
+
+export async function fsUpsertInventoryCategory(category: InventoryCategoryItem): Promise<void> {
+  await setDoc(
+    doc(col("inventoryCategories"), category.id),
+    {
+      ...category,
+      name: category.name.trim(),
+      updatedAt: serverTimestamp(),
+      ...(category.createdAt ? {} : { createdAt: serverTimestamp() }),
+    },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteInventoryCategory(id: string): Promise<void> {
+  await deleteDoc(doc(col("inventoryCategories"), id));
 }
 
 export async function fsUpsertPurchaseOrder(order: PurchaseOrder): Promise<void> {

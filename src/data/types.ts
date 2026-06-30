@@ -158,8 +158,17 @@ export interface Vendor {
   createdAt?: string;
 }
 
-export type InventoryCategory = "식재료" | "주류" | "음료" | "소모품" | "기타";
+export type InventoryCategory = string;
 export type StorageType = "냉장" | "냉동" | "실온" | "기타";
+
+export interface InventoryCategoryItem {
+  id: string;
+  name: string;
+  color?: string;
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface InventoryItem {
   id: number;

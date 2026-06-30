@@ -8,14 +8,14 @@
    ============================================================ */
 
 import {
-  Employee, InventoryItem, Recipe, Reservation, Shift, WorkRecord, PayrollRow, Notice, Vendor,
+  Employee, InventoryCategoryItem, InventoryItem, Recipe, Reservation, Shift, WorkRecord, PayrollRow, Notice, Vendor,
   PurchaseOrder,
   SalesOrder, SalesSyncRun,
 } from "./types";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
   SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
-  SEED_INVENTORY_ITEMS, SEED_PURCHASE_ORDERS,
+  SEED_INVENTORY_CATEGORIES, SEED_INVENTORY_ITEMS, SEED_PURCHASE_ORDERS,
   SEED_SALES_ORDERS, SEED_SALES_SYNC_RUNS,
 } from "./mock";
 
@@ -51,6 +51,10 @@ export interface Repository {
   saveVendor(v: Vendor): Promise<void>;
   deleteVendor(id: number): Promise<void>;
 
+  listInventoryCategories(): Promise<InventoryCategoryItem[]>;
+  saveInventoryCategory(category: InventoryCategoryItem): Promise<void>;
+  deleteInventoryCategory(id: string): Promise<void>;
+
   listInventoryItems(): Promise<InventoryItem[]>;
   saveInventoryItem(item: InventoryItem): Promise<void>;
   deleteInventoryItem(id: number): Promise<void>;
@@ -78,6 +82,7 @@ export function createMockRepository(): Repository {
     notices: structuredClone(SEED_NOTICES),
     handovers: structuredClone(SEED_HANDOVERS),
     vendors: structuredClone(SEED_VENDORS),
+    inventoryCategories: structuredClone(SEED_INVENTORY_CATEGORIES),
     inventoryItems: structuredClone(SEED_INVENTORY_ITEMS),
     purchaseOrders: structuredClone(SEED_PURCHASE_ORDERS),
     recipes: structuredClone(SEED_RECIPES),
@@ -163,6 +168,17 @@ export function createMockRepository(): Repository {
     async deleteVendor(id) {
       const i = db.vendors.findIndex((x) => x.id === id);
       if (i !== -1) db.vendors.splice(i, 1);
+    },
+
+    async listInventoryCategories() { return [...db.inventoryCategories]; },
+    async saveInventoryCategory(category) {
+      const i = db.inventoryCategories.findIndex((x) => x.id === category.id);
+      if (i === -1) db.inventoryCategories.push(category);
+      else db.inventoryCategories[i] = category;
+    },
+    async deleteInventoryCategory(id) {
+      const i = db.inventoryCategories.findIndex((x) => x.id === id);
+      if (i !== -1) db.inventoryCategories.splice(i, 1);
     },
 
     async listInventoryItems() { return [...db.inventoryItems]; },

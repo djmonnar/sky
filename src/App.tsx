@@ -15,6 +15,7 @@ import Notices from "./pages/Notices";
 import EmployeeList from "./pages/EmployeeList";
 import Guide from "./pages/Guide";
 import Vendors from "./pages/Vendors";
+import Inventory from "./pages/Inventory";
 import Recipes from "./pages/Recipes";
 import Sales from "./pages/Sales";
 import MyProfile from "./pages/MyProfile";
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/employees" element={role === "admin" ? <EmployeeList /> : <Navigate to="/" replace />} />
         <Route path="/sales" element={role === "admin" ? <Sales /> : <Navigate to="/" replace />} />
         <Route path="/vendors" element={role === "admin" ? <Vendors /> : <Navigate to="/" replace />} />
+        <Route path="/inventory" element={role === "admin" ? <Inventory /> : <Navigate to="/" replace />} />
         <Route path="/recipes" element={role === "admin" ? <Recipes /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<MyProfile />} />
         <Route path="/guide" element={canManageOps ? <Guide /> : <Navigate to="/" replace />} />

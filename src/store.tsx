@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
-  Notice, Employee, Vendor, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun,
+  Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun,
   OwnerSchedule,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
@@ -31,7 +31,8 @@ import {
   subscribeUserProfiles, fsUpdateUserRole,
   subscribeVendors, subscribeRecipes,
   fsUpsertVendor, fsDeleteVendor, fsUpsertRecipe, fsDeleteRecipe,
-  subscribeInventoryItems, subscribePurchaseOrders,
+  subscribeInventoryCategories, subscribeInventoryItems, subscribePurchaseOrders,
+  fsUpsertInventoryCategory, fsDeleteInventoryCategory,
   fsUpsertInventoryItem, fsDeleteInventoryItem,
   fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
   subscribeSalesOrders, subscribeSalesSyncRuns, fsSyncOkposSales,
@@ -114,6 +115,9 @@ interface Store {
   vendors: Vendor[];
   upsertVendor: (vendor: Vendor) => void;
   deleteVendor: (id: number) => void;
+  inventoryCategories: InventoryCategoryItem[];
+  upsertInventoryCategory: (category: InventoryCategoryItem) => void;
+  deleteInventoryCategory: (id: string) => void;
   inventoryItems: InventoryItem[];
   upsertInventoryItem: (item: InventoryItem) => void;
   deleteInventoryItem: (id: number) => void;
@@ -163,6 +167,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [handovers, setHandovers] = useState<Notice[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [inventoryCategories, setInventoryCategories] = useState<InventoryCategoryItem[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -189,7 +194,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "demo") return;
     (async () => {
-      const [emp, resv, sh, rec, pay, not, hand, ven, inv, orders, recipeList, sales, syncRuns] = await Promise.all([
+      const [emp, resv, sh, rec, pay, not, hand, ven, invCats, inv, orders, recipeList, sales, syncRuns] = await Promise.all([
         repository.listEmployees(),
         repository.listReservations(),
         repository.listShifts(),
@@ -198,6 +203,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         repository.listNotices(),
         repository.listHandovers(),
         repository.listVendors(),
+        repository.listInventoryCategories(),
         repository.listInventoryItems(),
         repository.listPurchaseOrders(),
         repository.listRecipes(),
@@ -212,6 +218,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setNotices(not);
       setHandovers(hand);
       setVendors(ven);
+      setInventoryCategories(invCats);
       setInventoryItems(inv);
       setPurchaseOrders(orders);
       setRecipes(recipeList);
@@ -311,6 +318,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribeOwnerSchedules(setOwnerSchedules, onErr),
             subscribeUserProfiles(setUserProfiles, onErr),
             subscribeVendors(setVendors, onErr),
+            subscribeInventoryCategories(setInventoryCategories, onErr),
             subscribeInventoryItems(setInventoryItems, onErr),
             subscribePurchaseOrders(setPurchaseOrders, onErr),
             subscribeRecipes(setRecipes, onErr),
@@ -530,6 +538,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     void repository.deleteVendor(id);
     setVendors((prev) => prev.filter((v) => v.id !== id));
+  }, [fail]);
+
+  const upsertInventoryCategory = useCallback((category: InventoryCategoryItem) => {
+    const normalized: InventoryCategoryItem = {
+      ...category,
+      id: category.id.trim(),
+      name: category.name.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (!normalized.id || !normalized.name) return;
+    if (APP_MODE === "live") {
+      fsUpsertInventoryCategory(normalized).catch(fail("재고 카테고리 저장"));
+      return;
+    }
+    void repository.saveInventoryCategory(normalized);
+    setInventoryCategories((prev) => {
+      const i = prev.findIndex((x) => x.id === normalized.id);
+      const next = i === -1
+        ? [...prev, normalized]
+        : prev.map((x) => (x.id === normalized.id ? normalized : x));
+      return next.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));
+    });
+  }, [fail]);
+
+  const deleteInventoryCategory = useCallback((id: string) => {
+    if (APP_MODE === "live") {
+      fsDeleteInventoryCategory(id).catch(fail("재고 카테고리 삭제"));
+      return;
+    }
+    void repository.deleteInventoryCategory(id);
+    setInventoryCategories((prev) => prev.filter((category) => category.id !== id));
   }, [fail]);
 
   const upsertInventoryItem = useCallback((item: InventoryItem) => {
@@ -941,6 +980,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ownerSchedules, upsertOwnerSchedule, deleteOwnerSchedule,
       notices, handovers, upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
       vendors, upsertVendor, deleteVendor,
+      inventoryCategories, upsertInventoryCategory, deleteInventoryCategory,
       inventoryItems, upsertInventoryItem, deleteInventoryItem,
       purchaseOrders, upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
       recipes, upsertRecipe, deleteRecipe,
@@ -950,7 +990,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
-     reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
+     reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertEmployee, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
@@ -959,6 +999,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      upsertOwnerSchedule, deleteOwnerSchedule,
      upsertNotice, deleteNotice, upsertHandover, deleteHandover, addHandover,
      upsertVendor, deleteVendor,
+     upsertInventoryCategory, deleteInventoryCategory,
      upsertInventoryItem, deleteInventoryItem,
      upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
      upsertRecipe, deleteRecipe,

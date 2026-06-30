@@ -10,7 +10,6 @@ import type {
   Vendor,
 } from "../data/types";
 
-const CATEGORIES: InventoryCategory[] = ["식재료", "주류", "음료", "소모품", "기타"];
 const STORAGE_TYPES: StorageType[] = ["냉장", "냉동", "실온", "기타"];
 
 const ORDER_STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
@@ -100,6 +99,7 @@ export default function Vendors() {
     vendors,
     upsertVendor,
     deleteVendor,
+    inventoryCategories,
     inventoryItems,
     upsertInventoryItem,
     deleteInventoryItem,
@@ -115,6 +115,14 @@ export default function Vendors() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [itemDraft, setItemDraft] = useState<InventoryItem>(EMPTY_ITEM);
   const [itemEditingId, setItemEditingId] = useState<number | null>(null);
+  const categoryOptions = useMemo(() => {
+    const names = new Set<string>(inventoryCategories.map((category) => category.name));
+    inventoryItems.forEach((item) => {
+      if (item.category) names.add(item.category);
+    });
+    if (names.size === 0) ["식재료", "육류", "주류", "음료", "소모품", "기타"].forEach((name) => names.add(name));
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [inventoryCategories, inventoryItems]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -560,7 +568,7 @@ export default function Vendors() {
                 <div>
                   <label className="field-label">분류</label>
                   <select className="select" value={itemDraft.category} onChange={(e) => updateItemDraft("category", e.target.value as InventoryCategory)}>
-                    {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                    {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
                   </select>
                 </div>
                 <div>

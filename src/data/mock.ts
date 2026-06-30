@@ -4,6 +4,7 @@ import { TODAY, TODAY_STR, fmtDate, weekDates } from "../lib/time";
 import type {
   Department,
   Employee,
+  InventoryCategoryItem,
   InventoryItem,
   Notice,
   PayrollRow,
@@ -211,6 +212,17 @@ export const SEED_VENDORS: Vendor[] = [
   },
 ];
 
+export const SEED_INVENTORY_CATEGORIES: InventoryCategoryItem[] = [
+  { id: "food", name: "식재료", color: "#6f9157", sortOrder: 0 },
+  { id: "meat", name: "육류", color: "#d96b4c", sortOrder: 1 },
+  { id: "vegetable", name: "채소", color: "#5f8f4e", sortOrder: 2 },
+  { id: "seafood", name: "수산", color: "#4d89a6", sortOrder: 3 },
+  { id: "dry", name: "공산품", color: "#b78a3d", sortOrder: 4 },
+  { id: "drink", name: "주류/음료", color: "#6d7eb8", sortOrder: 5 },
+  { id: "supplies", name: "소모품", color: "#81776a", sortOrder: 6 },
+  { id: "other", name: "기타", color: "#8f887b", sortOrder: 99 },
+];
+
 export const SEED_RECIPES: Recipe[] = [
   {
     id: 1,
@@ -262,7 +274,7 @@ export const SEED_INVENTORY_ITEMS: InventoryItem[] = [
     id: 3,
     vendorId: 2,
     name: "돼지고기",
-    category: "식재료",
+    category: "육류",
     storageType: "냉장",
     unit: "kg",
     currentQty: 4,

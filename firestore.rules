@@ -336,6 +336,10 @@ service cloud.firestore {
         allow read, write: if isAdmin(storeId);
       }
 
+      match /inventoryCategories/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
       match /inventoryItems/{id} {
         allow read, write: if isAdmin(storeId);
       }
