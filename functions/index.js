@@ -2207,6 +2207,13 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (r
       return;
     }
 
+    const directImageUrl = extractImageUrl(body);
+    if (directImageUrl) {
+      const mode = /발주/i.test(fullText(body)) ? "purchase" : "inventory";
+      res.status(200).json(await handleInventoryOcrImage(body, chatUser, mode));
+      return;
+    }
+
     const action = classify(body);
     const response = await routeAction(action, body, chatUser);
     res.status(200).json(response);
