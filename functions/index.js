@@ -163,14 +163,22 @@ function collectStrings(value, out = []) {
   return out;
 }
 
+function urlsFromText(value) {
+  return String(value ?? "")
+    .match(/https?:\/\/[^\s"'<>)\]]+/gi)
+    ?.map((url) => url.replace(/[),.;]+$/g, ""))
+    ?? [];
+}
+
 function extractImageUrl(body) {
   const direct = paramOf(body, [
     "image", "imageUrl", "image_url", "fileUrl", "file_url",
-    "photo", "photoUrl", "사진", "이미지", "파일",
+    "photo", "photoUrl", "secureimage", "secureImage", "사진", "이미지", "파일",
   ]);
   const strings = [direct, ...collectStrings(body)].filter(Boolean);
-  return strings.find((value) => /^https?:\/\/.+\.(?:png|jpe?g|webp)(?:\?|$)/i.test(value))
-    ?? strings.find((value) => /^https?:\/\/.+(?:image|photo|thumbnail|kakao|daumcdn|file)/i.test(value))
+  const urls = strings.flatMap(urlsFromText);
+  return urls.find((value) => /^https?:\/\/.+\.(?:png|jpe?g|webp)(?:\?|$)/i.test(value))
+    ?? urls.find((value) => /^https?:\/\/.+(?:image|photo|thumbnail|kakao|daumcdn|file|kakaocdn)/i.test(value))
     ?? "";
 }
 
@@ -1092,7 +1100,7 @@ async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
   const imageUrl = extractImageUrl(body);
   if (imageUrl) return handleInventoryOcrImage(body, chatUser, mode);
   return textResponse(
-    `${label} 준비하겠습니다.\n거래명세서나 입고 사진을 올려주세요.\n\n카카오에서 사진 응답이 멈추면 아래 링크로 업로드해주세요.\n${chatbotUploadUrl(chatUser, mode)}\n\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
+    `${label} 준비하겠습니다.\n카카오 채팅방에 거래명세서나 입고 사진을 보내주세요.\n\n사진을 보냈는데 응답이 없으면 챗봇 관리자센터에서 이미지 파라미터/폴백 스킬 연결이 필요합니다. 그때는 아래 링크 업로드로 처리할 수 있어요.\n${chatbotUploadUrl(chatUser, mode)}\n\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
     ["취소"]
   );
 }
@@ -1309,6 +1317,13 @@ async function handleInventoryOcrSession(body, chatUser) {
   if (imageUrl) return handleInventoryOcrImage(body, chatUser, session.mode || "inventory");
 
   if (session.status === "awaiting_image") {
+    console.info("inventory OCR awaiting image without URL", {
+      utterance: utteranceOf(body).slice(0, 200),
+      actionName: body.action?.name ?? "",
+      paramKeys: Object.keys(body.action?.params ?? {}),
+      detailParamKeys: Object.keys(body.action?.detailParams ?? {}),
+      requestParams: body.userRequest?.params ?? {},
+    });
     return textResponse("사진을 올려주세요.\n거래명세서나 입고 내역이 보이면 됩니다.", ["취소"]);
   }
 
@@ -1468,7 +1483,7 @@ async function handleRecipeWrite(body, chatUser, mode) {
 function setCors(res) {
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 
 async function adminFromRequest(req) {
