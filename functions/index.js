@@ -187,6 +187,7 @@ function cleanOcrItemName(raw) {
     .replace(/^\d+\s*/, "")
     .replace(/\s+/g, " ")
     .replace(/[|[\]{}]/g, "")
+    .replace(/[\/\s-]+$/, "")
     .trim();
 }
 
@@ -197,6 +198,30 @@ function inferStorageType(text) {
   return "냉장";
 }
 
+function inventoryUnitLabel(raw) {
+  const value = String(raw ?? "kg").trim();
+  if (/^box$/i.test(value)) return "박스";
+  if (value === "㎏") return "kg";
+  return value || "kg";
+}
+
+function inventoryNumberTokens(text, offset = 0) {
+  return [...String(text ?? "").matchAll(/\d[\d,.]*/g)]
+    .map((match) => ({
+      raw: match[0],
+      value: parseDecimal(match[0]),
+      index: offset + (match.index ?? 0),
+    }))
+    .filter((token) => token.value > 0);
+}
+
+function isInventoryOcrCandidate(line) {
+  if (/품목|합계|거래명세|사업자|공급|전화|주소|비고|잔액|원산지|상호|성명|팩스/i.test(line)) {
+    return false;
+  }
+  return /(kg|㎏|개|박스|box|돈|갈비|목살|거세|우진|한우|목심|냉동|냉장|국내산|CAB|IBP)/i.test(line);
+}
+
 function parseInventoryOcrRows(text) {
   const lines = String(text ?? "")
     .split(/\r?\n/)
@@ -204,19 +229,43 @@ function parseInventoryOcrRows(text) {
     .filter(Boolean);
   const rows = [];
   lines.forEach((line, index) => {
-    if (!/(kg|㎏|개|박스|box|돈|갈비|목살|거세|우진|품목)/i.test(line)) return;
-    if (/품목|합계|거래명세|사업자|공급|전화|주소|비고|잔액/i.test(line)) return;
+    if (!isInventoryOcrCandidate(line)) return;
     const unitMatch = line.match(/\b(kg|㎏|개|박스|box|BOX|병|팩|봉)\b/i);
-    const unit = unitMatch ? (unitMatch[1].toLowerCase() === "box" ? "박스" : unitMatch[1].replace("㎏", "kg")) : "kg";
     const unitIndex = unitMatch?.index ?? -1;
-    if (unitIndex <= 0) return;
-    const name = cleanOcrItemName(line.slice(0, unitIndex));
-    const afterUnit = line.slice(unitIndex + unit.length);
-    const numbers = afterUnit.match(/\d[\d,.]*/g)?.map((value) => parseDecimal(value)).filter((n) => n > 0) ?? [];
-    if (!name || numbers.length < 1) return;
-    const qty = numbers[0];
-    const unitPrice = numbers[1] ?? 0;
-    const totalPrice = numbers[2] ?? Math.round(qty * unitPrice);
+    let name = "";
+    let unit = "kg";
+    let qty = 0;
+    let unitPrice = 0;
+    let totalPrice = 0;
+
+    if (unitMatch && unitIndex > 0) {
+      unit = inventoryUnitLabel(unitMatch[1]);
+      name = cleanOcrItemName(line.slice(0, unitIndex));
+      const afterUnit = line.slice(unitIndex + unitMatch[0].length);
+      const numbers = inventoryNumberTokens(afterUnit).map((token) => token.value);
+      if (numbers.length < 1) return;
+      qty = numbers[0];
+      unitPrice = numbers[1] ?? 0;
+      totalPrice = numbers[2] ?? Math.round(qty * unitPrice);
+    } else {
+      // Some Kakao/Tesseract OCR results drop the unit column, especially on meat invoices.
+      // In that case read rows shaped like: item name + decimal quantity + unit price + total.
+      const tokens = inventoryNumberTokens(line);
+      const qtyTokenIndex = tokens.findIndex((token) =>
+        token.raw.includes(".") && token.value > 0 && token.value < 10000
+      );
+      if (qtyTokenIndex < 0) return;
+      const qtyToken = tokens[qtyTokenIndex];
+      name = cleanOcrItemName(line.slice(0, qtyToken.index));
+      qty = qtyToken.value;
+      const moneyTokens = tokens
+        .slice(qtyTokenIndex + 1)
+        .filter((token) => token.value >= 1000 || token.raw.includes(","));
+      unitPrice = moneyTokens[0]?.value ?? 0;
+      totalPrice = moneyTokens[1]?.value ?? Math.round(qty * unitPrice);
+    }
+
+    if (!name || name.length < 2 || qty <= 0) return;
     rows.push({
       key: `${Date.now()}_${index}`,
       name,
@@ -1100,8 +1149,8 @@ async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
   const imageUrl = extractImageUrl(body);
   if (imageUrl) return handleInventoryOcrImage(body, chatUser, mode);
   return textResponse(
-    `${label} 준비하겠습니다.\n카카오 채팅방에 거래명세서나 입고 사진을 보내주세요.\n\n사진을 보냈는데 응답이 없으면 챗봇 관리자센터에서 이미지 파라미터/폴백 스킬 연결이 필요합니다. 그때는 아래 링크 업로드로 처리할 수 있어요.\n${chatbotUploadUrl(chatUser, mode)}\n\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
-    ["취소"]
+    `${label} 준비하겠습니다.\n카카오 채팅방에 거래명세서나 입고 사진을 보내주세요.\n\n사진 전송 후 답이 없으면 '결과'라고 입력해주세요. PC 보안 이미지가 계속 멈추면 아래 링크 업로드로 처리할 수 있어요.\n${chatbotUploadUrl(chatUser, mode)}\n\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
+    ["결과", "취소"]
   );
 }
 
@@ -1125,6 +1174,7 @@ async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
       type: "inventoryOcr",
       mode,
       status: "awaiting_image",
+      imageUrl,
       lastOcrText: ocrText.slice(0, 1500),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
@@ -1317,6 +1367,15 @@ async function handleInventoryOcrSession(body, chatUser) {
   if (imageUrl) return handleInventoryOcrImage(body, chatUser, session.mode || "inventory");
 
   if (session.status === "awaiting_image") {
+    if (session.lastOcrText && /^(결과|확인|재분석|다시\s*분석|분석)$/.test(text)) {
+      const result = await saveInventoryOcrTextToSession({
+        chatUser,
+        mode: session.mode || "inventory",
+        imageUrl: session.imageUrl || "last-ocr",
+        ocrText: session.lastOcrText,
+      });
+      return textResponse(result.text, result.ok ? ["확인", "거래처 목록", "취소"] : ["취소"]);
+    }
     console.info("inventory OCR awaiting image without URL", {
       utterance: utteranceOf(body).slice(0, 200),
       actionName: body.action?.name ?? "",
@@ -1324,7 +1383,7 @@ async function handleInventoryOcrSession(body, chatUser) {
       detailParamKeys: Object.keys(body.action?.detailParams ?? {}),
       requestParams: body.userRequest?.params ?? {},
     });
-    return textResponse("사진을 올려주세요.\n거래명세서나 입고 내역이 보이면 됩니다.", ["취소"]);
+    return textResponse("사진을 올려주세요.\n거래명세서나 입고 내역이 보이면 됩니다.\n이미 보냈는데 답이 없으면 '결과'라고 보내주세요.", ["결과", "취소"]);
   }
 
   const vendorText = text.match(/^거래처\s+(.+)$/)?.[1] || paramOf(body, ["vendor", "거래처"]);
