@@ -1154,6 +1154,8 @@ function isInventoryOcrResultText(text) {
 async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
   const denied = requireOps(chatUser);
   if (denied) return failResponse(denied);
+  const imageUrl = extractImageUrl(body);
+  if (imageUrl) return queueInventoryOcrImage(body, chatUser, mode);
   await chatbotSessionRef(chatUser).set({
     type: "inventoryOcr",
     mode,
@@ -1163,10 +1165,46 @@ async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
   const label = mode === "purchase" ? "발주확인" : "재고확인";
-  const imageUrl = extractImageUrl(body);
-  if (imageUrl) return handleInventoryOcrImage(body, chatUser, mode);
   return textResponse(
     `${label} 준비하겠습니다.\n카카오 채팅방에 거래명세서나 입고 사진을 보내주세요.\n\n사진 전송 후 답이 없으면 '결과'라고 입력해주세요. PC 보안 이미지가 계속 멈추면 아래 링크 업로드로 처리할 수 있어요.\n${chatbotUploadUrl(chatUser, mode)}\n\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
+    ["결과", "취소"]
+  );
+}
+
+async function queueInventoryOcrImage(body, chatUser, mode = "inventory") {
+  const denied = requireOps(chatUser);
+  if (denied) return failResponse(denied);
+  const imageUrl = extractImageUrl(body);
+  if (!imageUrl) {
+    return textResponse("사진 URL을 찾지 못했습니다.\n이미지를 다시 올려주세요.", ["취소"]);
+  }
+  const jobId = `${chatUser.id}_${Date.now()}`;
+  const job = {
+    id: jobId,
+    type: "inventoryOcr",
+    mode,
+    status: "queued",
+    imageUrl,
+    chatUserId: chatUser.id,
+    chatUserName: chatUser.name,
+    chatUserRole: chatUser.role,
+    employeeId: Number(chatUser.employeeId || 0),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  await storeDoc("chatbotOcrJobs", jobId).set(job);
+  await chatbotSessionRef(chatUser).set({
+    type: "inventoryOcr",
+    mode,
+    status: "processing",
+    imageUrl,
+    jobId,
+    requestedBy: chatUser.name,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return textResponse(
+    "사진 받았습니다.\nOCR 처리 중입니다. 보통 10~20초 정도 걸려요.\n잠시 뒤 '결과'를 눌러 확인해주세요.",
     ["결과", "취소"]
   );
 }
@@ -1229,6 +1267,7 @@ async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", ima
       type: "inventoryOcr",
       mode,
       status: "awaiting_image",
+      imageUrl,
       lastOcrText: ocrText.slice(0, 1500),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
@@ -1369,24 +1408,96 @@ async function applyInventoryOcrSession(session, chatUser) {
   );
 }
 
+async function processChatbotOcrJob(jobRef, job) {
+  const chatUser = {
+    id: String(job.chatUserId || "").trim(),
+    name: job.chatUserName || "직원",
+    role: job.chatUserRole || "staff",
+    employeeId: Number(job.employeeId || 0),
+  };
+  const mode = job.mode === "purchase" ? "purchase" : "inventory";
+  const imageUrl = String(job.imageUrl || "").trim();
+  if (!chatUser.id || !imageUrl) {
+    await jobRef.set({
+      status: "failed",
+      message: "챗봇 사용자 또는 이미지 URL이 없습니다.",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return;
+  }
+
+  await jobRef.set({
+    status: "processing",
+    startedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  try {
+    const ocrText = await recognizeInventoryImage(imageUrl);
+    const result = await saveInventoryOcrTextToSession({ chatUser, mode, imageUrl, ocrText });
+    await jobRef.set({
+      status: result.ok ? "completed" : "needs_retry",
+      ok: result.ok,
+      rowCount: parseInventoryOcrRows(ocrText).length,
+      message: result.text.slice(0, 1000),
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "사진 OCR 처리에 실패했습니다.";
+    console.error("chatbot OCR job failed", { jobId: job.id, message });
+    await chatbotSessionRef(chatUser).set({
+      type: "inventoryOcr",
+      mode,
+      status: "awaiting_image",
+      imageUrl,
+      lastError: message,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await jobRef.set({
+      status: "failed",
+      ok: false,
+      message,
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+}
+
 async function handleInventoryOcrSession(body, chatUser) {
   const snap = await chatbotSessionRef(chatUser).get();
   if (!snap.exists) return null;
   const session = snap.data() || {};
   if (session.type !== "inventoryOcr") return null;
   const text = utteranceOf(body).trim();
-  const wantsCurrentOcr = /^(재고확인|발주확인)$/.test(text)
+  const isOcrStartText = /^(재고확인|발주확인)$/.test(text);
+  const wantsCurrentOcr = isOcrStartText
     && session.status === "awaiting_image"
     && session.lastOcrText;
-  if (/^(재고확인|발주확인)$/.test(text) && !wantsCurrentOcr) return null;
+  const hasActiveOcrSession = ["processing", "awaiting_confirm"].includes(session.status) || wantsCurrentOcr;
+  if (isOcrStartText && !hasActiveOcrSession) return null;
   if (/취소|중단|그만/i.test(text)) {
     await chatbotSessionRef(chatUser).delete();
     return textResponse("재고 OCR 작업을 취소했습니다.", ["오늘 현황"]);
   }
   const imageUrl = extractImageUrl(body);
-  if (imageUrl) return handleInventoryOcrImage(body, chatUser, session.mode || "inventory");
+  if (imageUrl) return queueInventoryOcrImage(body, chatUser, session.mode || "inventory");
+
+  if (session.status === "processing") {
+    return textResponse(
+      "아직 OCR 처리 중입니다.\n잠시 뒤 '결과'를 다시 눌러주세요.",
+      ["결과", "취소"]
+    );
+  }
 
   if (session.status === "awaiting_image") {
+    if (session.lastError && (isInventoryOcrResultText(text) || wantsCurrentOcr)) {
+      return textResponse(
+        `사진을 읽지 못했습니다.\n${session.lastError}\n\n원본 사진으로 다시 처리하려면 아래 링크로 업로드해주세요.\n${chatbotUploadUrl(chatUser, session.mode || "inventory")}`,
+        ["재고확인", "취소"]
+      );
+    }
     if (session.lastOcrText && (isInventoryOcrResultText(text) || wantsCurrentOcr)) {
       const result = await saveInventoryOcrTextToSession({
         chatUser,
@@ -2210,7 +2321,7 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (r
     const directImageUrl = extractImageUrl(body);
     if (directImageUrl) {
       const mode = /발주/i.test(fullText(body)) ? "purchase" : "inventory";
-      res.status(200).json(await handleInventoryOcrImage(body, chatUser, mode));
+      res.status(200).json(await queueInventoryOcrImage(body, chatUser, mode));
       return;
     }
 
@@ -2342,6 +2453,14 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
     res.status(200).json({ ok: false, message: "사진을 읽지 못했습니다. 더 선명하게 다시 촬영해주세요." });
   }
 });
+
+exports.processChatbotOcrJob = onDocumentCreated(
+  { document: "stores/{storeId}/chatbotOcrJobs/{jobId}", timeoutSeconds: 120, memory: "1GiB" },
+  async (event) => {
+    if (event.params.storeId !== STORE_ID || !event.data) return;
+    await processChatbotOcrJob(event.data.ref, { id: event.params.jobId, ...(event.data.data() || {}) });
+  }
+);
 
 exports.sendTestPush = onRequest({ timeoutSeconds: 30, memory: "256MiB" }, async (req, res) => {
   setCors(res);
