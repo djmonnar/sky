@@ -1134,6 +1134,23 @@ function inventoryOcrSummary(session) {
   ].join("\n");
 }
 
+function inventoryOcrRetryText({ chatUser, mode = "inventory", ocrText = "" }) {
+  return [
+    "사진은 받았지만 품목을 자동으로 찾지 못했습니다.",
+    "카카오 보안 이미지가 작게/흐리게 전달되면 OCR이 표를 못 읽을 수 있어요.",
+    "",
+    "원본 사진으로 다시 처리하려면 아래 링크로 업로드해주세요.",
+    chatbotUploadUrl(chatUser, mode),
+    "",
+    "읽은 내용 일부:",
+    ocrText.slice(0, 500) || "-",
+  ].join("\n");
+}
+
+function isInventoryOcrResultText(text) {
+  return /^(결과|결과\s*확인|결과보기|확인|재분석|다시\s*분석|분석|ocr|OCR)$/.test(String(text ?? "").trim());
+}
+
 async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
   const denied = requireOps(chatUser);
   if (denied) return failResponse(denied);
@@ -1179,8 +1196,8 @@ async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
     return textResponse(
-      `품목을 찾지 못했습니다.\n다시 찍어주세요.\n\n읽은 내용 일부:\n${ocrText.slice(0, 500) || "-"}`,
-      ["취소"]
+      inventoryOcrRetryText({ chatUser, mode, ocrText }),
+      ["재고확인", "취소"]
     );
   }
 
@@ -1217,7 +1234,7 @@ async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", ima
     }, { merge: true });
     return {
       ok: false,
-      text: `품목을 찾지 못했습니다.\n다시 찍어주세요.\n\n읽은 내용 일부:\n${ocrText.slice(0, 500) || "-"}`,
+      text: inventoryOcrRetryText({ chatUser, mode, ocrText }),
     };
   }
   const vendors = await listVendors();
@@ -1358,7 +1375,10 @@ async function handleInventoryOcrSession(body, chatUser) {
   const session = snap.data() || {};
   if (session.type !== "inventoryOcr") return null;
   const text = utteranceOf(body).trim();
-  if (/^(재고확인|발주확인)$/.test(text)) return null;
+  const wantsCurrentOcr = /^(재고확인|발주확인)$/.test(text)
+    && session.status === "awaiting_image"
+    && session.lastOcrText;
+  if (/^(재고확인|발주확인)$/.test(text) && !wantsCurrentOcr) return null;
   if (/취소|중단|그만/i.test(text)) {
     await chatbotSessionRef(chatUser).delete();
     return textResponse("재고 OCR 작업을 취소했습니다.", ["오늘 현황"]);
@@ -1367,7 +1387,7 @@ async function handleInventoryOcrSession(body, chatUser) {
   if (imageUrl) return handleInventoryOcrImage(body, chatUser, session.mode || "inventory");
 
   if (session.status === "awaiting_image") {
-    if (session.lastOcrText && /^(결과|확인|재분석|다시\s*분석|분석)$/.test(text)) {
+    if (session.lastOcrText && (isInventoryOcrResultText(text) || wantsCurrentOcr)) {
       const result = await saveInventoryOcrTextToSession({
         chatUser,
         mode: session.mode || "inventory",
