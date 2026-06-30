@@ -1902,6 +1902,49 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   background: rgba(0,0,0,0.08);
   opacity: 1;
 }
+.inventory-vendor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.inventory-vendor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 124px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  text-align: left;
+}
+.inventory-vendor-card:hover {
+  border-color: var(--green-600);
+  background: var(--green-50);
+}
+.inventory-vendor-card.on {
+  border-color: var(--green-700);
+  box-shadow: 0 0 0 1.5px var(--green-700);
+}
+.inventory-vendor-amount {
+  font-size: 22px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+.text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--green-700);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.text-button:hover {
+  color: var(--green-900);
+}
 .inventory-ocr-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
@@ -2089,6 +2132,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .hero-time { font-size: 32px; }
   .hide-mobile { display: none !important; }
   .table-wrap { overflow-x: auto; }
+  .inventory-vendor-grid { grid-template-columns: 1fr; }
+  .inventory-vendor-card { min-height: 108px; }
   .sched-grid { min-width: 660px; }
   .sched-wrap { overflow-x: auto; }
   .schedule-toolbar { align-items: stretch; }

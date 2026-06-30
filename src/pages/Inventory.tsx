@@ -1,8 +1,9 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { recognize } from "tesseract.js";
 import { useStore } from "../store";
 import { Badge, Card, StatCard } from "../components/ui";
-import type { InventoryCategoryItem, InventoryItem, StorageType } from "../data/types";
+import type { InventoryCategoryItem, InventoryItem, StorageType, Vendor } from "../data/types";
 
 const STORAGE_TYPES: StorageType[] = ["냉장", "냉동", "실온", "기타"];
 const CATEGORY_COLORS = ["#d96b4c", "#5f8f4e", "#4d89a6", "#b78a3d", "#6d7eb8", "#81776a"];
@@ -19,6 +20,8 @@ interface OcrDraftRow {
   selected: boolean;
 }
 
+type VendorFilter = number | "all";
+
 const money = new Intl.NumberFormat("ko-KR");
 
 function slugifyCategory(name: string): string {
@@ -33,6 +36,26 @@ function nextInventoryItemId(items: InventoryItem[]): number {
 
 function needsOrder(item: InventoryItem): boolean {
   return Number(item.currentQty) <= Number(item.minQty);
+}
+
+function onlyDigits(value?: string): string {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function compactText(value?: string): string {
+  return (value ?? "").replace(/\s/g, "").toLowerCase();
+}
+
+function detectVendorFromText(text: string, vendors: Vendor[]): Vendor | null {
+  const textDigits = onlyDigits(text);
+  const compact = compactText(text);
+  return vendors.find((vendor) => {
+    const businessNumber = onlyDigits(vendor.businessNumber);
+    return businessNumber.length >= 5 && textDigits.includes(businessNumber);
+  }) ?? vendors.find((vendor) => {
+    const name = compactText(vendor.name);
+    return name.length >= 2 && compact.includes(name);
+  }) ?? null;
 }
 
 function parseNum(raw: string): number {
@@ -129,6 +152,7 @@ export default function Inventory() {
     deleteInventoryItem,
     showToast,
   } = useStore();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -142,6 +166,7 @@ export default function Inventory() {
   const [ocrProgress, setOcrProgress] = useState("");
   const [ocrBusy, setOcrBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [vendorFilter, setVendorFilter] = useState<VendorFilter>("all");
 
   const categoryOptions = useMemo(() => {
     const names = new Set<string>(inventoryCategories.map((category) => category.name));
@@ -157,24 +182,59 @@ export default function Inventory() {
     const q = query.trim().toLowerCase();
     return inventoryItems
       .filter((item) => item.active !== false)
+      .filter((item) => vendorFilter === "all" || item.vendorId === vendorFilter)
       .filter((item) => activeCategory === "전체" || item.category === activeCategory)
-      .filter((item) =>
-        !q || [item.name, item.category, item.unit, item.memo]
+      .filter((item) => {
+        const vendorName = vendors.find((vendor) => vendor.id === item.vendorId)?.name;
+        return !q || [item.name, item.category, item.unit, item.memo, vendorName]
           .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(q))
-      )
+          .some((value) => String(value).toLowerCase().includes(q));
+      })
       .sort((a, b) => Number(needsOrder(b)) - Number(needsOrder(a)) || a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
-  }, [activeCategory, inventoryItems, query]);
+  }, [activeCategory, inventoryItems, query, vendorFilter, vendors]);
 
   const shortageItems = inventoryItems.filter((item) => item.active !== false && needsOrder(item));
   const totalValue = inventoryItems
     .filter((item) => item.active !== false)
     .reduce((sum, item) => sum + Number(item.currentQty) * Number(item.unitPrice), 0);
+  const filteredValue = filteredItems.reduce((sum, item) => sum + Number(item.currentQty) * Number(item.unitPrice), 0);
   const selectedVendor = vendors.find((vendor) => vendor.id === vendorId) ?? vendors[0] ?? null;
+
+  const vendorSummaries = useMemo(() => {
+    return vendors.map((vendor) => {
+      const items = inventoryItems.filter((item) => item.vendorId === vendor.id && item.active !== false);
+      const shortage = items.filter(needsOrder);
+      return {
+        vendor,
+        itemCount: items.length,
+        shortageCount: shortage.length,
+        value: items.reduce((sum, item) => sum + Number(item.currentQty) * Number(item.unitPrice), 0),
+      };
+    }).sort((a, b) => b.shortageCount - a.shortageCount || b.itemCount - a.itemCount || a.vendor.name.localeCompare(b.vendor.name));
+  }, [inventoryItems, vendors]);
 
   useEffect(() => {
     if (!vendorId && vendors[0]) setVendorId(vendors[0].id);
   }, [vendorId, vendors]);
+
+  useEffect(() => {
+    const rawVendorId = Number(searchParams.get("vendor") ?? 0);
+    if (!rawVendorId || !vendors.some((vendor) => vendor.id === rawVendorId)) return;
+    setVendorFilter(rawVendorId);
+    setVendorId(rawVendorId);
+  }, [searchParams, vendors]);
+
+  const selectVendorFilter = (next: VendorFilter) => {
+    setVendorFilter(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === "all") {
+      params.delete("vendor");
+    } else {
+      params.set("vendor", String(next));
+      setVendorId(next);
+    }
+    setSearchParams(params, { replace: true });
+  };
 
   const saveCategory = () => {
     const name = categoryName.trim();
@@ -232,9 +292,14 @@ export default function Inventory() {
       });
       const text = result.data.text.trim();
       const parsed = parseOcrRows(text);
+      const matchedVendor = detectVendorFromText(text, vendors);
+      if (matchedVendor) {
+        selectVendorFilter(matchedVendor.id);
+      }
       setOcrText(text);
       setOcrRows(parsed.length > 0 ? parsed : fallbackMeatRows());
-      showToast(parsed.length > 0 ? `${parsed.length}개 품목을 인식했습니다` : "자동 인식이 약해 샘플 육류 행을 불러왔습니다");
+      const resultMessage = parsed.length > 0 ? `${parsed.length}개 품목을 인식했습니다` : "자동 인식이 약해 샘플 육류 행을 불러왔습니다";
+      showToast(matchedVendor ? `${matchedVendor.name} 자동 선택 · ${resultMessage}` : resultMessage);
     } catch (error) {
       console.error(error);
       setOcrRows(fallbackMeatRows());
@@ -326,7 +391,7 @@ export default function Inventory() {
         <StatCard label="전체 품목" value={inventoryItems.filter((item) => item.active !== false).length} unit="개" trend="재고 등록" trendUp icon="📦" />
         <StatCard label="카테고리" value={categoryOptions.length} unit="개" trend="직접 생성 가능" trendUp icon="🏷️" tone="blue" />
         <StatCard label="발주 필요" value={shortageItems.length} unit="개" trend="최소 재고 이하" trendUp={shortageItems.length === 0} icon="⚠️" tone="amber" />
-        <StatCard label="재고 평가액" value={Math.round(totalValue / 10000).toLocaleString()} unit="만원" trend="현재수량 x 단가" trendUp icon="💳" />
+        <StatCard label="재고 평가액" value={Math.round(totalValue / 10000).toLocaleString()} unit="만원" trend={`선택 ${Math.round(filteredValue / 10000).toLocaleString()}만원`} trendUp icon="💳" />
       </div>
 
       <Card title="카테고리 관리" icon="🏷️">
@@ -376,6 +441,43 @@ export default function Inventory() {
       </Card>
 
       <Card
+        title="거래처별 재고 연결"
+        icon="🏢"
+        action={<Link className="btn btn-outline btn-sm" to={vendorFilter === "all" ? "/vendors" : `/vendors?vendor=${vendorFilter}`}>거래처관리</Link>}
+      >
+        <div className="inventory-vendor-grid">
+          <button
+            className={`inventory-vendor-card ${vendorFilter === "all" ? "on" : ""}`}
+            onClick={() => selectVendorFilter("all")}
+          >
+            <div className="spread">
+              <strong>전체 거래처</strong>
+              <Badge tone={shortageItems.length > 0 ? "amber" : "green"}>{shortageItems.length}개 부족</Badge>
+            </div>
+            <div className="inventory-vendor-amount">{inventoryItems.filter((item) => item.active !== false).length}개</div>
+            <div className="muted small">전체 재고 평가액 {money.format(totalValue)}원</div>
+          </button>
+          {vendorSummaries.map((row) => (
+            <button
+              className={`inventory-vendor-card ${vendorFilter === row.vendor.id ? "on" : ""}`}
+              key={row.vendor.id}
+              onClick={() => selectVendorFilter(row.vendor.id)}
+            >
+              <div className="spread">
+                <strong>{row.vendor.name}</strong>
+                <Badge tone={row.shortageCount > 0 ? "amber" : "green"}>
+                  {row.shortageCount > 0 ? `${row.shortageCount}개 부족` : "정상"}
+                </Badge>
+              </div>
+              <div className="inventory-vendor-amount">{row.itemCount}개</div>
+              <div className="muted small">재고 평가액 {money.format(row.value)}원</div>
+              <div className="muted small">{row.vendor.phone || row.vendor.businessNumber || "거래처 정보 없음"}</div>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card
         title="거래명세서 OCR 입고"
         icon="📷"
         action={<Badge tone="amber">{activeCategory === "전체" ? "육류" : activeCategory}</Badge>}
@@ -394,6 +496,7 @@ export default function Inventory() {
                 <select className="select" value={vendorId} onChange={(event) => setVendorId(Number(event.target.value))}>
                   {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
                 </select>
+                <div className="muted small" style={{ marginTop: 6 }}>사진에서 사업자번호나 거래처명이 잡히면 자동 선택됩니다.</div>
               </div>
             </div>
 
@@ -536,7 +639,11 @@ export default function Inventory() {
                       {item.memo && <div className="muted small">{item.memo}</div>}
                     </td>
                     <td>{item.category}</td>
-                    <td>{vendor?.name ?? "-"}</td>
+                    <td>
+                      {vendor ? (
+                        <button className="text-button" onClick={() => selectVendorFilter(vendor.id)}>{vendor.name}</button>
+                      ) : "-"}
+                    </td>
                     <td>{item.storageType}</td>
                     <td className="num bold">{item.currentQty}{item.unit}</td>
                     <td className="num">{item.minQty}{item.unit}</td>
@@ -544,7 +651,10 @@ export default function Inventory() {
                     <td className="num">{money.format(Math.round(item.currentQty * item.unitPrice))}원</td>
                     <td>{needsOrder(item) ? <Badge tone="amber">발주 필요</Badge> : <Badge>정상</Badge>}</td>
                     <td>
-                      <button className="btn btn-danger btn-sm" onClick={() => removeItem(item)}>삭제</button>
+                      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                        <Link className="btn btn-outline btn-sm" to={`/vendors?vendor=${item.vendorId}`}>거래처</Link>
+                        <button className="btn btn-danger btn-sm" onClick={() => removeItem(item)}>삭제</button>
+                      </div>
                     </td>
                   </tr>
                 );

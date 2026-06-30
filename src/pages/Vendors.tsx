@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Badge, Card, StatCard } from "../components/ui";
 import type {
@@ -109,6 +110,7 @@ export default function Vendors() {
     receivePurchaseOrder,
     showToast,
   } = useStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Vendor>(EMPTY_VENDOR);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -137,6 +139,24 @@ export default function Vendors() {
   const selectedVendor = useMemo(() => {
     return vendors.find((vendor) => vendor.id === openId) ?? filtered[0] ?? vendors[0] ?? null;
   }, [filtered, openId, vendors]);
+
+  useEffect(() => {
+    const vendorId = Number(searchParams.get("vendor") ?? 0);
+    if (vendorId && vendors.some((vendor) => vendor.id === vendorId)) {
+      setOpenId(vendorId);
+    }
+  }, [searchParams, vendors]);
+
+  const selectVendor = (vendorId: number | null) => {
+    setOpenId(vendorId);
+    const params = new URLSearchParams(searchParams);
+    if (vendorId) {
+      params.set("vendor", String(vendorId));
+    } else {
+      params.delete("vendor");
+    }
+    setSearchParams(params, { replace: true });
+  };
 
   const selectedItems = useMemo(() => {
     if (!selectedVendor) return [];
@@ -178,7 +198,7 @@ export default function Vendors() {
   const editVendor = (vendor: Vendor) => {
     setDraft({ ...vendor });
     setEditingId(vendor.id);
-    setOpenId(vendor.id);
+    selectVendor(vendor.id);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -216,7 +236,7 @@ export default function Vendors() {
       createdAt: draft.createdAt ?? new Date().toISOString(),
     };
     upsertVendor(vendor);
-    setOpenId(id);
+    selectVendor(id);
     showToast(editingId ? "거래처 정보를 수정했습니다" : "거래처를 등록했습니다");
     resetForm();
   };
@@ -225,7 +245,7 @@ export default function Vendors() {
     if (!window.confirm(`${vendor.name} 거래처를 삭제할까요? 등록 품목과 발주서는 남아있습니다.`)) return;
     deleteVendor(vendor.id);
     if (editingId === vendor.id) resetForm();
-    if (openId === vendor.id) setOpenId(null);
+    if (openId === vendor.id) selectVendor(null);
     showToast("거래처를 삭제했습니다");
   };
 
@@ -235,7 +255,9 @@ export default function Vendors() {
   };
 
   const saveItem = () => {
-    if (!selectedVendor) {
+    const targetVendorId = Number(itemDraft.vendorId) || selectedVendor?.id || 0;
+    const targetVendor = vendors.find((vendor) => vendor.id === targetVendorId);
+    if (!selectedVendor || !targetVendor) {
       showToast("먼저 거래처를 선택해주세요");
       return;
     }
@@ -253,7 +275,7 @@ export default function Vendors() {
     const item: InventoryItem = {
       ...itemDraft,
       id: itemEditingId ?? nextInventoryItemId(inventoryItems),
-      vendorId: selectedVendor.id,
+      vendorId: targetVendor.id,
       name,
       unit,
       currentQty: Number(itemDraft.currentQty) || 0,
@@ -265,8 +287,10 @@ export default function Vendors() {
       createdAt: itemDraft.createdAt ?? new Date().toISOString(),
     };
     upsertInventoryItem(item);
+    if (targetVendor.id !== selectedVendor.id) selectVendor(targetVendor.id);
     showToast(itemEditingId ? "발주 품목을 수정했습니다" : "발주 품목을 등록했습니다");
-    resetItemForm();
+    setItemDraft({ ...EMPTY_ITEM, vendorId: targetVendor.id });
+    setItemEditingId(null);
   };
 
   const removeItem = (item: InventoryItem) => {
@@ -449,7 +473,7 @@ export default function Vendors() {
                   <tr
                     key={vendor.id}
                     className={selectedVendor?.id === vendor.id ? "sel" : ""}
-                    onClick={() => setOpenId(openId === vendor.id ? null : vendor.id)}
+                    onClick={() => selectVendor(openId === vendor.id ? null : vendor.id)}
                   >
                     <td className="bold">{vendor.name}</td>
                     <td className="num">{vendor.businessNumber}</td>
@@ -460,6 +484,7 @@ export default function Vendors() {
                     <td>{shortageCount > 0 ? <Badge tone="amber">{shortageCount}개</Badge> : <Badge>정상</Badge>}</td>
                     <td onClick={(event) => event.stopPropagation()}>
                       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                        <Link className="btn btn-outline btn-sm" to={`/inventory?vendor=${vendor.id}`}>재고</Link>
                         <button className="btn btn-outline btn-sm" onClick={() => editVendor(vendor)}>수정</button>
                         <button className="btn btn-danger btn-sm" onClick={() => removeVendor(vendor)}>삭제</button>
                       </div>
@@ -485,7 +510,7 @@ export default function Vendors() {
             const shortageCount = inventoryItems.filter((item) => item.vendorId === vendor.id && item.active !== false && needsOrder(item)).length;
             return (
               <div className={`vendor-card ${open ? "open" : ""}`} key={vendor.id}>
-                <button className="vendor-card-head" onClick={() => setOpenId(open ? null : vendor.id)}>
+                <button className="vendor-card-head" onClick={() => selectVendor(open ? null : vendor.id)}>
                   <div>
                     <strong>{vendor.name}</strong>
                     <span>{vendor.businessNumber}</span>
@@ -502,6 +527,7 @@ export default function Vendors() {
                     <div className="detail-line"><span className="k">발주 품목</span><span className="v">{itemCount}개 · 부족 {shortageCount}개</span></div>
                     <div className="detail-line"><span className="k">메모</span><span className="v">{vendor.memo || "-"}</span></div>
                     <div className="vendor-card-actions">
+                      <Link className="btn btn-outline" to={`/inventory?vendor=${vendor.id}`}>재고 보기</Link>
                       <button className="btn btn-outline" onClick={() => editVendor(vendor)}>수정</button>
                       <button className="btn btn-danger" onClick={() => removeVendor(vendor)}>삭제</button>
                     </div>
@@ -523,6 +549,7 @@ export default function Vendors() {
         icon="📦"
         action={selectedVendor && (
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <Link className="btn btn-outline btn-sm" to={`/inventory?vendor=${selectedVendor.id}`}>재고에서 보기</Link>
             <button className="btn btn-outline btn-sm" onClick={() => createOrder("all")}>전체 품목 발주서</button>
             <button className="btn btn-primary btn-sm" onClick={() => createOrder("shortage")}>부족 품목 발주서</button>
           </div>
@@ -561,6 +588,12 @@ export default function Vendors() {
                 {itemEditingId && <button className="btn btn-outline btn-sm" onClick={resetItemForm}>새 품목</button>}
               </div>
               <div className="grid grid-4" style={{ gap: 10 }}>
+                <div>
+                  <label className="field-label">품목 거래처</label>
+                  <select className="select" value={itemDraft.vendorId || selectedVendor.id} onChange={(e) => updateItemDraft("vendorId", Number(e.target.value))}>
+                    {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
+                  </select>
+                </div>
                 <div>
                   <label className="field-label">품목명</label>
                   <input className="input" value={itemDraft.name} onChange={(e) => updateItemDraft("name", e.target.value)} placeholder="예: 김치" />
