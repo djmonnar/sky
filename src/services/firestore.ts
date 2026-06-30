@@ -22,10 +22,11 @@ import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
   Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
   OwnerSchedule,
-  SettlementMethod, SettlementStatus,
+  SettlementMethod, SettlementStatus, ManagerPermissions,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
+import { normalizeManagerPermissions } from "../config/managerPermissions";
 
 function col(name: string) {
   return collection(requireDb(), "stores", STORE_ID, name);
@@ -445,6 +446,14 @@ export function subscribeSalesSyncRuns(cb: (v: SalesSyncRun[]) => void, onError:
   );
 }
 
+export function subscribeManagerPermissions(cb: (v: ManagerPermissions) => void, onError: ErrCb): Unsub {
+  return onSnapshot(
+    metaDoc("managerPermissions"),
+    (snap) => cb(normalizeManagerPermissions(snap.exists() ? snap.data() as Partial<ManagerPermissions> : null)),
+    (e) => onError(new Error(`managerPermissions: ${e.message}`))
+  );
+}
+
 /* ---------- 쓰기 ---------- */
 
 export async function fsUpsertReservation(r: Reservation): Promise<void> {
@@ -627,6 +636,17 @@ export async function fsSetPayrollPassword(nextPassword: string): Promise<void> 
   await setDoc(
     metaDoc("payrollPassword"),
     { value: nextPassword, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function fsSetManagerPermissions(next: ManagerPermissions): Promise<void> {
+  await setDoc(
+    metaDoc("managerPermissions"),
+    {
+      ...normalizeManagerPermissions(next),
+      updatedAt: serverTimestamp(),
+    },
     { merge: true }
   );
 }

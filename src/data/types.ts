@@ -5,6 +5,20 @@ export type EmploymentType = "fullTime" | "partTime";
 export type SalaryType = "monthly" | "hourly" | "perSlot";
 export type ShiftPeriod = "morning" | "afternoon";
 export type Department = "hall" | "kitchen";
+export type ManagerPermissionKey =
+  | "dashboard"
+  | "reservations"
+  | "scheduleManage"
+  | "employees"
+  | "sales"
+  | "vendors"
+  | "inventory"
+  | "settlements"
+  | "recipes"
+  | "notices"
+  | "guide";
+
+export type ManagerPermissions = Record<ManagerPermissionKey, boolean>;
 
 export type ResvStatus =
   | "예약확정"

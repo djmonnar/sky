@@ -7,13 +7,15 @@ import { seedFirestore, resetFirestore } from "../dev/seedFirestore";
 import { isMonthlyEmployee } from "../lib/payroll";
 import { latestSyncRun, money, ordersForDate, salesSummary } from "../lib/sales";
 import { planTimesForShifts, shiftsForDay, slotSummary } from "../lib/shifts";
+import type { ManagerPermissionKey } from "../data/types";
 
 export default function AdminDashboard() {
   const {
-    reservations, shifts, records, employees, salesOrders, salesSyncRuns, mode, loading, showToast, role,
+    reservations, shifts, records, employees, salesOrders, salesSyncRuns, mode, loading, showToast, role, managerPermissions,
   } = useStore();
   const [seeding, setSeeding] = useState(false);
-  const canViewPayroll = role === "admin";
+  const isAdmin = role === "admin";
+  const canAccess = (key: ManagerPermissionKey) => isAdmin || (role === "manager" && managerPermissions[key]);
 
   const runSeed = async () => {
     setSeeding(true);
@@ -62,7 +64,7 @@ export default function AdminDashboard() {
       <p className="greeting hide-desktop">정하늘 관리자님, 오늘도 파이팅! 💪</p>
 
       {/* 라이브 모드 + 빈 DB: 초기 seed 안내 */}
-      {mode === "live" && !loading && employees.length === 0 && (
+      {isAdmin && mode === "live" && !loading && employees.length === 0 && (
         <Card title="초기 데이터 설정" icon="🌱">
           <p className="muted small" style={{ margin: "0 0 12px" }}>
             Firestore에 아직 매장 데이터가 없습니다. 데모 데이터를 넣어 시작하거나,
@@ -75,7 +77,7 @@ export default function AdminDashboard() {
       )}
 
       {/* 라이브 모드: 슬롯 모델 데이터 재설정 (관리자 도구) */}
-      {mode === "live" && !loading && employees.length > 0 && (
+      {isAdmin && mode === "live" && !loading && employees.length > 0 && (
         <details className="reset-tool">
           <summary>🛠️ 관리자 데이터 도구</summary>
           <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
@@ -90,7 +92,7 @@ export default function AdminDashboard() {
       {/* KPI */}
       <div className="grid grid-4">
         <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="오늘 기준" trendUp icon="📋" />
-        {canViewPayroll && <StatCard label="오늘 매출" value={money(todaySalesSummary.netAmount)} unit="원" trend={`${todaySalesSummary.orderCount}건 · 객단가 ${money(todaySalesSummary.averageOrderAmount)}원`} trendUp icon="💳" tone="blue" />}
+        {canAccess("sales") && <StatCard label="오늘 매출" value={money(todaySalesSummary.netAmount)} unit="원" trend={`${todaySalesSummary.orderCount}건 · 객단가 ${money(todaySalesSummary.averageOrderAmount)}원`} trendUp icon="💳" tone="blue" />}
         <StatCard label="오늘 근무 직원" value={todayWorkers.length} unit="명" trend="슬롯 배치 기준" trendUp icon="👥" tone="blue" />
         <StatCard label="미확인 근무기록" value={pendingRecords.length} unit="건" trend="승인 대기 중" trendUp={false} icon="🗂️" tone="amber" />
       </div>
@@ -101,7 +103,7 @@ export default function AdminDashboard() {
           <Card
             title="오늘 예약 현황"
             icon="📋"
-            action={<Link to="/reservations" className="card-link">전체 예약 보기 ›</Link>}
+            action={canAccess("reservations") ? <Link to="/reservations" className="card-link">전체 예약 보기 ›</Link> : undefined}
           >
             {activeResv.length > 0 ? (
               activeResv.slice(0, 6).map((r) => (
@@ -120,7 +122,7 @@ export default function AdminDashboard() {
           </Card>
 
           {/* 직원 출근 현황 */}
-          <Card title="직원 출근 현황" icon="👥" action={<Link to="/schedule-manage" className="card-link">근무표 ›</Link>}>
+          <Card title="직원 출근 현황" icon="👥" action={canAccess("scheduleManage") ? <Link to="/schedule-manage" className="card-link">근무표 ›</Link> : undefined}>
             <div className="grid grid-3" style={{ gap: 10 }}>
               {todayWorkers.map(({ employeeId, shifts: workerShifts }) => {
                 const emp = employees.find((e) => e.id === employeeId);
@@ -178,17 +180,20 @@ export default function AdminDashboard() {
           {/* 빠른 작업 */}
           <Card title="빠른 작업" icon="⚡">
             <div className="quick-actions">
-              <Link to="/reservations" className="quick-action"><span className="qa-ic">📞</span>예약 등록</Link>
-              <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표 작성</Link>
-              {canViewPayroll && <Link to="/sales" className="quick-action"><span className="qa-ic">💳</span>매출 확인</Link>}
-              {canViewPayroll && <Link to="/vendors" className="quick-action"><span className="qa-ic">🏢</span>거래처</Link>}
-              {canViewPayroll && <Link to="/recipes" className="quick-action"><span className="qa-ic">🥘</span>레시피 원가</Link>}
-              <Link to="/notices" className="quick-action"><span className="qa-ic">📢</span>공지 등록</Link>
-              <Link to="/guide" className="quick-action"><span className="qa-ic">📖</span>사용 가이드</Link>
+              {canAccess("reservations") && <Link to="/reservations" className="quick-action"><span className="qa-ic">📞</span>예약 등록</Link>}
+              {canAccess("scheduleManage") && <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표 작성</Link>}
+              {canAccess("employees") && <Link to="/employees" className="quick-action"><span className="qa-ic">👥</span>직원 관리</Link>}
+              {canAccess("sales") && <Link to="/sales" className="quick-action"><span className="qa-ic">💳</span>매출 확인</Link>}
+              {canAccess("vendors") && <Link to="/vendors" className="quick-action"><span className="qa-ic">🏢</span>거래처</Link>}
+              {canAccess("inventory") && <Link to="/inventory" className="quick-action"><span className="qa-ic">📦</span>재고 관리</Link>}
+              {canAccess("settlements") && <Link to="/settlements" className="quick-action"><span className="qa-ic">🧾</span>정산 관리</Link>}
+              {canAccess("recipes") && <Link to="/recipes" className="quick-action"><span className="qa-ic">🥘</span>레시피 원가</Link>}
+              {canAccess("notices") && <Link to="/notices" className="quick-action"><span className="qa-ic">📢</span>공지 등록</Link>}
+              {canAccess("guide") && <Link to="/guide" className="quick-action"><span className="qa-ic">📖</span>사용 가이드</Link>}
             </div>
           </Card>
 
-          {canViewPayroll && (
+          {canAccess("sales") && (
             <Card title="OK포스 매출 동기화" icon="💳" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
               <div className="alert-item info">
                 <span>🔄</span>

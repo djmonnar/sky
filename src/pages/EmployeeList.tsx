@@ -28,7 +28,7 @@ function toNumber(value: string): number {
 export default function EmployeeList() {
   const {
     employees, loading, userProfiles, updateUserRole,
-    upsertEmployee, deleteEmployee, showToast,
+    upsertEmployee, deleteEmployee, showToast, role,
   } = useStore();
   const [savingUid, setSavingUid] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -47,6 +47,7 @@ export default function EmployeeList() {
     () => new Map(userProfiles.map((p) => [p.uid, p])),
     [userProfiles]
   );
+  const isAdmin = role === "admin";
   const managerCount = userProfiles.filter((p) => p.role === "manager").length;
   const allSelected = employees.length > 0 && employees.every((employee) => selectedIds.includes(employee.id));
 
@@ -125,6 +126,10 @@ export default function EmployeeList() {
   };
 
   const deleteSelected = () => {
+    if (!isAdmin) {
+      showToast("직원 삭제는 관리자만 가능합니다");
+      return;
+    }
     if (selectedIds.length === 0) {
       showToast("삭제할 직원을 선택해주세요");
       return;
@@ -315,7 +320,7 @@ export default function EmployeeList() {
             <span>전체선택</span>
           </label>
           <span className="muted small">선택 {selectedIds.length}명</span>
-          <button className="btn btn-danger btn-sm" onClick={deleteSelected} disabled={selectedIds.length === 0}>선택삭제</button>
+          {isAdmin && <button className="btn btn-danger btn-sm" onClick={deleteSelected} disabled={selectedIds.length === 0}>선택삭제</button>}
           <button
             className="btn btn-outline btn-sm"
             disabled={selectedIds.length !== 1}
@@ -364,7 +369,9 @@ export default function EmployeeList() {
                     {uid ? (
                       <>
                         <Badge tone={roleTone(appRole)}>{roleLabel(appRole)}</Badge>
-                        {appRole === "admin" ? (
+                        {!isAdmin ? (
+                          <span className="muted small">권한 변경은 관리자만 가능</span>
+                        ) : appRole === "admin" ? (
                           <span className="muted small">관리자 권한은 콘솔에서 관리</span>
                         ) : (
                           <div className="segmented" aria-label={`${emp.name} 권한 변경`}>

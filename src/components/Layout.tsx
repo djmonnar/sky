@@ -2,8 +2,17 @@ import { ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useStore } from "../store";
 import PushNotificationBell from "./PushNotificationBell";
+import type { ManagerPermissionKey } from "../data/types";
 
-interface NavDef { to: string; icon: string; label: string; title: string; mobile?: boolean; mobileLabel?: string }
+interface NavDef {
+  to: string;
+  icon: string;
+  label: string;
+  title: string;
+  mobile?: boolean;
+  mobileLabel?: string;
+  managerPermission?: ManagerPermissionKey;
+}
 
 const STAFF_NAV: NavDef[] = [
   { to: "/", icon: "🏠", label: "대시보드", title: "실무자 대시보드", mobile: true },
@@ -30,19 +39,29 @@ const ADMIN_NAV: NavDef[] = [
 
 const MANAGER_NAV: NavDef[] = [
   { to: "/", icon: "🏠", label: "대시보드", title: "매니저 대시보드", mobile: true },
-  { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true },
-  { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표" },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true },
-  { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false },
+  { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true, managerPermission: "reservations" },
+  { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표", managerPermission: "scheduleManage" },
+  { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원", managerPermission: "employees" },
+  { to: "/sales", icon: "💳", label: "매출 관리", title: "매출 관리", mobile: true, mobileLabel: "매출", managerPermission: "sales" },
+  { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: true, mobileLabel: "거래처", managerPermission: "vendors" },
+  { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: true, mobileLabel: "재고", managerPermission: "inventory" },
+  { to: "/settlements", icon: "🧾", label: "정산 관리", title: "정산 관리", mobile: true, mobileLabel: "정산", managerPermission: "settlements" },
+  { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: true, mobileLabel: "레시피", managerPermission: "recipes" },
+  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, managerPermission: "notices" },
+  { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false, managerPermission: "guide" },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
   const {
     mode, demoReason, role, setRole, toast, loading, error,
-    profile, authUser, logout, currentEmployee,
+    profile, authUser, logout, currentEmployee, managerPermissions,
   } = useStore();
   const loc = useLocation();
-  const nav = role === "admin" ? ADMIN_NAV : role === "manager" ? MANAGER_NAV : STAFF_NAV;
+  const nav = role === "admin"
+    ? ADMIN_NAV
+    : role === "manager"
+      ? MANAGER_NAV.filter((item) => !item.managerPermission || managerPermissions[item.managerPermission])
+      : STAFF_NAV;
   const current = nav.find((n) => n.to === loc.pathname);
   const title = current?.title ?? (loc.pathname === "/profile" ? "내 정보 수정" : "하늘땅 매장관리");
 

@@ -5,7 +5,7 @@ import {
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
   Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun,
-  OwnerSchedule,
+  OwnerSchedule, ManagerPermissions, ManagerPermissionKey,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
@@ -37,8 +37,10 @@ import {
   fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
   subscribeSalesOrders, subscribeSalesSyncRuns, fsSyncOkposSales,
   fsUpdateMyProfile,
+  subscribeManagerPermissions, fsSetManagerPermissions,
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
+import { DEFAULT_MANAGER_PERMISSIONS, normalizeManagerPermissions } from "./config/managerPermissions";
 
 export type AppMode = "demo" | "live";
 
@@ -50,6 +52,15 @@ export const APP_MODE: AppMode =
 
 const DEFAULT_PAYROLL_PASSWORD = "qaz@qwer4312";
 
+function loadDemoManagerPermissions(): ManagerPermissions {
+  try {
+    const raw = window.localStorage.getItem("haneulttang.managerPermissions");
+    return normalizeManagerPermissions(raw ? JSON.parse(raw) as Partial<ManagerPermissions> : null);
+  } catch {
+    return DEFAULT_MANAGER_PERMISSIONS;
+  }
+}
+
 interface Store {
   mode: AppMode;
   /** 데모 모드 사유 안내 (배너용). live면 null */
@@ -57,6 +68,9 @@ interface Store {
 
   role: Role;
   setRole: (r: Role) => void; // live 모드에서는 무시됨
+  managerPermissions: ManagerPermissions;
+  updateManagerPermissions: (next: ManagerPermissions) => Promise<void>;
+  canManagerAccess: (key: ManagerPermissionKey) => boolean;
 
   // 인증 (live 모드)
   authUser: AuthUser | null;
@@ -181,6 +195,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [demoPayrollPassword, setDemoPayrollPassword] = useState(() =>
     window.localStorage.getItem("haneulttang.payrollPassword") ?? DEFAULT_PAYROLL_PASSWORD
   );
+  const [managerPermissions, setManagerPermissions] = useState<ManagerPermissions>(() =>
+    loadDemoManagerPermissions()
+  );
   // 회원가입 중에는 auth 리스너가 프로필을 먼저 조회하지 않도록 막음
   // (계정 생성 → users 문서 생성 사이의 레이스 방지)
   const signupInProgress = useRef(false);
@@ -235,6 +252,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!u) {
         setAuthUser(null);
         setProfile(null);
+        setManagerPermissions(DEFAULT_MANAGER_PERMISSIONS);
         setAuthLoading(false);
         setLoading(true);
         return;
@@ -281,6 +299,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (APP_MODE !== "live" || !profile || (profile.role !== "admin" && profile.role !== "manager")) return;
+    return subscribeManagerPermissions(
+      setManagerPermissions,
+      (e) => {
+        console.error("[managerPermissions]", e);
+        setError(`매니저 권한 설정을 불러오지 못했습니다: ${e.message}`);
+      }
+    );
+  }, [profile]);
+
   /* ---------- 라이브 모드: Firestore 실시간 구독 ---------- */
   useEffect(() => {
     if (APP_MODE !== "live" || !profile) return;
@@ -295,6 +324,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // staff는 본인 근무표/근무기록만, admin은 전체 (Security Rules와 일치)
     const empFilter =
       profile.role === "staff" ? profile.employeeId : undefined;
+    const isAdminRole = profile.role === "admin";
+    const isStaffRole = profile.role === "staff";
+    const managerCan = (key: ManagerPermissionKey) =>
+      profile.role === "manager" && managerPermissions[key] === true;
+    const canReservationData = isAdminRole || isStaffRole || managerCan("reservations");
+    const canScheduleData = isAdminRole || isStaffRole || managerCan("scheduleManage");
+    const canUserProfileData = isAdminRole || managerCan("employees");
+    const canVendorData =
+      isAdminRole || managerCan("vendors") || managerCan("inventory") || managerCan("settlements") || managerCan("recipes");
+    const canInventoryData =
+      isAdminRole || managerCan("vendors") || managerCan("inventory") || managerCan("settlements");
+    const canRecipeData = isAdminRole || managerCan("recipes");
+    const canSalesData = isAdminRole || managerCan("sales");
+
+    if (!canUserProfileData) setUserProfiles([]);
+    if (!canReservationData) setReservations([]);
+    if (!canScheduleData) {
+      setShifts([]);
+      setRecords([]);
+    }
+    if (!canVendorData) setVendors([]);
+    if (!canInventoryData) {
+      setInventoryCategories([]);
+      setInventoryItems([]);
+      setPurchaseOrders([]);
+    }
+    if (!canRecipeData) setRecipes([]);
+    if (!canSalesData) {
+      setSalesOrders([]);
+      setSalesSyncRuns([]);
+    }
 
     let gotFirst = false;
     const markLoaded = () => {
@@ -306,29 +366,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const unsubs = [
       subscribeEmployees((v) => { setEmployees(v); markLoaded(); }, onErr),
-      subscribeReservations(setReservations, onErr),
-      subscribeShifts(empFilter, setShifts, onErr),
-      subscribeRecords(empFilter, setRecords, onErr),
+      ...(canReservationData ? [subscribeReservations(setReservations, onErr)] : []),
+      ...(canScheduleData
+        ? [
+            subscribeShifts(empFilter, setShifts, onErr),
+            subscribeRecords(empFilter, setRecords, onErr),
+          ]
+        : []),
       subscribeNotices(setNotices, onErr),
       subscribeHandovers(setHandovers, onErr),
       // 급여는 관리자만 구독 (staff는 Rules상 본인 문서만 허용, 화면도 없음)
-      ...(profile.role === "admin"
+      ...(isAdminRole
         ? [
             subscribePayroll(setPayroll, onErr),
             subscribeOwnerSchedules(setOwnerSchedules, onErr),
-            subscribeUserProfiles(setUserProfiles, onErr),
-            subscribeVendors(setVendors, onErr),
+          ]
+        : []),
+      ...(canUserProfileData ? [subscribeUserProfiles(setUserProfiles, onErr)] : []),
+      ...(canVendorData ? [subscribeVendors(setVendors, onErr)] : []),
+      ...(canInventoryData
+        ? [
             subscribeInventoryCategories(setInventoryCategories, onErr),
             subscribeInventoryItems(setInventoryItems, onErr),
             subscribePurchaseOrders(setPurchaseOrders, onErr),
-            subscribeRecipes(setRecipes, onErr),
+          ]
+        : []),
+      ...(canRecipeData ? [subscribeRecipes(setRecipes, onErr)] : []),
+      ...(canSalesData
+        ? [
             subscribeSalesOrders(setSalesOrders, onErr),
             subscribeSalesSyncRuns(setSalesSyncRuns, onErr),
           ]
         : []),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [profile]);
+  }, [profile, managerPermissions]);
 
   const currentEmployee = useMemo<Employee | null>(() => {
     const targetId =
@@ -767,6 +839,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setDemoPayrollPassword(nextPassword);
   }, []);
 
+  const updateManagerPermissions = useCallback(async (next: ManagerPermissions) => {
+    const normalized = normalizeManagerPermissions(next);
+    if (APP_MODE === "live") {
+      await fsSetManagerPermissions(normalized);
+    } else {
+      window.localStorage.setItem("haneulttang.managerPermissions", JSON.stringify(normalized));
+    }
+    setManagerPermissions(normalized);
+    showToast("매니저 권한 설정을 저장했습니다");
+  }, [showToast]);
+
+  const canManagerAccess = useCallback((key: ManagerPermissionKey) => {
+    return managerPermissions[key] === true;
+  }, [managerPermissions]);
+
   const updateUserRole = useCallback(async (uid: string, nextRole: Role) => {
     if (nextRole === "admin") {
       throw new Error("관리자 권한은 Firebase 콘솔에서 직접 부여해주세요.");
@@ -967,7 +1054,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Store>(
     () => ({
       mode: APP_MODE, demoReason,
-      role, setRole,
+      role, setRole, managerPermissions, updateManagerPermissions, canManagerAccess,
       authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
       loading, error,
       employees, upsertEmployee, deleteEmployee, deactivateUserProfile,
@@ -988,7 +1075,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
-    [demoReason, role, setRole, authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
+    [demoReason, role, setRole, managerPermissions, updateManagerPermissions, canManagerAccess,
+     authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
      reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
      punchStatus, punchInAt, punchOutAt, toast,

@@ -20,6 +20,7 @@ import Recipes from "./pages/Recipes";
 import Sales from "./pages/Sales";
 import Settlements from "./pages/Settlements";
 import MyProfile from "./pages/MyProfile";
+import type { ManagerPermissionKey } from "./data/types";
 
 function Splash({ text }: { text: string }) {
   return (
@@ -33,9 +34,13 @@ function Splash({ text }: { text: string }) {
 }
 
 export default function App() {
-  const { mode, role, authLoading, authUser, profile } = useStore();
+  const { mode, role, authLoading, authUser, profile, managerPermissions } = useStore();
   const location = useLocation();
-  const canManageOps = role === "admin" || role === "manager";
+  const canManager = (key: ManagerPermissionKey) => role === "manager" && managerPermissions[key];
+  const canAdminOrManager = (key: ManagerPermissionKey) => role === "admin" || canManager(key);
+  const canUseManagerDashboard = role === "admin" || role === "manager";
+  const canUseReservations = role === "admin" || role === "staff" || canManager("reservations");
+  const canUseNotices = role === "admin" || role === "staff" || canManager("notices");
 
   // 라이브 모드: 인증 게이트
   if (mode === "live") {
@@ -51,21 +56,21 @@ export default function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={canManageOps ? <AdminDashboard /> : <StaffDashboard />} />
-        <Route path="/reservations" element={<Reservations />} />
-        <Route path="/worklog" element={<WorkLog />} />
-        <Route path="/schedule" element={<SchedulePage />} />
-        <Route path="/schedule-manage" element={canManageOps ? <ScheduleManage /> : <Navigate to="/schedule" replace />} />
+        <Route path="/" element={canUseManagerDashboard ? <AdminDashboard /> : <StaffDashboard />} />
+        <Route path="/reservations" element={canUseReservations ? <Reservations /> : <Navigate to="/" replace />} />
+        <Route path="/worklog" element={role === "staff" ? <WorkLog /> : <Navigate to="/" replace />} />
+        <Route path="/schedule" element={role === "staff" ? <SchedulePage /> : <Navigate to={canAdminOrManager("scheduleManage") ? "/schedule-manage" : "/"} replace />} />
+        <Route path="/schedule-manage" element={canAdminOrManager("scheduleManage") ? <ScheduleManage /> : <Navigate to="/" replace />} />
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />
-        <Route path="/employees" element={role === "admin" ? <EmployeeList /> : <Navigate to="/" replace />} />
-        <Route path="/sales" element={role === "admin" ? <Sales /> : <Navigate to="/" replace />} />
-        <Route path="/vendors" element={role === "admin" ? <Vendors /> : <Navigate to="/" replace />} />
-        <Route path="/inventory" element={role === "admin" ? <Inventory /> : <Navigate to="/" replace />} />
-        <Route path="/settlements" element={role === "admin" ? <Settlements /> : <Navigate to="/" replace />} />
-        <Route path="/recipes" element={role === "admin" ? <Recipes /> : <Navigate to="/" replace />} />
+        <Route path="/employees" element={canAdminOrManager("employees") ? <EmployeeList /> : <Navigate to="/" replace />} />
+        <Route path="/sales" element={canAdminOrManager("sales") ? <Sales /> : <Navigate to="/" replace />} />
+        <Route path="/vendors" element={canAdminOrManager("vendors") ? <Vendors /> : <Navigate to="/" replace />} />
+        <Route path="/inventory" element={canAdminOrManager("inventory") ? <Inventory /> : <Navigate to="/" replace />} />
+        <Route path="/settlements" element={canAdminOrManager("settlements") ? <Settlements /> : <Navigate to="/" replace />} />
+        <Route path="/recipes" element={canAdminOrManager("recipes") ? <Recipes /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<MyProfile />} />
-        <Route path="/guide" element={canManageOps ? <Guide /> : <Navigate to="/" replace />} />
-        <Route path="/notices" element={<Notices />} />
+        <Route path="/guide" element={canAdminOrManager("guide") ? <Guide /> : <Navigate to="/" replace />} />
+        <Route path="/notices" element={canUseNotices ? <Notices /> : <Navigate to="/" replace />} />
         {/* 로그인 상태(또는 데모 모드)에서 /signup 접근 시 홈으로 */}
         <Route path="/signup" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

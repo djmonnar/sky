@@ -1084,6 +1084,47 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   color: #fff;
   box-shadow: var(--shadow);
 }
+.manager-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.manager-permission-card {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  cursor: pointer;
+}
+.manager-permission-card.on {
+  border-color: var(--green-600);
+  background: var(--green-50);
+}
+.manager-permission-card.locked {
+  cursor: default;
+}
+.manager-permission-card input {
+  display: none;
+}
+.manager-permission-card strong {
+  display: block;
+}
+.manager-permission-card small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.manager-permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
 .admin-owner-grid {
   display: grid;
   grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
@@ -2338,9 +2379,16 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
     padding-right: 8px;
   }
   .admin-owner-grid,
+  .manager-permission-grid,
   .owner-schedule-form-grid,
   .owner-schedule-form-grid.two {
     grid-template-columns: 1fr;
+  }
+  .manager-permission-actions {
+    flex-direction: column;
+  }
+  .manager-permission-actions .btn {
+    width: 100%;
   }
   .owner-schedule-item {
     grid-template-columns: 24px minmax(0, 1fr);

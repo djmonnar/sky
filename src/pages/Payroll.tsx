@@ -4,6 +4,7 @@ import { Card, StatCard, Badge } from "../components/ui";
 import { won } from "../data";
 import type {
   Employee,
+  ManagerPermissionKey,
   OwnerSchedule,
   OwnerScheduleCategory,
   PayrollAdjustment,
@@ -20,8 +21,13 @@ import {
   socialInsuranceBreakdown,
   socialInsuranceDeduction,
 } from "../lib/payroll";
+import {
+  DEFAULT_MANAGER_PERMISSIONS,
+  MANAGER_PERMISSION_OPTIONS,
+  normalizeManagerPermissions,
+} from "../config/managerPermissions";
 
-type AdminTab = "schedule" | "payroll";
+type AdminTab = "schedule" | "payroll" | "permissions";
 type PayFilter = "all" | "fullTime" | "partTime";
 
 interface PayrollViewRow {
@@ -180,6 +186,7 @@ export default function Payroll() {
   const {
     payroll, records, shifts, updatePayroll, approveRecord, showToast, employees,
     getPayrollPassword, setPayrollPassword, ownerSchedules, upsertOwnerSchedule, deleteOwnerSchedule,
+    managerPermissions, updateManagerPermissions,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<AdminTab>("schedule");
@@ -197,6 +204,7 @@ export default function Payroll() {
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [permissionDraft, setPermissionDraft] = useState(() => normalizeManagerPermissions(managerPermissions));
 
   const monthShifts = useMemo(
     () => shifts.filter((s) => s.date?.startsWith(selectedMonth)),
@@ -230,6 +238,10 @@ export default function Payroll() {
   useEffect(() => {
     setPayNoteInput(sel?.pay.note ?? "");
   }, [sel?.emp.id, sel?.pay.note]);
+
+  useEffect(() => {
+    setPermissionDraft(normalizeManagerPermissions(managerPermissions));
+  }, [managerPermissions]);
 
   const daySchedules = ownerSchedules.filter((item) => item.date === scheduleDate);
   const monthScheduleCount = ownerSchedules.filter((item) => item.date.startsWith(scheduleDate.slice(0, 7))).length;
@@ -383,6 +395,25 @@ export default function Payroll() {
     await setPayrollPassword(next);
     setNewPassword("");
     showToast("관리자 모드 비밀번호를 변경했습니다");
+  };
+
+  const toggleManagerPermission = (key: ManagerPermissionKey) => {
+    const option = MANAGER_PERMISSION_OPTIONS.find((item) => item.key === key);
+    if (option?.locked) return;
+    setPermissionDraft((prev) => normalizeManagerPermissions({ ...prev, [key]: !prev[key] }));
+  };
+
+  const saveManagerPermissions = async () => {
+    try {
+      await updateManagerPermissions(permissionDraft);
+    } catch (e) {
+      console.error(e);
+      showToast("매니저 권한 저장에 실패했습니다");
+    }
+  };
+
+  const resetManagerPermissions = () => {
+    setPermissionDraft(normalizeManagerPermissions(DEFAULT_MANAGER_PERMISSIONS));
   };
 
   const renderScheduleItem = (item: OwnerSchedule) => (
@@ -869,6 +900,52 @@ export default function Payroll() {
     );
   };
 
+  const renderPermissionsPanel = () => (
+    <div className="stack">
+      <Card title="매니저 권한 설정" icon="🛡️">
+        <p className="muted small" style={{ marginTop: 0 }}>
+          체크한 화면만 매니저 계정의 사이드바/모바일 플로팅 메뉴에 표시되고, 직접 주소로 들어가도 같은 기준으로 접근합니다.
+        </p>
+        <div className="manager-permission-grid">
+          {MANAGER_PERMISSION_OPTIONS.map((option) => {
+            const checked = permissionDraft[option.key];
+            return (
+              <label key={option.key} className={`manager-permission-card ${checked ? "on" : ""} ${option.locked ? "locked" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={option.locked}
+                  onChange={() => toggleManagerPermission(option.key)}
+                />
+                <span className={`checkbox ${checked ? "checked" : ""}`}>{checked ? "✓" : ""}</span>
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="manager-permission-actions">
+          <button className="btn btn-outline" onClick={resetManagerPermissions}>
+            기본값으로
+          </button>
+          <button className="btn btn-primary" onClick={() => void saveManagerPermissions()}>
+            권한 저장
+          </button>
+        </div>
+      </Card>
+
+      <Card title="현재 적용 중인 권한" icon="👀">
+        <div className="chip-row">
+          {MANAGER_PERMISSION_OPTIONS.filter((option) => managerPermissions[option.key]).map((option) => (
+            <span className="chip on" key={option.key}>{option.label}</span>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+
   if (!unlocked) return renderPayrollLock();
 
   return (
@@ -885,12 +962,19 @@ export default function Payroll() {
           <button className={activeTab === "payroll" ? "on" : ""} onClick={() => setActiveTab("payroll")}>
             💰 급여 관리
           </button>
+          <button className={activeTab === "permissions" ? "on" : ""} onClick={() => setActiveTab("permissions")}>
+            🛡️ 매니저 권한
+          </button>
         </div>
         <button className="btn btn-outline" onClick={() => setUnlocked(false)}>
           🔒 잠그기
         </button>
       </div>
-      {activeTab === "schedule" ? renderSchedulePanel() : renderPayrollPanel()}
+      {activeTab === "schedule"
+        ? renderSchedulePanel()
+        : activeTab === "permissions"
+          ? renderPermissionsPanel()
+          : renderPayrollPanel()}
     </div>
   );
 }
