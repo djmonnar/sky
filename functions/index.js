@@ -55,6 +55,32 @@ function textResponse(text, quickReplies = []) {
   };
 }
 
+function uploadLinkResponse(chatUser, mode = "inventory") {
+  const label = mode === "purchase" ? "발주확인" : "재고확인";
+  const url = chatbotUploadUrl(chatUser, mode);
+  return {
+    version: "2.0",
+    template: {
+      outputs: [{
+        basicCard: {
+          title: `하늘땅 ${label}`,
+          description: "거래명세서 사진은 원본 업로드 화면에서 처리하는 편이 가장 정확합니다. 사진을 올리고 품목을 확인한 뒤 바로 재고에 반영할 수 있어요.",
+          buttons: [{
+            action: "webLink",
+            label: "사진 업로드",
+            webLinkUrl: url,
+          }],
+        },
+      }],
+      quickReplies: ["결과", "취소"].map((quickLabel) => ({
+        label: quickLabel,
+        action: "message",
+        messageText: quickLabel,
+      })),
+    },
+  };
+}
+
 function failResponse(text) {
   return textResponse(text, ["도움말", "오늘 현황", "오늘 예약"]);
 }
@@ -457,12 +483,31 @@ function htmlPage(body) {
     .card { background: #fffdf8; border: 1px solid #ded5c3; border-radius: 18px; padding: 22px; box-shadow: 0 10px 30px rgba(31,37,24,.08); }
     h1 { margin: 0 0 8px; font-size: 24px; }
     p { color: #756e62; line-height: 1.55; }
-    input, button { width: 100%; box-sizing: border-box; min-height: 50px; border-radius: 14px; font-size: 16px; }
-    input { border: 1px solid #d8cfbd; background: #fff; padding: 12px; }
+    input, select, button { width: 100%; box-sizing: border-box; min-height: 50px; border-radius: 14px; font-size: 16px; }
+    input, select { border: 1px solid #d8cfbd; background: #fff; padding: 12px; }
     button { margin-top: 14px; border: 0; background: #375334; color: white; font-weight: 800; }
+    .secondary { background: #eee8da; color: #375334; }
     button:disabled { opacity: .55; }
     pre { white-space: pre-wrap; background: #eef5e9; border-radius: 14px; padding: 14px; overflow-wrap: anywhere; }
     .small { font-size: 13px; }
+    .guide { display: grid; gap: 4px; margin: 16px 0; padding: 14px; border-radius: 14px; background: #eef5e9; color: #50634b; }
+    .hidden { display: none; }
+    .editor { margin-top: 22px; border-top: 1px solid #e3dac8; padding-top: 18px; }
+    .field { display: grid; gap: 8px; font-weight: 800; color: #4d473d; }
+    .editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
+    .small-button { width: auto; min-height: 38px; padding: 0 14px; margin: 0; border-radius: 999px; font-size: 14px; }
+    .row-card { display: grid; gap: 10px; margin: 12px 0; padding: 14px; border: 1px solid #ded5c3; border-radius: 16px; background: #fffaf1; }
+    .row-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .remove { width: auto; min-height: 34px; margin: 0; padding: 0 12px; background: #f4deda; color: #9b3f35; border-radius: 999px; font-size: 13px; }
+    label { display: grid; gap: 6px; font-size: 13px; font-weight: 800; color: #625b50; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .total { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 14px; border-radius: 14px; background: #eef5e9; }
+    .total b { font-size: 22px; color: #243b22; }
+    @media (max-width: 420px) {
+      main { padding: 16px 12px; }
+      .card { padding: 18px; border-radius: 14px; }
+      .grid2 { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -1241,6 +1286,37 @@ function inventoryOcrSummary(session) {
   ].join("\n");
 }
 
+function normalizeInventoryRows(rawRows) {
+  if (!Array.isArray(rawRows)) return [];
+  return rawRows
+    .map((row, index) => {
+      const name = String(row?.name ?? "").trim();
+      const unit = String(row?.unit ?? "kg").trim() || "kg";
+      const qty = Number(row?.qty ?? 0);
+      const unitPrice = Number(row?.unitPrice ?? 0);
+      const totalPrice = Number(row?.totalPrice ?? 0) || Math.round(qty * unitPrice);
+      return {
+        key: String(row?.key ?? `${Date.now()}_${index}`),
+        name,
+        unit,
+        qty,
+        unitPrice,
+        totalPrice,
+        storageType: String(row?.storageType ?? inferStorageType(name) ?? "냉장"),
+        memo: String(row?.memo ?? ""),
+        selected: row?.selected !== false,
+      };
+    })
+    .filter((row) => row.name && row.qty > 0 && row.selected !== false)
+    .slice(0, 50);
+}
+
+function simpleTextFromKakaoResponse(response) {
+  return response?.template?.outputs?.[0]?.simpleText?.text
+    || response?.template?.outputs?.[0]?.basicCard?.description
+    || "";
+}
+
 function inventoryOcrRetryText({ chatUser, mode = "inventory", ocrText = "" }) {
   return [
     "사진은 받았지만 품목을 자동으로 찾지 못했습니다.",
@@ -1271,11 +1347,7 @@ async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
-  const label = mode === "purchase" ? "발주확인" : "재고확인";
-  return textResponse(
-    `${label} 준비하겠습니다.\n카카오 채팅방에 거래명세서나 입고 사진을 보내주세요.\n\n사진 전송 후 답이 없으면 '결과'라고 입력해주세요. PC 보안 이미지가 계속 멈추면 아래 링크 업로드로 처리할 수 있어요.\n${chatbotUploadUrl(chatUser, mode)}\n\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
-    ["결과", "취소"]
-  );
+  return uploadLinkResponse(chatUser, mode);
 }
 
 async function queueInventoryOcrImage(body, chatUser, mode = "inventory") {
@@ -1408,8 +1480,7 @@ async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", ima
 }
 
 async function applyInventoryOcrSession(session, chatUser) {
-  const rows = (Array.isArray(session.rows) ? session.rows : [])
-    .filter((row) => row && row.selected !== false && row.name && Number(row.qty) > 0);
+  const rows = normalizeInventoryRows(session.rows);
   if (rows.length === 0) return failResponse("반영할 품목이 없습니다. 사진을 다시 올려주세요.");
   const vendorId = Number(session.vendorId || 0);
   if (!vendorId) {
@@ -1579,9 +1650,10 @@ async function handleInventoryOcrSession(body, chatUser) {
   if (session.type !== "inventoryOcr") return null;
   const text = utteranceOf(body).trim();
   const isOcrStartText = /^(재고확인|발주확인)$/.test(text);
-  const wantsCurrentOcr = isOcrStartText
+  const wantsCurrentOcr = isInventoryOcrResultText(text)
     && session.status === "awaiting_image"
     && session.lastOcrText;
+  if (isOcrStartText && ["awaiting_image", "awaiting_confirm"].includes(session.status)) return null;
   const hasActiveOcrSession = ["processing", "awaiting_confirm"].includes(session.status) || wantsCurrentOcr;
   if (isOcrStartText && !hasActiveOcrSession) return null;
   if (/취소|중단|그만/i.test(text)) {
@@ -2464,19 +2536,153 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
   if (req.method === "GET") {
     const safeKey = JSON.stringify(key);
     const safeMode = JSON.stringify(mode);
+    const vendors = (await listVendors()).map((vendor) => ({
+      id: Number(vendor.id || vendor.docId || 0),
+      name: String(vendor.name || ""),
+      businessNumber: String(vendor.businessNumber || ""),
+      phone: String(vendor.phone || ""),
+    }));
+    const safeVendors = JSON.stringify(vendors).replace(/</g, "\\u003c");
     res.status(200).send(htmlPage(`
       <h1>${mode === "purchase" ? "발주확인" : "재고확인"} 사진 업로드</h1>
-      <p>거래명세서나 입고 사진을 올려주세요. 처리 후 카톡으로 돌아가 <b>확인</b>이라고 보내면 실제 재고에 반영됩니다.</p>
+      <p>거래명세서 사진을 원본에 가깝게 올리고, OCR 결과를 확인한 뒤 바로 재고와 정산에 반영합니다.</p>
+      <div class="guide">
+        <b>촬영 팁</b>
+        <span>종이가 화면을 꽉 채우게, 그림자 없이, 수평으로 찍어주세요.</span>
+      </div>
       <input id="file" type="file" accept="image/*" capture="environment" />
-      <button id="submit">사진 OCR 읽기</button>
-      <p class="small">사진은 OCR 처리용으로만 사용되며, 결과는 챗봇 확인 세션에 저장됩니다.</p>
+      <button id="submit">OCR 읽기</button>
+      <button id="reset" class="secondary" type="button">다시 선택</button>
+      <p class="small">카톡 사진 전송보다 이 화면에서 올리는 원본 사진이 훨씬 정확합니다.</p>
       <pre id="result">사진을 선택해주세요.</pre>
+
+      <section id="editor" class="editor hidden">
+        <label class="field">
+          <span>거래처</span>
+          <select id="vendor"></select>
+        </label>
+        <div class="editor-head">
+          <strong>품목 확인</strong>
+          <button id="addRow" class="small-button" type="button">+ 품목 추가</button>
+        </div>
+        <div id="rows"></div>
+        <div class="total">
+          <span>입고 합계</span>
+          <b id="totalAmount">0원</b>
+        </div>
+        <button id="save" type="button">재고에 바로 반영</button>
+      </section>
+
       <script>
         const key = ${safeKey};
         const mode = ${safeMode};
+        const vendors = ${safeVendors};
         const fileInput = document.getElementById("file");
         const button = document.getElementById("submit");
+        const resetButton = document.getElementById("reset");
+        const saveButton = document.getElementById("save");
+        const addRowButton = document.getElementById("addRow");
         const result = document.getElementById("result");
+        const editor = document.getElementById("editor");
+        const rowsBox = document.getElementById("rows");
+        const vendorSelect = document.getElementById("vendor");
+        const totalAmount = document.getElementById("totalAmount");
+        let rows = [];
+
+        function escapeHtml(value) {
+          return String(value == null ? "" : value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+        }
+
+        function formatWon(value) {
+          return Math.round(Number(value || 0)).toLocaleString("ko-KR") + "원";
+        }
+
+        function fillVendors(selectedId) {
+          vendorSelect.innerHTML = '<option value="">거래처 선택</option>' + vendors
+            .map((vendor) => '<option value="' + vendor.id + '">' + escapeHtml(vendor.name) + (vendor.businessNumber ? ' / ' + escapeHtml(vendor.businessNumber) : '') + '</option>')
+            .join("");
+          if (selectedId) vendorSelect.value = String(selectedId);
+        }
+
+        function rowFromCard(card) {
+          const get = (name) => card.querySelector('[data-field="' + name + '"]').value;
+          const qty = Number(get("qty") || 0);
+          const unitPrice = Number(get("unitPrice") || 0);
+          const totalPrice = Number(get("totalPrice") || Math.round(qty * unitPrice));
+          return {
+            name: get("name").trim(),
+            unit: get("unit").trim() || "kg",
+            qty,
+            unitPrice,
+            totalPrice,
+            storageType: get("storageType") || "냉장",
+            memo: get("memo") || "",
+            selected: true,
+          };
+        }
+
+        function collectRows() {
+          return Array.from(rowsBox.querySelectorAll(".row-card"))
+            .map(rowFromCard)
+            .filter((row) => row.name && row.qty > 0);
+        }
+
+        function recalc() {
+          const total = collectRows().reduce((sum, row) => sum + Number(row.totalPrice || 0), 0);
+          totalAmount.textContent = formatWon(total);
+        }
+
+        function renderRows(nextRows) {
+          rows = Array.isArray(nextRows) ? nextRows : [];
+          editor.classList.toggle("hidden", rows.length === 0);
+          rowsBox.innerHTML = rows.map((row, index) => {
+            const qty = Number(row.qty || 0);
+            const unitPrice = Number(row.unitPrice || 0);
+            const totalPrice = Number(row.totalPrice || Math.round(qty * unitPrice));
+            return '<article class="row-card">' +
+              '<div class="row-title"><b>품목 ' + (index + 1) + '</b><button class="remove" type="button">삭제</button></div>' +
+              '<label>품목명<input data-field="name" value="' + escapeHtml(row.name || "") + '" /></label>' +
+              '<div class="grid2">' +
+                '<label>수량<input data-field="qty" type="number" step="0.01" value="' + qty + '" /></label>' +
+                '<label>단위<input data-field="unit" value="' + escapeHtml(row.unit || "kg") + '" /></label>' +
+              '</div>' +
+              '<div class="grid2">' +
+                '<label>단가<input data-field="unitPrice" type="number" step="1" value="' + unitPrice + '" /></label>' +
+                '<label>합계<input data-field="totalPrice" type="number" step="1" value="' + totalPrice + '" /></label>' +
+              '</div>' +
+              '<div class="grid2">' +
+                '<label>보관<select data-field="storageType"><option>냉장</option><option>냉동</option><option>실온</option></select></label>' +
+                '<label>비고<input data-field="memo" value="' + escapeHtml(row.memo || "") + '" /></label>' +
+              '</div>' +
+            '</article>';
+          }).join("");
+          rowsBox.querySelectorAll(".row-card").forEach((card, index) => {
+            const storage = card.querySelector('[data-field="storageType"]');
+            storage.value = rows[index]?.storageType || "냉장";
+            card.querySelector(".remove").addEventListener("click", () => {
+              rows.splice(index, 1);
+              renderRows(rows);
+            });
+            card.querySelectorAll("input, select").forEach((input) => {
+              input.addEventListener("input", () => {
+                const qtyInput = card.querySelector('[data-field="qty"]');
+                const priceInput = card.querySelector('[data-field="unitPrice"]');
+                const totalInput = card.querySelector('[data-field="totalPrice"]');
+                if (input === qtyInput || input === priceInput) {
+                  totalInput.value = Math.round(Number(qtyInput.value || 0) * Number(priceInput.value || 0));
+                }
+                recalc();
+              });
+            });
+          });
+          recalc();
+        }
+
         function readCompressed(file) {
           return new Promise((resolve, reject) => {
             const image = new Image();
@@ -2485,7 +2691,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
             reader.onload = () => { image.src = reader.result; };
             image.onerror = reject;
             image.onload = () => {
-              const max = 1800;
+              const max = 2600;
               const scale = Math.min(1, max / Math.max(image.width, image.height));
               const canvas = document.createElement("canvas");
               canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -2496,11 +2702,14 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
                 out.onerror = reject;
                 out.onload = () => resolve(out.result);
                 out.readAsDataURL(blob);
-              }, "image/jpeg", 0.82);
+              }, "image/jpeg", 0.92);
             };
             reader.readAsDataURL(file);
           });
         }
+
+        fillVendors();
+
         button.addEventListener("click", async () => {
           const file = fileInput.files && fileInput.files[0];
           if (!file) {
@@ -2514,14 +2723,55 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
             const response = await fetch(location.href, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ key, mode, imageData }),
+              body: JSON.stringify({ action: "ocr", key, mode, imageData }),
             });
             const data = await response.json();
             result.textContent = data.message || "처리했습니다. 카톡으로 돌아가 확인이라고 보내주세요.";
+            fillVendors(data.vendorId || "");
+            renderRows(data.rows || []);
           } catch (error) {
             result.textContent = "처리하지 못했습니다. 사진을 더 선명하게 다시 올려주세요.";
           } finally {
             button.disabled = false;
+          }
+        });
+
+        resetButton.addEventListener("click", () => {
+          fileInput.value = "";
+          result.textContent = "사진을 선택해주세요.";
+          renderRows([]);
+        });
+
+        addRowButton.addEventListener("click", () => {
+          rows.push({ name: "", unit: "kg", qty: 1, unitPrice: 0, totalPrice: 0, storageType: "냉장", memo: "" });
+          renderRows(rows);
+        });
+
+        saveButton.addEventListener("click", async () => {
+          const payloadRows = collectRows();
+          if (!vendorSelect.value) {
+            result.textContent = "거래처를 선택해주세요.";
+            return;
+          }
+          if (payloadRows.length === 0) {
+            result.textContent = "저장할 품목이 없습니다.";
+            return;
+          }
+          saveButton.disabled = true;
+          result.textContent = "재고에 반영하고 있습니다.";
+          try {
+            const response = await fetch(location.href, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "save", key, mode, vendorId: Number(vendorSelect.value), rows: payloadRows }),
+            });
+            const data = await response.json();
+            result.textContent = data.message || "저장했습니다.";
+            if (data.ok) renderRows([]);
+          } catch (error) {
+            result.textContent = "저장하지 못했습니다. 잠시 후 다시 시도해주세요.";
+          } finally {
+            saveButton.disabled = false;
           }
         });
       </script>
@@ -2538,6 +2788,43 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
     const body = req.body && typeof req.body === "object"
       ? req.body
       : JSON.parse(req.rawBody?.toString("utf8") || "{}");
+    const action = String(body.action || "ocr").trim();
+
+    if (action === "save") {
+      const denied = requireOps(chatUser);
+      if (denied) {
+        res.status(403).json({ ok: false, message: denied });
+        return;
+      }
+      const rows = normalizeInventoryRows(body.rows);
+      const vendorId = Number(body.vendorId || 0);
+      if (!vendorId) {
+        res.status(400).json({ ok: false, message: "거래처를 선택해주세요." });
+        return;
+      }
+      if (rows.length === 0) {
+        res.status(400).json({ ok: false, message: "저장할 품목이 없습니다." });
+        return;
+      }
+      const vendorSnap = await storeDoc("vendors", String(vendorId)).get();
+      if (!vendorSnap.exists) {
+        res.status(404).json({ ok: false, message: "거래처를 찾지 못했습니다." });
+        return;
+      }
+      const vendor = vendorSnap.data() || {};
+      const response = await applyInventoryOcrSession({
+        mode,
+        status: "awaiting_confirm",
+        rows,
+        vendorId,
+        vendorName: vendor.name || "",
+        requestedBy: chatUser.name,
+      }, chatUser);
+      const message = simpleTextFromKakaoResponse(response) || "재고에 반영했습니다.";
+      res.status(200).json({ ok: true, message });
+      return;
+    }
+
     const imageData = String(body.imageData || "");
     const match = imageData.match(/^data:image\/[a-z0-9.+-]+;base64,(.+)$/i);
     if (!match) {
@@ -2551,10 +2838,16 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
     }
     const debugOcr = String(req.query.debugOcr || "") === "1" && chatUser.role === "admin";
     const ocrText = await recognizeInventoryBuffer(buffer);
+    const rows = normalizeInventoryRows(parseInventoryOcrRows(ocrText));
+    const vendors = await listVendors();
+    const vendor = detectVendorFromText(ocrText, vendors);
     const result = await saveInventoryOcrTextToSession({ chatUser, mode, imageUrl: "browser-upload", ocrText });
     res.status(200).json({
       ok: result.ok,
       message: `${result.text}\n\n카톡으로 돌아가 ${result.ok ? "'확인'" : "'재고확인'"}이라고 보내주세요.`,
+      rows,
+      vendorId: vendor ? Number(vendor.id) : 0,
+      vendorName: vendor?.name ?? "",
       ...(debugOcr ? { ocrText: ocrText.slice(0, 6000) } : {}),
     });
   } catch (error) {
