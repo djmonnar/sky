@@ -64,7 +64,7 @@ function uploadLinkResponse(chatUser, mode = "inventory") {
       outputs: [{
         basicCard: {
           title: `하늘땅 ${label}`,
-          description: "거래명세서 사진은 원본 업로드 화면에서 처리하는 편이 가장 정확합니다. 사진을 올리고 품목을 확인한 뒤 바로 재고에 반영할 수 있어요.",
+          description: "사진을 올리고 품목을 확인한 뒤 바로 재고에 반영할 수 있어요.",
           buttons: [{
             action: "webLink",
             label: "사진 업로드",
@@ -292,8 +292,6 @@ function parseInventoryOcrRows(text) {
       unitPrice = numbers[1] ?? 0;
       totalPrice = numbers[2] ?? Math.round(qty * unitPrice);
     } else {
-      // Some Kakao/Tesseract OCR results drop the unit column, especially on meat invoices.
-      // In that case read rows shaped like: item name + decimal quantity + unit price + total.
       const tokens = inventoryNumberTokens(line);
       const qtyTokenIndex = tokens.findIndex((token) =>
         token.raw.includes(".") && token.value > 0 && token.value < 10000
@@ -490,8 +488,10 @@ function htmlPage(body) {
     button:disabled { opacity: .55; }
     pre { white-space: pre-wrap; background: #eef5e9; border-radius: 14px; padding: 14px; overflow-wrap: anywhere; }
     .small { font-size: 13px; }
-    .guide { display: grid; gap: 4px; margin: 16px 0; padding: 14px; border-radius: 14px; background: #eef5e9; color: #50634b; }
     .hidden { display: none; }
+    .hidden-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .pickers button { margin-top: 0; }
     .editor { margin-top: 22px; border-top: 1px solid #e3dac8; padding-top: 18px; }
     .field { display: grid; gap: 8px; font-weight: 800; color: #4d473d; }
     .editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
@@ -507,6 +507,7 @@ function htmlPage(body) {
       main { padding: 16px 12px; }
       .card { padding: 18px; border-radius: 14px; }
       .grid2 { grid-template-columns: 1fr; }
+      .pickers { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -1320,12 +1321,11 @@ function simpleTextFromKakaoResponse(response) {
 function inventoryOcrRetryText({ chatUser, mode = "inventory", ocrText = "" }) {
   return [
     "사진은 받았지만 품목을 자동으로 찾지 못했습니다.",
-    "카카오 보안 이미지가 작게/흐리게 전달되면 OCR이 표를 못 읽을 수 있어요.",
     "",
-    "원본 사진으로 다시 처리하려면 아래 링크로 업로드해주세요.",
+    "아래 링크에서 원본 사진을 올려주세요.",
     chatbotUploadUrl(chatUser, mode),
     "",
-    "읽은 내용 일부:",
+    "읽은 내용:",
     ocrText.slice(0, 500) || "-",
   ].join("\n");
 }
@@ -1677,7 +1677,7 @@ async function handleInventoryOcrSession(body, chatUser) {
     if (!isOcrResult && !wantsCurrentOcr) return null;
     if (session.lastError && (isInventoryOcrResultText(text) || wantsCurrentOcr)) {
       return textResponse(
-        `사진을 읽지 못했습니다.\n${session.lastError}\n\n원본 사진으로 다시 처리하려면 아래 링크로 업로드해주세요.\n${chatbotUploadUrl(chatUser, session.mode || "inventory")}`,
+        `사진을 읽지 못했습니다.\n${session.lastError}\n\n아래 링크에서 원본 사진을 올려주세요.\n${chatbotUploadUrl(chatUser, session.mode || "inventory")}`,
         ["재고확인", "취소"]
       );
     }
@@ -2547,15 +2547,16 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
     const safeVendors = JSON.stringify(vendors).replace(/</g, "\\u003c");
     res.status(200).send(htmlPage(`
       <h1>${mode === "purchase" ? "발주확인" : "재고확인"} 사진 업로드</h1>
-      <p>거래명세서 사진을 원본에 가깝게 올리고, OCR 결과를 확인한 뒤 바로 재고와 정산에 반영합니다.</p>
-      <div class="guide">
-        <b>촬영 팁</b>
-        <span>종이가 화면을 꽉 채우게, 그림자 없이, 수평으로 찍어주세요.</span>
+      <p>거래명세서 사진을 올리고, 품목을 확인한 뒤 바로 재고와 정산에 반영합니다.</p>
+      <input id="cameraFile" class="hidden-input" type="file" accept="image/*" capture="environment" />
+      <input id="galleryFile" class="hidden-input" type="file" accept="image/*" />
+      <div class="pickers">
+        <button id="cameraPick" type="button">촬영</button>
+        <button id="galleryPick" class="secondary" type="button">파일 선택</button>
       </div>
-      <input id="file" type="file" accept="image/*" capture="environment" />
+      <p id="fileName" class="small">선택된 파일 없음</p>
       <button id="submit">OCR 읽기</button>
       <button id="reset" class="secondary" type="button">다시 선택</button>
-      <p class="small">카톡 사진 전송보다 이 화면에서 올리는 원본 사진이 훨씬 정확합니다.</p>
       <pre id="result">사진을 선택해주세요.</pre>
 
       <section id="editor" class="editor hidden">
@@ -2579,7 +2580,11 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
         const key = ${safeKey};
         const mode = ${safeMode};
         const vendors = ${safeVendors};
-        const fileInput = document.getElementById("file");
+        const cameraInput = document.getElementById("cameraFile");
+        const galleryInput = document.getElementById("galleryFile");
+        const cameraPick = document.getElementById("cameraPick");
+        const galleryPick = document.getElementById("galleryPick");
+        const fileName = document.getElementById("fileName");
         const button = document.getElementById("submit");
         const resetButton = document.getElementById("reset");
         const saveButton = document.getElementById("save");
@@ -2590,6 +2595,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
         const vendorSelect = document.getElementById("vendor");
         const totalAmount = document.getElementById("totalAmount");
         let rows = [];
+        let selectedFile = null;
 
         function escapeHtml(value) {
           return String(value == null ? "" : value)
@@ -2712,8 +2718,19 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
 
         fillVendors();
 
+        function setSelectedFile(file) {
+          selectedFile = file || null;
+          fileName.textContent = selectedFile ? selectedFile.name : "선택된 파일 없음";
+          result.textContent = selectedFile ? "사진이 선택되었습니다." : "사진을 선택해주세요.";
+        }
+
+        cameraPick.addEventListener("click", () => cameraInput.click());
+        galleryPick.addEventListener("click", () => galleryInput.click());
+        cameraInput.addEventListener("change", () => setSelectedFile(cameraInput.files && cameraInput.files[0]));
+        galleryInput.addEventListener("change", () => setSelectedFile(galleryInput.files && galleryInput.files[0]));
+
         button.addEventListener("click", async () => {
-          const file = fileInput.files && fileInput.files[0];
+          const file = selectedFile;
           if (!file) {
             result.textContent = "사진을 먼저 선택해주세요.";
             return;
@@ -2739,7 +2756,9 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
         });
 
         resetButton.addEventListener("click", () => {
-          fileInput.value = "";
+          cameraInput.value = "";
+          galleryInput.value = "";
+          setSelectedFile(null);
           result.textContent = "사진을 선택해주세요.";
           renderRows([]);
         });
