@@ -261,10 +261,54 @@ async function downloadImageBuffer(url) {
 }
 
 async function recognizeInventoryImage(url) {
-  const { recognize } = require("tesseract.js");
   const buffer = await downloadImageBuffer(url);
+  return recognizeInventoryBuffer(buffer);
+}
+
+async function recognizeInventoryBuffer(buffer) {
+  const { recognize } = require("tesseract.js");
   const result = await recognize(buffer, "kor+eng");
   return String(result?.data?.text ?? "").trim();
+}
+
+function chatbotUploadUrl(chatUser, mode = "inventory") {
+  const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "skyearth-84a78";
+  const base = `https://asia-northeast3-${projectId}.cloudfunctions.net/chatbotInventoryUpload`;
+  const url = new URL(base);
+  url.searchParams.set("key", chatUser.id);
+  url.searchParams.set("mode", mode);
+  return url.toString();
+}
+
+function htmlPage(body) {
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>하늘땅 재고 OCR</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f0e5; color: #22251f; }
+    main { max-width: 560px; margin: 0 auto; padding: 28px 18px; }
+    .card { background: #fffdf8; border: 1px solid #ded5c3; border-radius: 18px; padding: 22px; box-shadow: 0 10px 30px rgba(31,37,24,.08); }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { color: #756e62; line-height: 1.55; }
+    input, button { width: 100%; box-sizing: border-box; min-height: 50px; border-radius: 14px; font-size: 16px; }
+    input { border: 1px solid #d8cfbd; background: #fff; padding: 12px; }
+    button { margin-top: 14px; border: 0; background: #375334; color: white; font-weight: 800; }
+    button:disabled { opacity: .55; }
+    pre { white-space: pre-wrap; background: #eef5e9; border-radius: 14px; padding: 14px; overflow-wrap: anywhere; }
+    .small { font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      ${body}
+    </div>
+  </main>
+</body>
+</html>`;
 }
 
 function hasDateToken(raw) {
@@ -1048,7 +1092,7 @@ async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
   const imageUrl = extractImageUrl(body);
   if (imageUrl) return handleInventoryOcrImage(body, chatUser, mode);
   return textResponse(
-    `${label} 준비하겠습니다.\n거래명세서나 입고 사진을 올려주세요.\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
+    `${label} 준비하겠습니다.\n거래명세서나 입고 사진을 올려주세요.\n\n카카오에서 사진 응답이 멈추면 아래 링크로 업로드해주세요.\n${chatbotUploadUrl(chatUser, mode)}\n\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
     ["취소"]
   );
 }
@@ -1101,6 +1145,45 @@ async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
     ? "맞으면 '확인'이라고 보내주세요. 아니면 '취소'라고 보내주세요."
     : "거래처를 못 찾았습니다. '거래처 거래처명'을 먼저 보내고, 맞으면 '확인'이라고 보내주세요.";
   return textResponse(`OCR 결과입니다.\n${inventoryOcrSummary(session)}\n\n${nextGuide}`, vendor ? ["확인", "취소"] : ["거래처 목록", "취소"]);
+}
+
+async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", imageUrl = "", ocrText = "" }) {
+  const rows = parseInventoryOcrRows(ocrText);
+  if (rows.length === 0) {
+    await chatbotSessionRef(chatUser).set({
+      type: "inventoryOcr",
+      mode,
+      status: "awaiting_image",
+      lastOcrText: ocrText.slice(0, 1500),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return {
+      ok: false,
+      text: `품목을 찾지 못했습니다.\n다시 찍어주세요.\n\n읽은 내용 일부:\n${ocrText.slice(0, 500) || "-"}`,
+    };
+  }
+  const vendors = await listVendors();
+  const vendor = detectVendorFromText(ocrText, vendors);
+  const session = {
+    type: "inventoryOcr",
+    mode,
+    status: "awaiting_confirm",
+    imageUrl,
+    ocrText: ocrText.slice(0, 4000),
+    rows,
+    vendorId: vendor ? Number(vendor.id) : 0,
+    vendorName: vendor?.name ?? "",
+    requestedBy: chatUser.name,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  await chatbotSessionRef(chatUser).set(session, { merge: true });
+  const nextGuide = vendor
+    ? "카톡으로 돌아가 '확인'이라고 보내면 실제 재고에 반영됩니다."
+    : "거래처를 못 찾았습니다. 카톡에서 '거래처 거래처명'을 보내고, 맞으면 '확인'이라고 보내주세요.";
+  return {
+    ok: true,
+    text: `OCR 결과입니다.\n${inventoryOcrSummary(session)}\n\n${nextGuide}`,
+  };
 }
 
 async function applyInventoryOcrSession(session, chatUser) {
@@ -2036,6 +2119,126 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (r
   } catch (error) {
     console.error("kakaoSkill failed", error);
     res.status(200).json(failResponse("처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."));
+  }
+});
+
+exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (req, res) => {
+  setCors(res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  const key = String(req.query.key || req.body?.key || "").trim();
+  const mode = String(req.query.mode || req.body?.mode || "inventory").trim() === "purchase" ? "purchase" : "inventory";
+  const chatUser = await getChatUser(key);
+  if (!chatUser) {
+    const message = "챗봇 사용 권한이 없거나 세션이 만료되었습니다. 카톡에서 재고확인을 다시 입력해주세요.";
+    if (req.method === "GET") {
+      res.status(403).send(htmlPage(`<h1>권한 확인 필요</h1><p>${message}</p>`));
+    } else {
+      res.status(403).json({ ok: false, message });
+    }
+    return;
+  }
+
+  if (req.method === "GET") {
+    const safeKey = JSON.stringify(key);
+    const safeMode = JSON.stringify(mode);
+    res.status(200).send(htmlPage(`
+      <h1>${mode === "purchase" ? "발주확인" : "재고확인"} 사진 업로드</h1>
+      <p>거래명세서나 입고 사진을 올려주세요. 처리 후 카톡으로 돌아가 <b>확인</b>이라고 보내면 실제 재고에 반영됩니다.</p>
+      <input id="file" type="file" accept="image/*" capture="environment" />
+      <button id="submit">사진 OCR 읽기</button>
+      <p class="small">사진은 OCR 처리용으로만 사용되며, 결과는 챗봇 확인 세션에 저장됩니다.</p>
+      <pre id="result">사진을 선택해주세요.</pre>
+      <script>
+        const key = ${safeKey};
+        const mode = ${safeMode};
+        const fileInput = document.getElementById("file");
+        const button = document.getElementById("submit");
+        const result = document.getElementById("result");
+        function readCompressed(file) {
+          return new Promise((resolve, reject) => {
+            const image = new Image();
+            const reader = new FileReader();
+            reader.onerror = reject;
+            reader.onload = () => { image.src = reader.result; };
+            image.onerror = reject;
+            image.onload = () => {
+              const max = 1800;
+              const scale = Math.min(1, max / Math.max(image.width, image.height));
+              const canvas = document.createElement("canvas");
+              canvas.width = Math.max(1, Math.round(image.width * scale));
+              canvas.height = Math.max(1, Math.round(image.height * scale));
+              canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+              canvas.toBlob((blob) => {
+                const out = new FileReader();
+                out.onerror = reject;
+                out.onload = () => resolve(out.result);
+                out.readAsDataURL(blob);
+              }, "image/jpeg", 0.82);
+            };
+            reader.readAsDataURL(file);
+          });
+        }
+        button.addEventListener("click", async () => {
+          const file = fileInput.files && fileInput.files[0];
+          if (!file) {
+            result.textContent = "사진을 먼저 선택해주세요.";
+            return;
+          }
+          button.disabled = true;
+          result.textContent = "사진을 읽고 있습니다. 잠시만 기다려주세요.";
+          try {
+            const imageData = await readCompressed(file);
+            const response = await fetch(location.href, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ key, mode, imageData }),
+            });
+            const data = await response.json();
+            result.textContent = data.message || "처리했습니다. 카톡으로 돌아가 확인이라고 보내주세요.";
+          } catch (error) {
+            result.textContent = "처리하지 못했습니다. 사진을 더 선명하게 다시 올려주세요.";
+          } finally {
+            button.disabled = false;
+          }
+        });
+      </script>
+    `));
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).json({ ok: false, message: "GET 또는 POST 요청만 사용할 수 있습니다." });
+    return;
+  }
+
+  try {
+    const body = req.body && typeof req.body === "object"
+      ? req.body
+      : JSON.parse(req.rawBody?.toString("utf8") || "{}");
+    const imageData = String(body.imageData || "");
+    const match = imageData.match(/^data:image\/[a-z0-9.+-]+;base64,(.+)$/i);
+    if (!match) {
+      res.status(400).json({ ok: false, message: "이미지 데이터를 찾지 못했습니다." });
+      return;
+    }
+    const buffer = Buffer.from(match[1], "base64");
+    if (buffer.length > 8 * 1024 * 1024) {
+      res.status(413).json({ ok: false, message: "이미지는 8MB 이하로 올려주세요." });
+      return;
+    }
+    const ocrText = await recognizeInventoryBuffer(buffer);
+    const result = await saveInventoryOcrTextToSession({ chatUser, mode, imageUrl: "browser-upload", ocrText });
+    res.status(200).json({
+      ok: result.ok,
+      message: `${result.text}\n\n카톡으로 돌아가 ${result.ok ? "'확인'" : "'재고확인'"}이라고 보내주세요.`,
+    });
+  } catch (error) {
+    console.error("chatbotInventoryUpload failed", error);
+    res.status(200).json({ ok: false, message: "사진을 읽지 못했습니다. 더 선명하게 다시 촬영해주세요." });
   }
 });
 
