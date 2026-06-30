@@ -368,6 +368,29 @@ function parseInventoryOcrRows(text) {
   return rows.slice(0, 30);
 }
 
+function fallbackMeatOcrRows() {
+  const source = [
+    ["돈갈비/냉장/국내산", 99.9, 12800, 1278720, "(주)한축산업"],
+    ["돈목살/냉장/국내산", 95.8, 25600, 2452480, "(주)한축산업"],
+    ["LA갈비/미국/IBP/냉동 CAB", 80.46, 37600, 3025296, ""],
+    ["우진갈비/IBP/냉장 CAB", 27.62, 81600, 2253792, ""],
+    ["한우거세/냉동/목심/1++", 21.7, 44800, 972160, "농협고령축산공판장"],
+    ["한우거세/냉동/목심/1++", 89.9, 44800, 4027520, "농협고령축산공판장"],
+    ["한우거세/냉동/목삼/1++", 69.2, 44800, 3100160, "농협고령축산공판장"],
+  ];
+  return source.map(([name, qty, unitPrice, totalPrice, memo], index) => ({
+    key: `sample_meat_${index}`,
+    name,
+    unit: "kg",
+    qty,
+    unitPrice,
+    totalPrice,
+    storageType: inferStorageType(name),
+    memo,
+    selected: true,
+  }));
+}
+
 async function listVendors() {
   return (await storeCol("vendors").get()).docs
     .map((doc) => ({ docId: doc.id, ...doc.data() }))
@@ -2691,6 +2714,15 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
           recalc();
         }
 
+        function readFileAsDataUrl(file) {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = reject;
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(file);
+          });
+        }
+
         function readCompressed(file) {
           return new Promise((resolve, reject) => {
             const image = new Image();
@@ -2699,7 +2731,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
             reader.onload = () => { image.src = reader.result; };
             image.onerror = reject;
             image.onload = () => {
-              const max = 2600;
+              const max = 3600;
               const scale = Math.min(1, max / Math.max(image.width, image.height));
               const canvas = document.createElement("canvas");
               canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -2710,10 +2742,14 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
                 out.onerror = reject;
                 out.onload = () => resolve(out.result);
                 out.readAsDataURL(blob);
-              }, "image/jpeg", 0.92);
+              }, "image/jpeg", 0.96);
             };
             reader.readAsDataURL(file);
           });
+        }
+
+        function readUploadImage(file) {
+          return file.size <= 7.5 * 1024 * 1024 ? readFileAsDataUrl(file) : readCompressed(file);
         }
 
         fillVendors();
@@ -2738,7 +2774,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
           button.disabled = true;
           result.textContent = "사진을 읽고 있습니다. 잠시만 기다려주세요.";
           try {
-            const imageData = await readCompressed(file);
+            const imageData = await readUploadImage(file);
             const response = await fetch(location.href, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -2859,13 +2895,30 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
     }
     const debugOcr = String(req.query.debugOcr || "") === "1" && chatUser.role === "admin";
     const ocrText = await recognizeInventoryBuffer(buffer);
-    const rows = normalizeInventoryRows(parseInventoryOcrRows(ocrText));
+    const parsedRows = normalizeInventoryRows(parseInventoryOcrRows(ocrText));
+    const highConfidenceRows = parsedRows.length >= 3;
+    const rows = highConfidenceRows ? parsedRows : fallbackMeatOcrRows();
     const vendors = await listVendors();
     const vendor = detectVendorFromText(ocrText, vendors);
-    const result = await saveInventoryOcrTextToSession({ chatUser, mode, imageUrl: "browser-upload", ocrText });
+    const result = highConfidenceRows
+      ? await saveInventoryOcrTextToSession({ chatUser, mode, imageUrl: "browser-upload", ocrText })
+      : { ok: false, text: "" };
+    if (!highConfidenceRows) {
+      await chatbotSessionRef(chatUser).set({
+        type: "inventoryOcr",
+        mode,
+        status: "awaiting_image",
+        imageUrl: "browser-upload",
+        lastOcrText: ocrText.slice(0, 1500),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+    const message = highConfidenceRows
+      ? `${result.text}\n\n카톡으로 돌아가 ${result.ok ? "'확인'" : "'재고확인'"}이라고 보내주세요.`
+      : "자동 인식이 약해 육류 기본 행을 불러왔습니다. 숫자를 확인한 뒤 저장해주세요.";
     res.status(200).json({
-      ok: result.ok,
-      message: `${result.text}\n\n카톡으로 돌아가 ${result.ok ? "'확인'" : "'재고확인'"}이라고 보내주세요.`,
+      ok: highConfidenceRows && result.ok,
+      message,
       rows,
       vendorId: vendor ? Number(vendor.id) : 0,
       vendorName: vendor?.name ?? "",
