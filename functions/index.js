@@ -131,6 +131,142 @@ function parseNumber(raw, fallback = 0) {
   return found ? Number(found[0]) : fallback;
 }
 
+function parseDecimal(raw, fallback = 0) {
+  const found = String(raw ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  return found ? Number(found[0]) : fallback;
+}
+
+function onlyDigits(value = "") {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function compactText(value = "") {
+  return String(value ?? "").replace(/\s/g, "").toLowerCase();
+}
+
+function chatbotSessionRef(chatUser) {
+  return storeDoc("chatbotSessions", chatUser.id);
+}
+
+function collectStrings(value, out = []) {
+  if (typeof value === "string") {
+    out.push(value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectStrings(item, out));
+    return out;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => collectStrings(item, out));
+  }
+  return out;
+}
+
+function extractImageUrl(body) {
+  const direct = paramOf(body, [
+    "image", "imageUrl", "image_url", "fileUrl", "file_url",
+    "photo", "photoUrl", "사진", "이미지", "파일",
+  ]);
+  const strings = [direct, ...collectStrings(body)].filter(Boolean);
+  return strings.find((value) => /^https?:\/\/.+\.(?:png|jpe?g|webp)(?:\?|$)/i.test(value))
+    ?? strings.find((value) => /^https?:\/\/.+(?:image|photo|thumbnail|kakao|daumcdn|file)/i.test(value))
+    ?? "";
+}
+
+function cleanOcrItemName(raw) {
+  return String(raw ?? "")
+    .replace(/^\d+\s*/, "")
+    .replace(/\s+/g, " ")
+    .replace(/[|[\]{}]/g, "")
+    .trim();
+}
+
+function inferStorageType(text) {
+  if (/냉동|생동|frozen/i.test(text)) return "냉동";
+  if (/실온|상온|room/i.test(text)) return "실온";
+  if (/냉장|냉징|fresh/i.test(text)) return "냉장";
+  return "냉장";
+}
+
+function parseInventoryOcrRows(text) {
+  const lines = String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const rows = [];
+  lines.forEach((line, index) => {
+    if (!/(kg|㎏|개|박스|box|돈|갈비|목살|거세|우진|품목)/i.test(line)) return;
+    if (/품목|합계|거래명세|사업자|공급|전화|주소|비고|잔액/i.test(line)) return;
+    const unitMatch = line.match(/\b(kg|㎏|개|박스|box|BOX|병|팩|봉)\b/i);
+    const unit = unitMatch ? (unitMatch[1].toLowerCase() === "box" ? "박스" : unitMatch[1].replace("㎏", "kg")) : "kg";
+    const unitIndex = unitMatch?.index ?? -1;
+    if (unitIndex <= 0) return;
+    const name = cleanOcrItemName(line.slice(0, unitIndex));
+    const afterUnit = line.slice(unitIndex + unit.length);
+    const numbers = afterUnit.match(/\d[\d,.]*/g)?.map((value) => parseDecimal(value)).filter((n) => n > 0) ?? [];
+    if (!name || numbers.length < 1) return;
+    const qty = numbers[0];
+    const unitPrice = numbers[1] ?? 0;
+    const totalPrice = numbers[2] ?? Math.round(qty * unitPrice);
+    rows.push({
+      key: `${Date.now()}_${index}`,
+      name,
+      unit,
+      qty,
+      unitPrice,
+      totalPrice,
+      storageType: inferStorageType(name),
+      memo: line,
+      selected: true,
+    });
+  });
+  return rows.slice(0, 30);
+}
+
+async function listVendors() {
+  return (await storeCol("vendors").get()).docs
+    .map((doc) => ({ docId: doc.id, ...doc.data() }))
+    .filter((vendor) => vendor.active !== false);
+}
+
+function detectVendorFromText(text, vendors) {
+  const textDigits = onlyDigits(text);
+  const compact = compactText(text);
+  return vendors.find((vendor) => {
+    const businessNumber = onlyDigits(vendor.businessNumber);
+    return businessNumber.length >= 5 && textDigits.includes(businessNumber);
+  }) ?? vendors.find((vendor) => {
+    const name = compactText(vendor.name);
+    return name.length >= 2 && compact.includes(name);
+  }) ?? null;
+}
+
+async function downloadImageBuffer(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`이미지 다운로드 실패: ${response.status}`);
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType && !/^image\//i.test(contentType)) {
+      throw new Error("이미지 파일만 OCR 처리할 수 있습니다.");
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > 8 * 1024 * 1024) throw new Error("이미지는 8MB 이하로 올려주세요.");
+    return buffer;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function recognizeInventoryImage(url) {
+  const { recognize } = require("tesseract.js");
+  const buffer = await downloadImageBuffer(url);
+  const result = await recognize(buffer, "kor+eng");
+  return String(result?.data?.text ?? "").trim();
+}
+
 function hasDateToken(raw) {
   return /오늘|내일|어제|모레|\d{4}[./-]\d{1,2}[./-]\d{1,2}|\b\d{1,2}[./-]\d{1,2}\b|\d{1,2}\s*월\s*\d{1,2}\s*일?/.test(String(raw ?? ""));
 }
@@ -450,6 +586,8 @@ function classify(body) {
     "handover.update",
     "handover.delete",
     "payroll.summary",
+    "inventory.ocr.start",
+    "purchase.ocr.start",
     "vendor.list",
     "vendor.create",
     "vendor.update",
@@ -464,6 +602,8 @@ function classify(body) {
 
   const text = fullText(body).toLowerCase();
   if (/도움|메뉴|help|시작/.test(text)) return "help";
+  if (/재고\s*(확인|입고|ocr|사진|촬영)/.test(text)) return "inventory.ocr.start";
+  if (/발주\s*(확인|입고|ocr|사진|촬영)/.test(text)) return "purchase.ocr.start";
   if (/거래처/.test(text) && /등록|추가|작성/.test(text)) return "vendor.create";
   if (/거래처/.test(text) && /수정|변경/.test(text)) return "vendor.update";
   if (/거래처/.test(text) && /삭제/.test(text)) return "vendor.delete";
@@ -875,6 +1015,248 @@ async function handleVendorList(chatUser) {
     .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
   const lines = docs.slice(0, 15).map((v) => `${v.id}. ${v.name} / ${v.businessNumber || "-"} / ${v.phone || "-"}`);
   return textResponse(`거래처 ${docs.length}곳\n${lines.join("\n") || "-"}`, ["레시피", "오늘 현황"]);
+}
+
+function inventoryOcrSummary(session) {
+  const rows = Array.isArray(session.rows) ? session.rows : [];
+  const total = rows.reduce((sum, row) => sum + Number(row.totalPrice || 0), 0);
+  const lines = rows.slice(0, 8).map((row, index) =>
+    `${index + 1}. ${row.name} ${row.qty}${row.unit} / 단가 ${Number(row.unitPrice || 0).toLocaleString()}원`
+  );
+  if (rows.length > 8) lines.push(`외 ${rows.length - 8}개`);
+  return [
+    session.vendorName ? `거래처: ${session.vendorName}` : "거래처: 미확인",
+    `품목: ${rows.length}개`,
+    `금액: ${Math.round(total).toLocaleString()}원`,
+    "",
+    ...lines,
+  ].join("\n");
+}
+
+async function handleInventoryOcrStart(body, chatUser, mode = "inventory") {
+  const denied = requireOps(chatUser);
+  if (denied) return failResponse(denied);
+  await chatbotSessionRef(chatUser).set({
+    type: "inventoryOcr",
+    mode,
+    status: "awaiting_image",
+    requestedBy: chatUser.name,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  const label = mode === "purchase" ? "발주확인" : "재고확인";
+  const imageUrl = extractImageUrl(body);
+  if (imageUrl) return handleInventoryOcrImage(body, chatUser, mode);
+  return textResponse(
+    `${label} 준비하겠습니다.\n거래명세서나 입고 사진을 올려주세요.\n사진에서 거래처명/사업자번호가 보이면 자동으로 거래처를 맞춥니다.`,
+    ["취소"]
+  );
+}
+
+async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
+  const denied = requireOps(chatUser);
+  if (denied) return failResponse(denied);
+  const imageUrl = extractImageUrl(body);
+  if (!imageUrl) {
+    return textResponse("사진 URL을 찾지 못했습니다.\n이미지를 다시 올려주세요.", ["취소"]);
+  }
+  let ocrText = "";
+  try {
+    ocrText = await recognizeInventoryImage(imageUrl);
+  } catch (error) {
+    console.error("inventory OCR failed", error);
+    return failResponse("사진을 읽지 못했습니다. 글자가 선명하게 보이도록 다시 촬영해주세요.");
+  }
+  const rows = parseInventoryOcrRows(ocrText);
+  if (rows.length === 0) {
+    await chatbotSessionRef(chatUser).set({
+      type: "inventoryOcr",
+      mode,
+      status: "awaiting_image",
+      lastOcrText: ocrText.slice(0, 1500),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return textResponse(
+      `품목을 찾지 못했습니다.\n다시 찍어주세요.\n\n읽은 내용 일부:\n${ocrText.slice(0, 500) || "-"}`,
+      ["취소"]
+    );
+  }
+
+  const vendors = await listVendors();
+  const vendor = detectVendorFromText(ocrText, vendors);
+  const session = {
+    type: "inventoryOcr",
+    mode,
+    status: "awaiting_confirm",
+    imageUrl,
+    ocrText: ocrText.slice(0, 4000),
+    rows,
+    vendorId: vendor ? Number(vendor.id) : 0,
+    vendorName: vendor?.name ?? "",
+    requestedBy: chatUser.name,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  await chatbotSessionRef(chatUser).set(session, { merge: true });
+  const nextGuide = vendor
+    ? "맞으면 '확인'이라고 보내주세요. 아니면 '취소'라고 보내주세요."
+    : "거래처를 못 찾았습니다. '거래처 거래처명'을 먼저 보내고, 맞으면 '확인'이라고 보내주세요.";
+  return textResponse(`OCR 결과입니다.\n${inventoryOcrSummary(session)}\n\n${nextGuide}`, vendor ? ["확인", "취소"] : ["거래처 목록", "취소"]);
+}
+
+async function applyInventoryOcrSession(session, chatUser) {
+  const rows = (Array.isArray(session.rows) ? session.rows : [])
+    .filter((row) => row && row.selected !== false && row.name && Number(row.qty) > 0);
+  if (rows.length === 0) return failResponse("반영할 품목이 없습니다. 사진을 다시 올려주세요.");
+  const vendorId = Number(session.vendorId || 0);
+  if (!vendorId) {
+    return textResponse("거래처가 필요합니다.\n'거래처 거래처명'으로 먼저 거래처를 지정해주세요.", ["거래처 목록", "취소"]);
+  }
+  const vendorSnap = await storeDoc("vendors", String(vendorId)).get();
+  if (!vendorSnap.exists) return failResponse("선택된 거래처를 찾지 못했습니다. 거래처를 다시 지정해주세요.");
+  const vendor = { id: vendorId, ...vendorSnap.data() };
+
+  const inventorySnap = await storeCol("inventoryItems").get();
+  const inventory = inventorySnap.docs.map((doc) => ({ docId: doc.id, ...doc.data() }));
+  let nextItemId = Math.max(0, ...inventory.map((item) => Number(item.id || item.docId || 0))) + 1;
+  const orderId = Date.now();
+  const nowIso = new Date().toISOString();
+  const batch = db.batch();
+  const purchaseItems = [];
+
+  rows.forEach((row, index) => {
+    const name = String(row.name).trim();
+    const unit = String(row.unit || "개").trim();
+    const qty = Number(row.qty) || 0;
+    const unitPrice = Number(row.unitPrice) || 0;
+    const existing = inventory.find((item) =>
+      Number(item.vendorId || 0) === vendorId
+      && String(item.name || "").trim() === name
+      && String(item.unit || "").trim() === unit
+    );
+    const itemId = existing ? Number(existing.id || existing.docId) : nextItemId++;
+    const beforeQty = Number(existing?.currentQty || 0);
+    const afterQty = beforeQty + qty;
+    const itemRef = storeDoc("inventoryItems", String(itemId));
+    const itemData = existing ? {
+      ...existing,
+      currentQty: afterQty,
+      unitPrice: unitPrice || Number(existing.unitPrice || 0),
+      defaultOrderQty: Number(existing.defaultOrderQty || 0) || qty,
+      memo: row.memo || existing.memo || "",
+      active: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    } : {
+      id: itemId,
+      vendorId,
+      name,
+      category: "육류",
+      storageType: row.storageType || "냉장",
+      unit,
+      currentQty: qty,
+      minQty: 0,
+      defaultOrderQty: qty,
+      unitPrice,
+      memo: row.memo || "",
+      active: true,
+      createdAt: nowIso,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    delete itemData.docId;
+    batch.set(itemRef, itemData, { merge: true });
+    const totalPrice = Number(row.totalPrice || Math.round(qty * unitPrice));
+    purchaseItems.push({
+      inventoryItemId: itemId,
+      name,
+      qty,
+      unit,
+      unitPrice,
+      totalPrice,
+    });
+    const logId = `chatbot_${orderId}_${itemId}_${index}`;
+    batch.set(storeDoc("stockLogs", logId), {
+      id: logId,
+      inventoryItemId: itemId,
+      type: "in",
+      qty,
+      beforeQty,
+      afterQty,
+      memo: `챗봇 OCR 입고 / ${vendor.name}`,
+      createdAt: nowIso,
+      createdBy: chatUser.name,
+      purchaseOrderId: orderId,
+    });
+  });
+
+  const totalAmount = purchaseItems.reduce((sum, item) => sum + Number(item.totalPrice || 0), 0);
+  batch.set(storeDoc("purchaseOrders", String(orderId)), {
+    id: orderId,
+    vendorId,
+    vendorName: vendor.name || session.vendorName || "",
+    status: "received",
+    items: purchaseItems,
+    totalAmount,
+    memo: `챗봇 OCR ${session.mode === "purchase" ? "발주확인" : "재고확인"} 입고`,
+    createdAt: nowIso,
+    orderedAt: nowIso,
+    receivedAt: nowIso,
+    createdBy: chatUser.name,
+    settlementStatus: "unsettled",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await batch.commit();
+  await chatbotSessionRef(chatUser).delete();
+  return textResponse(
+    `재고에 반영했습니다.\n거래처: ${vendor.name}\n품목: ${purchaseItems.length}개\n입고금액: ${Math.round(totalAmount).toLocaleString()}원\n정산탭에 미정산 입고 건으로 잡혔습니다.`,
+    ["재고확인", "발주확인", "오늘 현황"]
+  );
+}
+
+async function handleInventoryOcrSession(body, chatUser) {
+  const snap = await chatbotSessionRef(chatUser).get();
+  if (!snap.exists) return null;
+  const session = snap.data() || {};
+  if (session.type !== "inventoryOcr") return null;
+  const text = utteranceOf(body).trim();
+  if (/^(재고확인|발주확인)$/.test(text)) return null;
+  if (/취소|중단|그만/i.test(text)) {
+    await chatbotSessionRef(chatUser).delete();
+    return textResponse("재고 OCR 작업을 취소했습니다.", ["오늘 현황"]);
+  }
+  const imageUrl = extractImageUrl(body);
+  if (imageUrl) return handleInventoryOcrImage(body, chatUser, session.mode || "inventory");
+
+  if (session.status === "awaiting_image") {
+    return textResponse("사진을 올려주세요.\n거래명세서나 입고 내역이 보이면 됩니다.", ["취소"]);
+  }
+
+  const vendorText = text.match(/^거래처\s+(.+)$/)?.[1] || paramOf(body, ["vendor", "거래처"]);
+  if (/^거래처\s*목록$/.test(text)) {
+    const vendors = await listVendors();
+    const lines = vendors
+      .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
+      .slice(0, 12)
+      .map((vendor) => `${vendor.id}. ${vendor.name} / ${vendor.businessNumber || "-"} / ${vendor.phone || "-"}`);
+    return textResponse(`거래처 목록\n${lines.join("\n") || "-"}`, ["취소"]);
+  }
+  if (vendorText) {
+    const vendor = detectVendorFromText(vendorText, await listVendors());
+    if (!vendor) return textResponse("거래처를 찾지 못했습니다. 거래처명을 다시 입력해주세요.", ["거래처 목록", "취소"]);
+    const next = {
+      ...session,
+      vendorId: Number(vendor.id),
+      vendorName: vendor.name,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await chatbotSessionRef(chatUser).set(next, { merge: true });
+    return textResponse(`거래처를 ${vendor.name}으로 지정했습니다.\n${inventoryOcrSummary(next)}\n\n맞으면 '확인'이라고 보내주세요.`, ["확인", "취소"]);
+  }
+
+  if (/^확인$|^저장$|^반영$/.test(text)) {
+    const denied = requireOps(chatUser);
+    return denied ? failResponse(denied) : applyInventoryOcrSession(session, chatUser);
+  }
+
+  return textResponse(`확인 대기 중입니다.\n${inventoryOcrSummary(session)}\n\n저장하려면 '확인', 취소하려면 '취소'라고 보내주세요.`, ["확인", "취소"]);
 }
 
 async function handleVendorWrite(body, chatUser, mode) {
@@ -1583,6 +1965,8 @@ async function routeAction(action, body, chatUser) {
     case "handover.update": return handleNoticeWrite(body, chatUser, "handover", "update");
     case "handover.delete": return handleNoticeWrite(body, chatUser, "handover", "delete");
     case "payroll.summary": return handlePayrollSummary(body, chatUser);
+    case "inventory.ocr.start": return handleInventoryOcrStart(body, chatUser, "inventory");
+    case "purchase.ocr.start": return handleInventoryOcrStart(body, chatUser, "purchase");
     case "vendor.list": return handleVendorList(chatUser);
     case "vendor.create": return handleVendorWrite(body, chatUser, "create");
     case "vendor.update": return handleVendorWrite(body, chatUser, "update");
@@ -1604,13 +1988,14 @@ async function routeAction(action, body, chatUser) {
         "예: 공지 등록 오늘 단체 예약 세팅 확인",
         "예: 전달사항 등록 주방 재료 입고 확인",
         "급여 요약 / 비밀번호 입력",
+        "재고확인 / 발주확인: 사진 OCR 후 확인하면 재고와 정산에 반영",
         "거래처 목록 / 거래처 등록 / 거래처 수정 / 거래처 삭제",
         "레시피 목록 / 레시피 등록 / 레시피 수정 / 레시피 삭제",
       ].join("\n"), ["오늘 현황", "오늘 예약", "오늘 근무표"]);
   }
 }
 
-exports.kakaoSkill = onRequest({ timeoutSeconds: 10, memory: "256MiB" }, async (req, res) => {
+exports.kakaoSkill = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (req, res) => {
   try {
     if (req.method !== "POST") {
       res.status(405).json(textResponse("POST 요청만 사용할 수 있습니다."));
@@ -1636,6 +2021,12 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 10, memory: "256MiB" }, async (
         `Firebase 경로: stores/${STORE_ID}/chatbotUsers/{키}`,
         "필드 예시: name, role(admin/manager/staff), employeeId, active:true",
       ].join("\n")));
+      return;
+    }
+
+    const sessionResponse = await handleInventoryOcrSession(body, chatUser);
+    if (sessionResponse) {
+      res.status(200).json(sessionResponse);
       return;
     }
 
