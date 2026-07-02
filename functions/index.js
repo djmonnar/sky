@@ -1440,6 +1440,21 @@ function inventoryOcrRetryText({ chatUser, mode = "inventory", ocrText = "" }) {
   ].join("\n");
 }
 
+async function saveLowConfidenceOcrSession({ chatUser, mode = "inventory", imageUrl = "", ocrText = "" }) {
+  await chatbotSessionRef(chatUser).set({
+    type: "inventoryOcr",
+    mode,
+    status: "awaiting_image",
+    imageUrl,
+    lastOcrText: ocrText.slice(0, 1500),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return {
+    ok: false,
+    text: inventoryOcrRetryText({ chatUser, mode, ocrText }),
+  };
+}
+
 function isInventoryOcrResultText(text) {
   return /^(결과|결과\s*확인|결과보기|확인|재분석|다시\s*분석|분석|ocr|OCR)$/.test(String(text ?? "").trim());
 }
@@ -1513,19 +1528,9 @@ async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
     return failResponse("사진을 읽지 못했습니다. 글자가 선명하게 보이도록 다시 촬영해주세요.");
   }
   const rows = parseInventoryOcrRows(ocrText);
-  if (rows.length === 0) {
-    await chatbotSessionRef(chatUser).set({
-      type: "inventoryOcr",
-      mode,
-      status: "awaiting_image",
-      imageUrl,
-      lastOcrText: ocrText.slice(0, 1500),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    return textResponse(
-      inventoryOcrRetryText({ chatUser, mode, ocrText }),
-      ["재고확인", "취소"]
-    );
+  if (rows.length < 3) {
+    const result = await saveLowConfidenceOcrSession({ chatUser, mode, imageUrl, ocrText });
+    return textResponse(result.text, ["재고확인", "취소"]);
   }
 
   const vendors = await listVendors();
@@ -1551,19 +1556,8 @@ async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
 
 async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", imageUrl = "", ocrText = "" }) {
   const rows = parseInventoryOcrRows(ocrText);
-  if (rows.length === 0) {
-    await chatbotSessionRef(chatUser).set({
-      type: "inventoryOcr",
-      mode,
-      status: "awaiting_image",
-      imageUrl,
-      lastOcrText: ocrText.slice(0, 1500),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    return {
-      ok: false,
-      text: inventoryOcrRetryText({ chatUser, mode, ocrText }),
-    };
+  if (rows.length < 3) {
+    return saveLowConfidenceOcrSession({ chatUser, mode, imageUrl, ocrText });
   }
   const vendors = await listVendors();
   const vendor = detectVendorFromText(ocrText, vendors);
