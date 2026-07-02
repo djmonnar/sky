@@ -495,6 +495,60 @@ function parseInventoryOcrRows(text) {
   return rows.slice(0, 30);
 }
 
+function inventoryMoneyValue(raw) {
+  return Number(String(raw ?? "").replace(/[^\d]/g, "")) || 0;
+}
+
+function extractInventoryDocumentTotal(text) {
+  const lines = String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const candidates = [];
+  lines.forEach((line, index) => {
+    if (/잔액|전잔액|금일|계좌|은행|사업자|등록번호|전화|팩스/i.test(line)) return;
+    const matches = line.matchAll(/(?:₩|￦|W|KRW)?\s*(\d{1,3}(?:,\d{3})+)(?:\s*원)?/gi);
+    for (const match of matches) {
+      const value = inventoryMoneyValue(match[1]);
+      if (value < 10000 || value > 1000000000) continue;
+      const explicit = /합계|총액|금액|VAT|공급가액/i.test(line);
+      candidates.push({ value, index, explicit });
+    }
+  });
+  const explicitCandidates = candidates.filter((candidate) => candidate.explicit);
+  const pool = explicitCandidates.length ? explicitCandidates : candidates;
+  if (!pool.length) return 0;
+  return pool
+    .slice()
+    .sort((a, b) => b.value - a.value || b.index - a.index)[0].value;
+}
+
+function inventoryRowsTotal(rows) {
+  return Math.round((Array.isArray(rows) ? rows : [])
+    .reduce((sum, row) => sum + Number(row.totalPrice || 0), 0));
+}
+
+function inventoryTotalCheck(rows, ocrText) {
+  const parsedTotal = inventoryRowsTotal(rows);
+  const documentTotal = extractInventoryDocumentTotal(ocrText);
+  const difference = parsedTotal - documentTotal;
+  return {
+    documentTotal,
+    parsedTotal,
+    difference,
+    matched: !documentTotal || Math.abs(difference) <= 10,
+  };
+}
+
+function inventoryTotalCheckLine(totalCheck) {
+  if (!totalCheck || !Number(totalCheck.documentTotal)) return "";
+  const doc = Number(totalCheck.documentTotal).toLocaleString();
+  const parsed = Number(totalCheck.parsedTotal || 0).toLocaleString();
+  const diff = Math.abs(Number(totalCheck.difference || 0)).toLocaleString();
+  if (totalCheck.matched) return `명세서 합계 확인: ${doc}원`;
+  return `주의: 명세서 합계 ${doc}원 / 인식 합계 ${parsed}원 / 차이 ${diff}원`;
+}
+
 function fallbackMeatOcrRows() {
   const source = [
     ["돈갈비/냉장/국내산", 99.9, 12800, 1278720, "(주)한축산업"],
@@ -653,6 +707,9 @@ function htmlPage(body) {
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .total { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 14px; border-radius: 14px; background: #eef5e9; }
     .total b { font-size: 22px; color: #243b22; }
+    .check { margin-top: 10px; padding: 12px 14px; border-radius: 14px; font-size: 14px; line-height: 1.45; }
+    .check.ok { background: #eef5e9; color: #31502d; }
+    .check.warn { background: #f9e2df; color: #934036; font-weight: 800; }
     @media (max-width: 420px) {
       main { padding: 16px 12px; }
       .card { padding: 18px; border-radius: 14px; }
@@ -1424,14 +1481,19 @@ async function handleVendorList(chatUser) {
 function inventoryOcrSummary(session) {
   const rows = Array.isArray(session.rows) ? session.rows : [];
   const total = rows.reduce((sum, row) => sum + Number(row.totalPrice || 0), 0);
+  const checkLine = inventoryTotalCheckLine(session.totalCheck);
   const lines = rows.slice(0, 8).map((row, index) =>
     `${index + 1}. ${row.name} ${row.qty}${row.unit} / 단가 ${Number(row.unitPrice || 0).toLocaleString()}원`
   );
   if (rows.length > 8) lines.push(`외 ${rows.length - 8}개`);
-  return [
+  const summary = [
     session.vendorName ? `거래처: ${session.vendorName}` : "거래처: 미확인",
     `품목: ${rows.length}개`,
     `금액: ${Math.round(total).toLocaleString()}원`,
+  ];
+  if (checkLine) summary.push(checkLine);
+  return [
+    ...summary,
     "",
     ...lines,
   ].join("\n");
@@ -1575,6 +1637,7 @@ async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
 
   const vendors = await listVendors();
   const vendor = detectVendorFromText(ocrText, vendors);
+  const totalCheck = inventoryTotalCheck(rows, ocrText);
   const session = {
     type: "inventoryOcr",
     mode,
@@ -1582,6 +1645,7 @@ async function handleInventoryOcrImage(body, chatUser, mode = "inventory") {
     imageUrl,
     ocrText: ocrText.slice(0, 4000),
     rows,
+    totalCheck,
     vendorId: vendor ? Number(vendor.id) : 0,
     vendorName: vendor?.name ?? "",
     requestedBy: chatUser.name,
@@ -1601,6 +1665,7 @@ async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", ima
   }
   const vendors = await listVendors();
   const vendor = detectVendorFromText(ocrText, vendors);
+  const totalCheck = inventoryTotalCheck(rows, ocrText);
   const session = {
     type: "inventoryOcr",
     mode,
@@ -1608,6 +1673,7 @@ async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", ima
     imageUrl,
     ocrText: ocrText.slice(0, 4000),
     rows,
+    totalCheck,
     vendorId: vendor ? Number(vendor.id) : 0,
     vendorName: vendor?.name ?? "",
     requestedBy: chatUser.name,
@@ -1620,12 +1686,25 @@ async function saveInventoryOcrTextToSession({ chatUser, mode = "inventory", ima
   return {
     ok: true,
     text: `OCR 결과입니다.\n${inventoryOcrSummary(session)}\n\n${nextGuide}`,
+    totalCheck,
   };
 }
 
 async function applyInventoryOcrSession(session, chatUser) {
   const rows = normalizeInventoryRows(session.rows);
   if (rows.length === 0) return failResponse("반영할 품목이 없습니다. 사진을 다시 올려주세요.");
+  if (session.totalCheck?.documentTotal && !session.totalCheck.matched) {
+    return textResponse(
+      [
+        "명세서 합계와 인식 합계가 맞지 않아 바로 저장하지 않았습니다.",
+        inventoryTotalCheckLine(session.totalCheck),
+        "",
+        "아래 업로드 페이지에서 표를 수정한 뒤 저장해주세요.",
+        chatbotUploadUrl(chatUser, session.mode || "inventory"),
+      ].join("\n"),
+      ["취소"]
+    );
+  }
   const vendorId = Number(session.vendorId || 0);
   if (!vendorId) {
     return textResponse("거래처가 필요합니다.\n'거래처 거래처명'으로 먼저 거래처를 지정해주세요.", ["거래처 목록", "취소"]);
@@ -2718,6 +2797,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
           <span>입고 합계</span>
           <b id="totalAmount">0원</b>
         </div>
+        <div id="totalCheck" class="check hidden"></div>
         <button id="save" type="button">재고에 바로 반영</button>
       </section>
 
@@ -2739,8 +2819,10 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
         const rowsBox = document.getElementById("rows");
         const vendorSelect = document.getElementById("vendor");
         const totalAmount = document.getElementById("totalAmount");
+        const totalCheckBox = document.getElementById("totalCheck");
         let rows = [];
         let selectedFile = null;
+        let ocrTotalCheck = null;
 
         function escapeHtml(value) {
           return String(value == null ? "" : value)
@@ -2788,6 +2870,24 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
         function recalc() {
           const total = collectRows().reduce((sum, row) => sum + Number(row.totalPrice || 0), 0);
           totalAmount.textContent = formatWon(total);
+          renderTotalCheck(total);
+        }
+
+        function renderTotalCheck(total) {
+          const documentTotal = Number(ocrTotalCheck?.documentTotal || 0);
+          if (!documentTotal) {
+            totalCheckBox.className = "check hidden";
+            totalCheckBox.textContent = "";
+            return;
+          }
+          const diff = Math.round(total - documentTotal);
+          if (Math.abs(diff) <= 10) {
+            totalCheckBox.className = "check ok";
+            totalCheckBox.textContent = "명세서 합계 " + formatWon(documentTotal) + "와 일치합니다.";
+            return;
+          }
+          totalCheckBox.className = "check warn";
+          totalCheckBox.textContent = "합계가 맞지 않습니다. 명세서 " + formatWon(documentTotal) + " / 현재 " + formatWon(total) + " / 차이 " + formatWon(Math.abs(diff)) + "입니다.";
         }
 
         function renderRows(nextRows) {
@@ -2904,6 +3004,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
             });
             const data = await response.json();
             result.textContent = data.message || "처리했습니다. 카톡으로 돌아가 확인이라고 보내주세요.";
+            ocrTotalCheck = data.totalCheck || null;
             fillVendors(data.vendorId || "");
             renderRows(data.rows || []);
           } catch (error) {
@@ -2918,6 +3019,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
           galleryInput.value = "";
           setSelectedFile(null);
           result.textContent = "사진을 선택해주세요.";
+          ocrTotalCheck = null;
           renderRows([]);
         });
 
@@ -3025,6 +3127,9 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
     const result = highConfidenceRows
       ? await saveInventoryOcrTextToSession({ chatUser, mode, imageUrl: "browser-upload", ocrText })
       : { ok: false, text: "" };
+    const totalCheck = highConfidenceRows
+      ? (result.totalCheck || inventoryTotalCheck(rows, ocrText))
+      : inventoryTotalCheck(rows, ocrText);
     if (!highConfidenceRows) {
       await chatbotSessionRef(chatUser).set({
         type: "inventoryOcr",
@@ -3042,6 +3147,7 @@ exports.chatbotInventoryUpload = onRequest({ timeoutSeconds: 120, memory: "1GiB"
       ok: highConfidenceRows && result.ok,
       message,
       rows,
+      totalCheck,
       vendorId: vendor ? Number(vendor.id) : 0,
       vendorName: vendor?.name ?? "",
       ...(debugOcr ? { ocrText: ocrText.slice(0, 6000) } : {}),
