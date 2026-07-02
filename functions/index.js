@@ -330,6 +330,9 @@ function inventoryNumberTokens(text, offset = 0) {
 }
 
 function isInventoryOcrCandidate(line) {
+  if (/^(kg|㎏|개|박스|box|BOX|병|팩|봉)$/i.test(String(line ?? "").trim())) {
+    return false;
+  }
   if (/품목|합계|거래명세|사업자|공급|전화|주소|비고|잔액|원산지|상호|성명|팩스/i.test(line)) {
     return false;
   }
@@ -407,51 +410,88 @@ function parseInventoryOcrRows(text) {
     });
   });
 
-  lines.forEach((line, index) => {
-    if (!isInventoryOcrCandidate(line)) return;
-    const ownNumbers = inventoryNumberTokens(line);
-    const hasOwnQty = ownNumbers.some((token) => token.raw.includes(".") && token.value > 0 && token.value < 10000);
-    if (hasOwnQty) return;
-
-    const name = cleanOcrItemName(line);
-    if (!name || name.length < 2) return;
+  const readRowTail = (startIndex) => {
     let unit = "kg";
     const numbers = [];
-    const memoLines = [line];
-    for (let offset = 1; offset <= 8; offset += 1) {
-      const next = lines[index + offset];
-      if (!next) break;
-      if (offset > 1 && isInventoryOcrCandidate(next)) break;
+    const memoLines = [];
+    let cursor = startIndex;
+
+    for (; cursor < lines.length && cursor < startIndex + 12; cursor += 1) {
+      const next = lines[cursor];
+      if (!next || isInventoryOcrCandidate(next)) break;
       memoLines.push(next);
       const unitOnly = next.match(/^(kg|㎏|개|박스|box|BOX|병|팩|봉)$/i);
       if (unitOnly) {
         unit = inventoryUnitLabel(unitOnly[1]);
-        continue;
+      } else {
+        inventoryNumberTokens(next).forEach((token) => numbers.push(token));
       }
-      inventoryNumberTokens(next).forEach((token) => numbers.push(token));
+
+      const qtyTokenIndex = numbers.findIndex((token) =>
+        token.raw.includes(".") && token.value > 0 && token.value < 10000
+      );
+      if (qtyTokenIndex >= 0) {
+        const moneyTokens = numbers
+          .slice(qtyTokenIndex + 1)
+          .filter((token) => token.value >= 1000 || token.raw.includes(","));
+        if (moneyTokens.length >= 2) {
+          cursor += 1;
+          break;
+        }
+      }
     }
+
     const qtyTokenIndex = numbers.findIndex((token) =>
       token.raw.includes(".") && token.value > 0 && token.value < 10000
     );
-    if (qtyTokenIndex < 0) return;
+    if (qtyTokenIndex < 0) return { row: null, nextIndex: cursor };
     const qty = numbers[qtyTokenIndex].value;
     const moneyTokens = numbers
       .slice(qtyTokenIndex + 1)
       .filter((token) => token.value >= 1000 || token.raw.includes(","));
     const unitPrice = moneyTokens[0]?.value ?? 0;
     const totalPrice = moneyTokens[1]?.value ?? Math.round(qty * unitPrice);
-    pushRow({
-      key: `${Date.now()}_${index}_block`,
-      name,
-      unit,
-      qty,
-      unitPrice,
-      totalPrice,
-      storageType: inferStorageType(name),
-      memo: memoLines.join(" / "),
-      selected: true,
+    return {
+      row: { unit, qty, unitPrice, totalPrice, memo: memoLines.join(" / ") },
+      nextIndex: cursor,
+    };
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!isInventoryOcrCandidate(lines[index])) continue;
+    const names = [];
+    let nameCursor = index;
+    while (nameCursor < lines.length && isInventoryOcrCandidate(lines[nameCursor])) {
+      const ownNumbers = inventoryNumberTokens(lines[nameCursor]);
+      const hasOwnQty = ownNumbers.some((token) =>
+        token.raw.includes(".") && token.value > 0 && token.value < 10000
+      );
+      if (hasOwnQty) break;
+      const name = cleanOcrItemName(lines[nameCursor]);
+      if (name && name.length >= 2) names.push({ name, source: lines[nameCursor], index: nameCursor });
+      nameCursor += 1;
+    }
+    if (names.length < 1) continue;
+
+    let tailCursor = nameCursor;
+    names.forEach((entry, entryIndex) => {
+      const parsed = readRowTail(tailCursor);
+      if (!parsed.row) return;
+      tailCursor = parsed.nextIndex;
+      pushRow({
+        key: `${Date.now()}_${entry.index}_block_${entryIndex}`,
+        name: entry.name,
+        unit: parsed.row.unit,
+        qty: parsed.row.qty,
+        unitPrice: parsed.row.unitPrice,
+        totalPrice: parsed.row.totalPrice,
+        storageType: inferStorageType(entry.name),
+        memo: [entry.source, parsed.row.memo].filter(Boolean).join(" / "),
+        selected: true,
+      });
     });
-  });
+    index = Math.max(index, tailCursor - 1);
+  }
   return rows.slice(0, 30);
 }
 
