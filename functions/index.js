@@ -197,16 +197,103 @@ function urlsFromText(value) {
     ?? [];
 }
 
+function isLikelyImageUrl(value) {
+  return /^https?:\/\/.+\.(?:png|jpe?g|webp)(?:\?|$)/i.test(value)
+    || /^https?:\/\/.+(?:image|photo|thumbnail|kakao|talk|daumcdn|file|kakaocdn|cdn)/i.test(value);
+}
+
+function mediaUrlFromValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        return mediaUrlFromValue(JSON.parse(trimmed));
+      } catch (error) {
+        return urlsFromText(trimmed).find(isLikelyImageUrl) ?? "";
+      }
+    }
+    return urlsFromText(trimmed).find(isLikelyImageUrl) ?? "";
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = mediaUrlFromValue(item);
+      if (url) return url;
+    }
+    return "";
+  }
+  if (typeof value === "object") {
+    const type = String(value.type || value.mediaType || value.mimeType || value.contentType || "").toLowerCase();
+    const directUrl = String(value.url || value.imageUrl || value.image_url || value.fileUrl || value.file_url || value.secureUrl || "").trim();
+    if (directUrl && (!type || /image|photo|jpeg|jpg|png|webp/.test(type))) return directUrl;
+    for (const key of ["media", "image", "photo", "secureimage", "secureImage", "file", "files"]) {
+      const nestedUrl = mediaUrlFromValue(value[key]);
+      if (nestedUrl) return nestedUrl;
+    }
+  }
+  return "";
+}
+
+function extractKakaoMediaUrl(body) {
+  return [
+    body.userRequest?.params?.media,
+    body.userRequest?.params?.secureimage,
+    body.userRequest?.params?.secureImage,
+    body.action?.params?.media,
+    body.action?.params?.secureimage,
+    body.action?.params?.secureImage,
+    body.action?.detailParams?.media?.value,
+    body.action?.detailParams?.media?.origin,
+    body.action?.detailParams?.secureimage?.value,
+    body.action?.detailParams?.secureimage?.origin,
+    body.action?.detailParams?.secureImage?.value,
+    body.action?.detailParams?.secureImage?.origin,
+  ].map(mediaUrlFromValue).find(Boolean) ?? "";
+}
+
+function maskedKey(value) {
+  const text = String(value || "");
+  if (text.length <= 10) return text ? "***" : "";
+  return `${text.slice(0, 6)}...${text.slice(-4)}`;
+}
+
+function logKakaoPayloadSummary(body) {
+  const mediaUrl = extractKakaoMediaUrl(body);
+  let mediaHost = "";
+  try {
+    mediaHost = mediaUrl ? new URL(mediaUrl).host : "";
+  } catch (error) {
+    mediaHost = "invalid-url";
+  }
+  const params = body.userRequest?.params || {};
+  const detailParams = body.action?.detailParams || {};
+  console.log("KAKAO_PAYLOAD_SUMMARY", JSON.stringify({
+    botUserKey: maskedKey(getIdentity(body).botUserKey),
+    utteranceLength: utteranceOf(body).length,
+    blockName: body.userRequest?.block?.name || body.intent?.name || "",
+    actionName: body.action?.name || "",
+    hasMedia: Boolean(mediaUrl),
+    mediaHost,
+    mediaType: String(params.media?.type || detailParams.media?.value?.type || ""),
+    userRequestParamKeys: Object.keys(params),
+    actionParamKeys: Object.keys(body.action?.params || {}),
+    detailParamKeys: Object.keys(detailParams),
+  }));
+  if (process.env.KAKAO_DEBUG_RAW_PAYLOAD === "true") {
+    console.log("RAW_PAYLOAD", JSON.stringify(body));
+  }
+}
+
 function extractImageUrl(body) {
+  const mediaUrl = extractKakaoMediaUrl(body);
+  if (mediaUrl) return mediaUrl;
   const direct = paramOf(body, [
     "image", "imageUrl", "image_url", "fileUrl", "file_url",
     "photo", "photoUrl", "secureimage", "secureImage", "사진", "이미지", "파일",
   ]);
   const strings = [direct, ...collectStrings(body)].filter(Boolean);
   const urls = strings.flatMap(urlsFromText);
-  return urls.find((value) => /^https?:\/\/.+\.(?:png|jpe?g|webp)(?:\?|$)/i.test(value))
-    ?? urls.find((value) => /^https?:\/\/.+(?:image|photo|thumbnail|kakao|daumcdn|file|kakaocdn)/i.test(value))
-    ?? "";
+  return urls.find(isLikelyImageUrl) ?? "";
 }
 
 function cleanOcrItemName(raw) {
@@ -2502,6 +2589,7 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (r
     }
 
     const body = req.body && typeof req.body === "object" ? req.body : {};
+    logKakaoPayloadSummary(body);
     const identity = getIdentity(body);
     const chatUser = await getChatUser(identity.botUserKey);
     if (!chatUser) {
