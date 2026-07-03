@@ -21,7 +21,7 @@ import {
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
-  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesPayment,
+  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, GranterSyncRun, SalesPayment,
   OwnerSchedule,
   SettlementMethod, SettlementStatus, ManagerPermissions,
 } from "../data/types";
@@ -451,6 +451,28 @@ export function subscribeSalesSyncRuns(cb: (v: SalesSyncRun[]) => void, onError:
   );
 }
 
+export function subscribeGranterSyncRuns(cb: (v: GranterSyncRun[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "granterSyncRuns",
+    (d, id) => ({
+      id,
+      startedAt: asDisplayDate(d.startedAt) || String(d.startedAt ?? ""),
+      finishedAt: asDisplayDate(d.finishedAt) || String(d.finishedAt ?? ""),
+      status: d.status === "success" || d.status === "failed" || d.status === "config_required" || d.status === "skipped"
+        ? d.status
+        : "failed",
+      importedCount: Number(d.importedCount ?? 0),
+      updatedCount: Number(d.updatedCount ?? 0),
+      matchedCount: Number(d.matchedCount ?? 0),
+      rangeStart: String(d.rangeStart ?? ""),
+      rangeEnd: String(d.rangeEnd ?? ""),
+      message: d.message,
+    }),
+    (items) => cb(items.sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 20)),
+    onError
+  );
+}
+
 export function subscribeManagerPermissions(cb: (v: ManagerPermissions) => void, onError: ErrCb): Unsub {
   return onSnapshot(
     metaDoc("managerPermissions"),
@@ -796,6 +818,32 @@ export async function fsSyncOkposSales(): Promise<{ ok: boolean; message: string
   return {
     ok: !!json.ok,
     message: String(json.message ?? "매출 동기화 요청이 완료되었습니다."),
+    runId: json.runId,
+  };
+}
+
+export async function fsSyncGranterFinance(): Promise<{ ok: boolean; message: string; runId?: string }> {
+  const user = requireAuth().currentUser;
+  if (!user) throw new Error("로그인이 필요합니다.");
+  const token = await user.getIdToken();
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const configuredUrl = import.meta.env.VITE_GRANTER_SYNC_FUNCTION_URL;
+  const url = configuredUrl || `https://asia-northeast3-${projectId}.cloudfunctions.net/syncGranterFinance`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ mode: "manual" }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json.message || "그랜터 동기화 요청에 실패했습니다.");
+  }
+  return {
+    ok: !!json.ok,
+    message: String(json.message ?? "그랜터 동기화 요청이 완료되었습니다."),
     runId: json.runId,
   };
 }

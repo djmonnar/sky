@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
-  Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun,
+  Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, GranterSyncRun,
   OwnerSchedule, ManagerPermissions, ManagerPermissionKey,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
@@ -36,6 +36,7 @@ import {
   fsUpsertInventoryItem, fsDeleteInventoryItem,
   fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
   subscribeSalesOrders, subscribeSalesSyncRuns, fsSyncOkposSales,
+  subscribeGranterSyncRuns, fsSyncGranterFinance,
   fsUpdateMyProfile,
   subscribeManagerPermissions, fsSetManagerPermissions,
 } from "./services/firestore";
@@ -146,6 +147,8 @@ interface Store {
   salesOrders: SalesOrder[];
   salesSyncRuns: SalesSyncRun[];
   syncOkposSales: () => Promise<void>;
+  granterSyncRuns: GranterSyncRun[];
+  syncGranterFinance: () => Promise<void>;
 
   punchStatus: PunchStatus;
   punchInAt: string | null;
@@ -188,6 +191,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [salesSyncRuns, setSalesSyncRuns] = useState<SalesSyncRun[]>([]);
+  const [granterSyncRuns, setGranterSyncRuns] = useState<GranterSyncRun[]>([]);
 
   const [punchStatus, setPunchStatus] = useState<PunchStatus>("before");
   const [punchInAt, setPunchInAt] = useState<string | null>(null);
@@ -338,6 +342,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       isAdminRole || managerCan("vendors") || managerCan("inventory") || managerCan("settlements");
     const canRecipeData = isAdminRole || managerCan("recipes");
     const canSalesData = isAdminRole || managerCan("sales");
+    const canGranterData = isAdminRole || managerCan("settlements");
 
     if (!canUserProfileData) setUserProfiles([]);
     if (!canReservationData) setReservations([]);
@@ -356,6 +361,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSalesOrders([]);
       setSalesSyncRuns([]);
     }
+    if (!canGranterData) setGranterSyncRuns([]);
 
     let gotFirst = false;
     const markLoaded = () => {
@@ -399,6 +405,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribeSalesSyncRuns(setSalesSyncRuns, onErr),
           ]
         : []),
+      ...(canGranterData ? [subscribeGranterSyncRuns(setGranterSyncRuns, onErr)] : []),
     ];
     return () => unsubs.forEach((u) => u());
   }, [profile, managerPermissions]);
@@ -883,6 +890,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     showToast("데모 매출 동기화 로그를 남겼습니다");
   }, [salesOrders.length, showToast]);
 
+  const syncGranterFinance = useCallback(async () => {
+    if (APP_MODE === "live") {
+      const result = await fsSyncGranterFinance();
+      showToast(result.message);
+      return;
+    }
+    const run: GranterSyncRun = {
+      id: `manual-${Date.now()}`,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      status: "config_required",
+      importedCount: 0,
+      updatedCount: 0,
+      matchedCount: 0,
+      rangeStart: TODAY_STR,
+      rangeEnd: TODAY_STR,
+      message: "데모 모드입니다. 실제 연동은 Functions 환경변수에 그랜터 API 값을 넣은 뒤 사용할 수 있습니다.",
+    };
+    setGranterSyncRuns((prev) => [run, ...prev].slice(0, 20));
+    showToast("그랜터 연동 준비 로그를 남겼습니다");
+  }, [showToast]);
+
   const getPayrollPassword = useCallback(async () => {
     if (APP_MODE === "live") {
       return fsGetPayrollPassword();
@@ -1132,13 +1161,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       purchaseOrders, upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
       recipes, upsertRecipe, deleteRecipe,
       salesOrders, salesSyncRuns, syncOkposSales,
+      granterSyncRuns, syncGranterFinance,
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
     [demoReason, role, setRole, managerPermissions, updateManagerPermissions, canManagerAccess,
      authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
-     reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
+     reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns, granterSyncRuns,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
@@ -1151,7 +1181,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      upsertInventoryItem, deleteInventoryItem,
      upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
      upsertRecipe, deleteRecipe,
-     syncOkposSales,
+     syncOkposSales, syncGranterFinance,
      punchIn, punchOut, showToast]
   );
 

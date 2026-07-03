@@ -33,7 +33,7 @@ function attendanceBadgeFor(workerRecords: WorkRecord[], plan: { start: string; 
 
 export default function AdminDashboard() {
   const {
-    reservations, shifts, records, employees, salesOrders, salesSyncRuns, mode, loading, showToast, role, managerPermissions,
+    reservations, shifts, records, employees, salesOrders, salesSyncRuns, granterSyncRuns, mode, loading, showToast, role, managerPermissions,
   } = useStore();
   const [seeding, setSeeding] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -89,6 +89,7 @@ export default function AdminDashboard() {
   const todaySales = ordersForDate(salesOrders, todayStr);
   const todaySalesSummary = salesSummary(todaySales);
   const latestSalesSync = latestSyncRun(salesSyncRuns);
+  const latestGranterSync = granterSyncRuns[0];
 
   return (
     <>
@@ -241,6 +242,18 @@ export default function AdminDashboard() {
           )}
 
           {/* 승인 대기 */}
+          {canAccess("settlements") && (
+            <Card title="그랜터 정산 연동" icon="🔗" action={<Link to="/settlements" className="card-link">정산 관리 ›</Link>}>
+              <div className="alert-item info">
+                <span>🔎</span>
+                <div>
+                  최근 확인: {latestGranterSync?.finishedAt || latestGranterSync?.startedAt || "아직 없음"}
+                  <div className="desc">{latestGranterSync?.message || "API 키를 받으면 정산탭에서 연동 상태를 확인할 수 있습니다."}</div>
+                </div>
+              </div>
+            </Card>
+          )}
+
           <Card title="근무기록 승인 대기" icon="🗂️">
             {pendingRecords.slice(0, 4).map((r) => {
               const emp = employees.find((e) => e.id === r.empId);

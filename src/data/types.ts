@@ -357,6 +357,19 @@ export interface SalesSyncRun {
   message?: string;
 }
 
+export interface GranterSyncRun {
+  id: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: "success" | "failed" | "config_required" | "skipped";
+  importedCount: number;
+  updatedCount: number;
+  matchedCount: number;
+  rangeStart: string;
+  rangeEnd: string;
+  message?: string;
+}
+
 export const RESV_STATUSES: ResvStatus[] = [
   "예약확정", "방문완료", "취소", "노쇼", "단체", "확인전화필요", "예약대기",
 ];

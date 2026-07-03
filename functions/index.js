@@ -24,8 +24,8 @@ const ROLE_LABEL = {
 };
 
 const PERIOD_TIME = {
-  morning: { start: "10:00", end: "15:00", breakMin: 30 },
-  afternoon: { start: "17:00", end: "22:00", breakMin: 30 },
+  morning: { start: "10:20", end: "15:00", breakMin: 30 },
+  afternoon: { start: "16:30", end: "21:30", breakMin: 30 },
 };
 
 function storeCol(name) {
@@ -2687,6 +2687,137 @@ async function routeAction(action, body, chatUser) {
   }
 }
 
+function normalizeGranterTransaction(raw) {
+  const transactionId = String(
+    raw.transactionId || raw.transaction_id || raw.id || raw.txId || raw.tx_id || raw.approvalNo || raw.approval_no || ""
+  ).trim();
+  if (!transactionId) return null;
+  const transactedAt = String(raw.transactedAt || raw.transacted_at || raw.date || raw.usedAt || raw.used_at || raw.createdAt || isoNow());
+  const amount = numberOf(raw.amount, raw.totalAmount, raw.paidAmount, raw.withdrawalAmount, raw.depositAmount);
+  const vendorName = String(
+    raw.vendorName || raw.counterpartyName || raw.counterparty || raw.franchiseName || raw.description || raw.memo || ""
+  ).trim();
+  return {
+    id: `granter-${transactionId}`,
+    granterTransactionId: transactionId,
+    transactedAt,
+    businessDate: dateFromTimestamp(transactedAt),
+    amount,
+    direction: amount < 0 || raw.type === "withdrawal" || raw.direction === "out" ? "out" : "in",
+    vendorName,
+    businessNumber: String(raw.businessNumber || raw.business_number || raw.counterpartyBusinessNumber || "").trim(),
+    method: String(raw.method || raw.paymentMethod || raw.accountType || raw.source || "unknown"),
+    memo: String(raw.memo || raw.description || raw.title || ""),
+    source: "granter",
+    syncedAt: isoNow(),
+  };
+}
+
+async function fetchGranterTransactions(rangeStart, rangeEnd) {
+  const baseUrl = process.env.GRANTER_BASE_URL;
+  const transactionsPath = process.env.GRANTER_TRANSACTIONS_PATH;
+  const apiKey = process.env.GRANTER_API_KEY;
+  if (!baseUrl || !transactionsPath || !apiKey) {
+    return {
+      status: "config_required",
+      message: "GRANTER_BASE_URL, GRANTER_TRANSACTIONS_PATH, GRANTER_API_KEY 설정이 필요합니다.",
+      transactions: [],
+    };
+  }
+
+  const url = new URL(transactionsPath, baseUrl);
+  url.searchParams.set("from", rangeStart);
+  url.searchParams.set("to", rangeEnd);
+  const apiKeyHeader = process.env.GRANTER_API_KEY_HEADER || "x-api-key";
+  const authScheme = process.env.GRANTER_AUTH_SCHEME || "Bearer";
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `${authScheme} ${apiKey}`,
+      [apiKeyHeader]: apiKey,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`그랜터 API 오류: ${response.status}`);
+  }
+  const payload = await response.json();
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.transactions)
+      ? payload.transactions
+      : Array.isArray(payload.items)
+        ? payload.items
+        : Array.isArray(payload.data)
+          ? payload.data
+          : [];
+  return {
+    status: "success",
+    message: `그랜터 거래내역 ${list.length}건을 가져왔습니다.`,
+    transactions: list.map(normalizeGranterTransaction).filter(Boolean),
+  };
+}
+
+async function syncGranterFinanceCore(mode = "manual", requestedBy = "system") {
+  const now = new Date();
+  const rangeStart = addHours(now, -24 * 7).toISOString();
+  const rangeEnd = now.toISOString();
+  const runId = `${Date.now()}-${mode}`;
+  const runRef = storeDoc("granterSyncRuns", runId);
+  await runRef.set({
+    id: runId,
+    startedAt: admin.firestore.FieldValue.serverTimestamp(),
+    status: "skipped",
+    importedCount: 0,
+    updatedCount: 0,
+    matchedCount: 0,
+    rangeStart,
+    rangeEnd,
+    requestedBy,
+    mode,
+  });
+
+  try {
+    const result = await fetchGranterTransactions(rangeStart, rangeEnd);
+    if (result.status === "config_required") {
+      await runRef.set({
+        status: "config_required",
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        message: result.message,
+      }, { merge: true });
+      return { ok: false, runId, message: result.message };
+    }
+
+    let updatedCount = 0;
+    for (const transaction of result.transactions) {
+      const ref = storeDoc("granterTransactions", transaction.id);
+      const exists = (await ref.get()).exists;
+      if (exists) updatedCount += 1;
+      await ref.set({
+        ...transaction,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+      }, { merge: true });
+    }
+    await runRef.set({
+      status: "success",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      importedCount: result.transactions.length - updatedCount,
+      updatedCount,
+      matchedCount: 0,
+      message: `${result.message} 발주/정산 자동 대조는 다음 단계에서 매핑합니다.`,
+    }, { merge: true });
+    return { ok: true, runId, message: result.message };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "그랜터 동기화에 실패했습니다.";
+    await runRef.set({
+      status: "failed",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      message,
+    }, { merge: true });
+    return { ok: false, runId, message };
+  }
+}
+
 exports.kakaoSkill = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (req, res) => {
   try {
     if (req.method !== "POST") {
@@ -3239,6 +3370,25 @@ exports.syncOkposSales = onRequest({ timeoutSeconds: 60, memory: "256MiB" }, asy
     return;
   }
   const result = await syncOkposSalesCore("manual", auth.uid || auth.email || "admin");
+  res.status(result.ok ? 200 : 409).json(result);
+});
+
+exports.syncGranterFinance = onRequest({ timeoutSeconds: 60, memory: "256MiB" }, async (req, res) => {
+  setCors(res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    res.status(405).json({ ok: false, message: "POST 요청만 사용할 수 있습니다." });
+    return;
+  }
+  const auth = await adminFromRequest(req);
+  if (!auth.ok) {
+    res.status(403).json({ ok: false, message: auth.message });
+    return;
+  }
+  const result = await syncGranterFinanceCore("manual", auth.uid || auth.email || "admin");
   res.status(result.ok ? 200 : 409).json(result);
 });
 

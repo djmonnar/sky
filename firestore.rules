@@ -406,6 +406,16 @@ service cloud.firestore {
         allow read, write: if canManageSales(storeId);
       }
 
+      match /granterSyncRuns/{id} {
+        allow read: if canManagePurchaseOrders(storeId);
+        allow write: if isAdmin(storeId);
+      }
+
+      match /granterTransactions/{id} {
+        allow read: if canManagePurchaseOrders(storeId);
+        allow write: if isAdmin(storeId);
+      }
+
       match /notices/{id} {
         allow read: if inStore(storeId);
         allow write: if canManageNotices(storeId);

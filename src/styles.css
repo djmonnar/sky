@@ -2349,6 +2349,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   gap: 6px;
   min-width: 92px;
 }
+.integration-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.integration-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-alt);
+}
 
 /* ============ Side panel ============ */
 .side-panel { position: sticky; top: 16px; }
@@ -2517,6 +2532,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   }
   .settlement-vendor-card {
     min-height: 112px;
+  }
+  .integration-status-grid {
+    grid-template-columns: 1fr;
   }
   .order-line-edit {
     grid-template-columns: 1fr 1fr;

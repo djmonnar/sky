@@ -45,6 +45,21 @@ function methodLabel(method?: SettlementMethod): string {
   return method ? METHOD_LABEL[method] : "-";
 }
 
+function granterStatusLabel(status?: string): string {
+  if (status === "success") return "연결 가능";
+  if (status === "config_required") return "설정 필요";
+  if (status === "failed") return "확인 필요";
+  if (status === "skipped") return "대기";
+  return "준비 전";
+}
+
+function granterStatusTone(status?: string): string {
+  if (status === "success") return "green";
+  if (status === "config_required") return "amber";
+  if (status === "failed") return "red";
+  return "gray";
+}
+
 interface SettlementDraft {
   settledAt: string;
   settlementMethod: SettlementMethod;
@@ -52,12 +67,13 @@ interface SettlementDraft {
 }
 
 export default function Settlements() {
-  const { vendors, purchaseOrders, upsertPurchaseOrder, showToast } = useStore();
+  const { vendors, purchaseOrders, upsertPurchaseOrder, showToast, granterSyncRuns, syncGranterFinance } = useStore();
   const [selectedMonth, setSelectedMonth] = useState(TODAY_STR.slice(0, 7));
   const [statusFilter, setStatusFilter] = useState<SettlementFilter>("unsettled");
   const [vendorFilter, setVendorFilter] = useState<number | "all">("all");
   const [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<number, SettlementDraft>>({});
+  const [granterSyncing, setGranterSyncing] = useState(false);
 
   const activeOrders = useMemo(
     () => purchaseOrders.filter((order) => order.status !== "canceled"),
@@ -93,6 +109,7 @@ export default function Settlements() {
   const settledOrders = monthOrders.filter(isSettled);
   const unsettledOrders = monthOrders.filter((order) => !isSettled(order));
   const receivedUnsettledOrders = unsettledOrders.filter((order) => order.status === "received");
+  const latestGranterRun = granterSyncRuns[0];
 
   const vendorRows = useMemo(() => {
     const map = new Map<number, {
@@ -201,6 +218,17 @@ export default function Settlements() {
     }
   };
 
+  const runGranterSync = async () => {
+    setGranterSyncing(true);
+    try {
+      await syncGranterFinance();
+    } catch (error) {
+      showToast((error as Error).message);
+    } finally {
+      setGranterSyncing(false);
+    }
+  };
+
   return (
     <div className="stack settlement-page">
       <div className="grid grid-4">
@@ -238,6 +266,36 @@ export default function Settlements() {
           <div>
             <label className="field-label">검색</label>
             <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="거래처, 품목, 발주번호" />
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title="그랜터 연동 준비"
+        icon="🔗"
+        action={
+          <button className="btn btn-primary btn-sm" disabled={granterSyncing} onClick={() => void runGranterSync()}>
+            {granterSyncing ? "확인 중..." : "연동 상태 확인"}
+          </button>
+        }
+      >
+        <div className="integration-status-grid">
+          <div className="integration-status-card">
+            <span className="muted small">현재 상태</span>
+            <Badge tone={granterStatusTone(latestGranterRun?.status)}>{granterStatusLabel(latestGranterRun?.status)}</Badge>
+            <strong>{latestGranterRun?.message ?? "API 키를 받으면 Functions 환경변수에 넣고 바로 테스트할 수 있습니다."}</strong>
+          </div>
+          <div className="integration-status-card">
+            <span className="muted small">최근 동기화</span>
+            <strong>{latestGranterRun?.finishedAt || latestGranterRun?.startedAt || "아직 없음"}</strong>
+            <span className="muted small">
+              신규 {latestGranterRun?.importedCount ?? 0}건 · 갱신 {latestGranterRun?.updatedCount ?? 0}건 · 대조 {latestGranterRun?.matchedCount ?? 0}건
+            </span>
+          </div>
+          <div className="integration-status-card">
+            <span className="muted small">연동 목표</span>
+            <strong>거래내역을 불러와 발주/정산 누락을 대조</strong>
+            <span className="muted small">키는 프론트가 아니라 Firebase Functions 환경변수에만 저장합니다.</span>
           </div>
         </div>
       </Card>
