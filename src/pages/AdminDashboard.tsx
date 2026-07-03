@@ -1,21 +1,52 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
-import { TODAY_DOW, TODAY_STR } from "../data";
+import { dowIndex, fmtDate, minutes } from "../data";
 import { seedFirestore, resetFirestore } from "../dev/seedFirestore";
 import { isMonthlyEmployee } from "../lib/payroll";
 import { latestSyncRun, money, ordersForDate, salesSummary } from "../lib/sales";
 import { planTimesForShifts, shiftsForDay, slotSummary } from "../lib/shifts";
-import type { ManagerPermissionKey } from "../data/types";
+import type { ManagerPermissionKey, WorkRecord } from "../data/types";
+
+function nowHHMM(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function attendanceBadgeFor(workerRecords: WorkRecord[], plan: { start: string; end: string }, currentMinute: number): { label: string; tone: string } {
+  const activeRecords = workerRecords.filter((record) => record.status !== "미작성");
+  const doneRecord = activeRecords.find((record) =>
+    record.status === "승인완료" || record.status === "승인대기" || record.status === "제출"
+  );
+  if (doneRecord) {
+    return doneRecord.actualEnd
+      ? { label: "퇴근완료", tone: "green" }
+      : { label: "기록제출", tone: "amber" };
+  }
+
+  const start = minutes(plan.start);
+  const end = minutes(plan.end);
+  if (currentMinute < start) return { label: "출근전", tone: "gray" };
+  if (currentMinute <= end) return { label: "근무중", tone: "green" };
+  return { label: "기록필요", tone: "amber" };
+}
 
 export default function AdminDashboard() {
   const {
     reservations, shifts, records, employees, salesOrders, salesSyncRuns, mode, loading, showToast, role, managerPermissions,
   } = useStore();
   const [seeding, setSeeding] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const isAdmin = role === "admin";
   const canAccess = (key: ManagerPermissionKey) => isAdmin || (role === "manager" && managerPermissions[key]);
+  const todayStr = useMemo(() => fmtDate(now), [now]);
+  const todayDow = useMemo(() => dowIndex(now), [now]);
+  const currentMinute = useMemo(() => minutes(nowHHMM(now)), [now]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const runSeed = async () => {
     setSeeding(true);
@@ -40,9 +71,9 @@ export default function AdminDashboard() {
     }
   };
 
-  const todayReservations = reservations.filter((r) => r.date === TODAY_STR);
+  const todayReservations = reservations.filter((r) => r.date === todayStr);
   const activeResv = todayReservations.filter((r) => r.status !== "취소" && r.status !== "노쇼");
-  const todayShifts = shiftsForDay(shifts, TODAY_STR, TODAY_DOW);
+  const todayShifts = shiftsForDay(shifts, todayStr, todayDow);
   const todayWorkers = Array.from(new Set(todayShifts.map((s) => s.employeeId)))
     .map((employeeId) => ({
       employeeId,
@@ -55,7 +86,7 @@ export default function AdminDashboard() {
   });
   const warnResv = todayReservations.filter((r) => r.status === "확인전화필요");
   const groupResv = todayReservations.filter((r) => r.status === "단체");
-  const todaySales = ordersForDate(salesOrders, TODAY_STR);
+  const todaySales = ordersForDate(salesOrders, todayStr);
   const todaySalesSummary = salesSummary(todaySales);
   const latestSalesSync = latestSyncRun(salesSyncRuns);
 
@@ -129,7 +160,11 @@ export default function AdminDashboard() {
                 const displayName = emp?.name ?? workerShifts[0]?.employeeName ?? "직접 입력";
                 const roleText = emp ? slotSummary(workerShifts) : `${slotSummary(workerShifts)} · 직접 입력`;
                 const plan = planTimesForShifts(workerShifts);
-                const started = plan.start <= "10:30";
+                const attendance = attendanceBadgeFor(
+                  records.filter((record) => record.empId === employeeId && record.date === todayStr),
+                  plan,
+                  currentMinute
+                );
                 return (
                   <div key={employeeId} className="row" style={{
                     background: "var(--card-alt)", borderRadius: 11, padding: "10px 12px",
@@ -139,7 +174,7 @@ export default function AdminDashboard() {
                       <div className="bold small">{displayName}</div>
                       <div className="muted small">{roleText} · {plan.start}–{plan.end}</div>
                     </div>
-                    <Badge tone={started ? "green" : "gray"}>{started ? "근무중" : "출근전"}</Badge>
+                    <Badge tone={attendance.tone}>{attendance.label}</Badge>
                   </div>
                 );
               })}
