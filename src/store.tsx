@@ -22,7 +22,7 @@ import {
   subscribeEmployees, subscribeReservations, subscribeShifts,
   subscribeRecords, subscribePayroll, subscribeNotices, subscribeHandovers,
   fsUpsertReservation, fsDeleteReservation,
-  fsUpsertEmployee, fsDeleteEmployee, fsDeactivateUserProfile,
+  fsUpsertEmployee, fsCreateLinkedEmployee, fsDeleteEmployee, fsDeactivateUserProfile,
   fsSetShift, fsDeleteShift, fsAddRecord, fsApproveRecord,
   fsUpdatePayroll, fsGetPayrollPassword, fsSetPayrollPassword,
   subscribeOwnerSchedules, fsUpsertOwnerSchedule, fsDeleteOwnerSchedule,
@@ -95,6 +95,7 @@ interface Store {
 
   employees: Employee[];
   upsertEmployee: (employee: Employee) => void;
+  createEmployeeFromUserProfile: (uid: string) => Promise<void>;
   deleteEmployee: (id: number) => void;
   deactivateUserProfile: (uid: string) => Promise<void>;
   userProfiles: UserProfileDoc[];
@@ -468,6 +469,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, [fail]);
 
+  const createEmployeeFromUserProfile = useCallback(async (uid: string) => {
+    const userProfile = userProfiles.find((item) => item.uid === uid);
+    if (!userProfile) {
+      showToast("연결할 사용자 프로필을 찾지 못했습니다");
+      return;
+    }
+    const alreadyLinked = employees.find((employee) =>
+      employee.uid === uid || (userProfile.employeeId !== undefined && employee.id === userProfile.employeeId)
+    );
+    if (alreadyLinked) {
+      showToast("이미 직원관리에 포함된 계정입니다");
+      return;
+    }
+
+    const maxEmployeeId = employees.reduce((max, employee) => Math.max(max, employee.id), 0);
+    const reusableProfileId =
+      userProfile.employeeId !== undefined && !employees.some((employee) => employee.id === userProfile.employeeId)
+        ? userProfile.employeeId
+        : 0;
+    const draft: Employee = {
+      id: reusableProfileId,
+      name: userProfile.name || "관리자",
+      role: "홀/주방",
+      roleLabel: userProfile.role === "admin" ? "관리자" : userProfile.role === "manager" ? "매니저" : undefined,
+      employmentType: "fullTime",
+      salaryType: "monthly",
+      hourly: 0,
+      monthlySalary: 0,
+      phone: userProfile.phone,
+      address: userProfile.address,
+      residentRegistrationNumber: userProfile.residentRegistrationNumber,
+      bank: userProfile.bank,
+      account: userProfile.account,
+      uid,
+    };
+
+    if (APP_MODE === "live") {
+      try {
+        await fsCreateLinkedEmployee(draft, maxEmployeeId + 1);
+        showToast(`${draft.name} 계정을 직원관리와 근무표에 추가했습니다`);
+      } catch (e) {
+        console.error(e);
+        showToast(`관리자 직원 추가 실패: ${(e as Error).message}`);
+      }
+      return;
+    }
+
+    const localEmployee = { ...draft, id: reusableProfileId || maxEmployeeId + 1 };
+    void repository.saveEmployee(localEmployee);
+    setEmployees((prev) => [...prev, localEmployee].sort((a, b) => a.id - b.id));
+    showToast(`${localEmployee.name} 계정을 직원관리와 근무표에 추가했습니다`);
+  }, [employees, showToast, userProfiles]);
+
   const deactivateUserProfile = useCallback(async (uid: string) => {
     if (APP_MODE === "live") {
       await fsDeactivateUserProfile(uid);
@@ -479,21 +533,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteEmployee = useCallback((id: number) => {
     const employee = employees.find((e) => e.id === id);
+    const linkedProfile = employee?.uid ? userProfiles.find((profile) => profile.uid === employee.uid) : undefined;
+    const shouldDeactivateProfile = !!employee?.uid && linkedProfile?.role !== "admin";
     if (APP_MODE === "live") {
       fsDeleteEmployee(id).catch(fail("직원 삭제"));
-      if (employee?.uid) {
+      if (shouldDeactivateProfile && employee?.uid) {
         fsDeactivateUserProfile(employee.uid).catch(fail("계정 비활성화"));
       }
       return;
     }
     void repository.deleteEmployee(id);
     setEmployees((prev) => prev.filter((e) => e.id !== id));
-    if (employee?.uid) {
+    if (shouldDeactivateProfile && employee?.uid) {
       setUserProfiles((prev) =>
         prev.map((u) => (u.uid === employee.uid ? { ...u, active: false } : u))
       );
     }
-  }, [employees, fail]);
+  }, [employees, fail, userProfiles]);
 
   const setShift = useCallback((s: Shift) => {
     if (APP_MODE === "live") {
@@ -1059,7 +1115,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       role, setRole, managerPermissions, updateManagerPermissions, canManagerAccess,
       authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
       loading, error,
-      employees, upsertEmployee, deleteEmployee, deactivateUserProfile,
+      employees, upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, deactivateUserProfile,
       userProfiles, updateUserRole, currentEmployee,
       reservations, upsertReservation, deleteReservation, deleteReservations,
       shifts, setShift,
@@ -1082,7 +1138,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
      reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns,
      punchStatus, punchInAt, punchOutAt, toast,
-     upsertEmployee, deleteEmployee, deactivateUserProfile,
+     upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
      setShift, deleteShift, addRecord, approveRecord, updatePayroll,
      getPayrollPassword, setPayrollPassword,

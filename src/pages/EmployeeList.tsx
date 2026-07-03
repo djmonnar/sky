@@ -73,9 +73,10 @@ function toNumber(value: string): number {
 export default function EmployeeList() {
   const {
     employees, loading, userProfiles, updateUserRole,
-    upsertEmployee, deleteEmployee, showToast, role,
+    upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, showToast, role,
   } = useStore();
   const [savingUid, setSavingUid] = useState<string | null>(null);
+  const [linkingUid, setLinkingUid] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [draft, setDraft] = useState<Employee | null>(null);
@@ -94,6 +95,12 @@ export default function EmployeeList() {
   );
   const isAdmin = role === "admin";
   const managerCount = userProfiles.filter((p) => p.role === "manager").length;
+  const adminProfiles = userProfiles.filter((p) => p.role === "admin" && p.active !== false);
+  const unlinkedAdminProfiles = adminProfiles.filter((profile) =>
+    !employees.some((employee) =>
+      employee.uid === profile.uid || (profile.employeeId !== undefined && employee.id === profile.employeeId)
+    )
+  );
   const allSelected = employees.length > 0 && employees.every((employee) => selectedIds.includes(employee.id));
 
   const changeRole = async (uid: string, nextRole: Role) => {
@@ -105,6 +112,15 @@ export default function EmployeeList() {
       showToast("권한 변경에 실패했습니다. Firestore 권한을 확인해주세요.");
     } finally {
       setSavingUid(null);
+    }
+  };
+
+  const addAdminToEmployees = async (uid: string) => {
+    setLinkingUid(uid);
+    try {
+      await createEmployeeFromUserProfile(uid);
+    } finally {
+      setLinkingUid(null);
     }
   };
 
@@ -280,11 +296,40 @@ export default function EmployeeList() {
         </Card>
       )}
 
-      <div className="grid grid-3" style={{ marginBottom: 16 }}>
+      <div className="grid grid-4" style={{ marginBottom: 16 }}>
         <StatCard label="전체 직원" value={employees.length} unit="명" icon="👥" />
         <StatCard label="계정 연결" value={linked.length} unit="명" icon="🔐" tone="blue" />
+        <StatCard label="관리자" value={adminProfiles.length} unit="명" icon="🛡️" tone="green" />
         <StatCard label="매니저" value={managerCount} unit="명" icon="🛠️" tone="amber" />
       </div>
+
+      {isAdmin && unlinkedAdminProfiles.length > 0 && (
+        <Card title="관리자 계정 근무표 추가" icon="🛡️">
+          <div className="stack" style={{ gap: 8 }}>
+            {unlinkedAdminProfiles.map((admin) => (
+              <div className="list-row" key={admin.uid} style={{ flexWrap: "wrap" }}>
+                <span className="avatar">{(admin.name || "관")[0]}</span>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <span className="bold small">{admin.name}</span>
+                    <Badge tone="green">관리자</Badge>
+                  </div>
+                  <div className="muted small">
+                    아직 직원 문서가 없어 근무표 직원 선택에 나오지 않습니다.
+                  </div>
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={linkingUid === admin.uid}
+                  onClick={() => void addAdminToEmployees(admin.uid)}
+                >
+                  {linkingUid === admin.uid ? "추가 중..." : "근무표에 추가"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {draft && editing && (
         <div

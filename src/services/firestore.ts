@@ -15,6 +15,7 @@
 import {
   collection, doc, query, where, onSnapshot,
   setDoc, updateDoc, addDoc, deleteDoc, getDoc, serverTimestamp, writeBatch,
+  runTransaction,
   type QueryConstraint, type DocumentData,
 } from "firebase/firestore";
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
@@ -478,6 +479,35 @@ export async function fsUpsertEmployee(e: Employee): Promise<void> {
     { ...e, active: true, updatedAt: serverTimestamp() },
     { merge: true }
   );
+}
+
+export async function fsCreateLinkedEmployee(
+  employee: Employee,
+  minEmployeeId: number
+): Promise<number> {
+  const db = requireDb();
+  const counterRef = doc(db, "stores", STORE_ID, "meta", "employeeCounter");
+  return runTransaction(db, async (tx) => {
+    const counterSnap = await tx.get(counterRef);
+    const current = counterSnap.exists() ? Number(counterSnap.data().value ?? 0) : 0;
+    const requestedId = Number(employee.id) || 0;
+    const employeeId = requestedId > 0 ? requestedId : Math.max(current + 1, minEmployeeId);
+    const nextCounter = Math.max(current, employeeId, minEmployeeId);
+
+    tx.set(
+      doc(db, "stores", STORE_ID, "employees", String(employeeId)),
+      {
+        ...employee,
+        id: employeeId,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    tx.set(counterRef, { value: nextCounter, updatedAt: serverTimestamp() }, { merge: true });
+    return employeeId;
+  });
 }
 
 export async function fsDeleteEmployee(id: number): Promise<void> {

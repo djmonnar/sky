@@ -76,7 +76,7 @@ const shiftAssignmentId = (
     : `${date}_${period}_${department}_${employeeId}`;
 
 export default function ScheduleManage() {
-  const { shifts, setShift, deleteShift, showToast, employees, role } = useStore();
+  const { shifts, setShift, deleteShift, showToast, employees, userProfiles, role } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const week = useMemo(() => weekDates(weekBase(weekOffset)), [weekOffset]);
   const [sel, setSel] = useState<SelSlot | null>(null);
@@ -109,6 +109,16 @@ export default function ScheduleManage() {
   const filteredAvailableEmployees = availableEmployees.filter((employee) =>
     employeeMatchesQuery(employee, employeeSearch)
   );
+  const profilesByUid = useMemo(
+    () => new Map(userProfiles.map((profile) => [profile.uid, profile])),
+    [userProfiles]
+  );
+  const employeeTag = (employee: Employee) => {
+    const profileRole = employee.uid ? profilesByUid.get(employee.uid)?.role : undefined;
+    if (profileRole === "admin") return "관리자";
+    if (profileRole === "manager") return employee.roleLabel ?? "매니저";
+    return employee.roleLabel;
+  };
 
   const selectedSlotLabel = (slot: SelSlot) =>
     `${DOW_KO[slot.dayIndex]} ${week[slot.dayIndex].getMonth() + 1}/${week[slot.dayIndex].getDate()} · ${PERIOD_LABEL[slot.period]} · ${DEPARTMENT_LABEL[slot.department]}`;
@@ -191,7 +201,7 @@ export default function ScheduleManage() {
       employeeId: employee.id,
       empId: employee.id,
       employeeName: employee.name,
-      roleLabel: employee.roleLabel,
+      roleLabel: employeeTag(employee),
       order,
       ...time,
     });
@@ -280,7 +290,7 @@ export default function ScheduleManage() {
         id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
         period: sel.period, department: sel.department,
         employeeId: employee.id, empId: employee.id,
-        employeeName: employee.name, roleLabel: employee.roleLabel,
+        employeeName: employee.name, roleLabel: employeeTag(employee),
         order: selShifts.length + index, ...time,
       });
     });
@@ -297,7 +307,7 @@ export default function ScheduleManage() {
       id, date, dayIndex: sel.dayIndex, day: sel.dayIndex,
       period: sel.period, department: sel.department,
       employeeId: employee.id, empId: employee.id,
-      employeeName: employee.name, roleLabel: employee.roleLabel,
+      employeeName: employee.name, roleLabel: employeeTag(employee),
       order: selShifts.length, ...time,
     });
     resetSlotDraft();
@@ -365,7 +375,7 @@ export default function ScheduleManage() {
       employeeId: employee.id,
       empId: employee.id,
       employeeName: employee.name,
-      roleLabel: employee.roleLabel,
+      roleLabel: employeeTag(employee),
     });
     deleteShift(shift.id);
     showToast(`${employee.name} 직원으로 연결했습니다`);
@@ -629,7 +639,7 @@ export default function ScheduleManage() {
                     <div>
                       <div className="bold small">
                         {employee.name}
-                        {employee.roleLabel && <span className="muted"> ({employee.roleLabel})</span>}
+                        {employeeTag(employee) && <span className="muted"> ({employeeTag(employee)})</span>}
                       </div>
                       <div className="muted small">{employee.role} · {employmentLabel(employee)}</div>
                     </div>
@@ -726,7 +736,7 @@ export default function ScheduleManage() {
                             onChange={() => toggleEmployeeSelection(e.id)}
                           />
                           <span>
-                            <span className="employee-pick-name">{e.name}{e.roleLabel ? ` (${e.roleLabel})` : ""}</span>
+                            <span className="employee-pick-name">{e.name}{employeeTag(e) ? ` (${employeeTag(e)})` : ""}</span>
                             <span className="employee-pick-meta">{e.role}</span>
                           </span>
                         </label>
@@ -752,7 +762,7 @@ export default function ScheduleManage() {
                           <span className="avatar">{(s.employeeName ?? "?")[0]}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div className="bold small">
-                              {s.employeeName}{!manual && (s.roleLabel ?? emp?.roleLabel) ? ` (${s.roleLabel ?? emp?.roleLabel})` : ""}
+                              {s.employeeName}{!manual && (s.roleLabel ?? (emp ? employeeTag(emp) : undefined)) ? ` (${s.roleLabel ?? (emp ? employeeTag(emp) : undefined)})` : ""}
                             </div>
                             <div className="muted small">{emp?.role ?? "—"}</div>
                           </div>
@@ -853,7 +863,7 @@ export default function ScheduleManage() {
                   onClick={() => addOneEmployee(employee)}
                 >
                   <span>
-                    <strong>{employee.name}{employee.roleLabel ? ` (${employee.roleLabel})` : ""}</strong>
+                    <strong>{employee.name}{employeeTag(employee) ? ` (${employeeTag(employee)})` : ""}</strong>
                     <small>{employee.role} · {employmentLabel(employee)}</small>
                   </span>
                   <b>추가</b>
