@@ -88,10 +88,14 @@ export default function EmployeeList() {
     setContractEmployee(null);
   };
 
-  const openContract = (employee: Employee) => {
-    setContractEmployee(employee);
+  const closeEdit = () => {
     setEditing(null);
     setDraft(null);
+  };
+
+  const openContract = (employee: Employee) => {
+    setContractEmployee(employee);
+    closeEdit();
     window.setTimeout(() => {
       document.querySelector(".contract-builder")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 0);
@@ -120,8 +124,7 @@ export default function EmployeeList() {
       standardEnd: draft.employmentType === "fullTime" ? draft.standardEnd : undefined,
     };
     upsertEmployee(normalized);
-    setEditing(null);
-    setDraft(null);
+    closeEdit();
     showToast(`${normalized.name} 정보를 저장했습니다`);
   };
 
@@ -143,8 +146,7 @@ export default function EmployeeList() {
     selectedIds.forEach((id) => deleteEmployee(id));
     setSelectedIds([]);
     if (editing && selectedIds.includes(editing.id)) {
-      setEditing(null);
-      setDraft(null);
+      closeEdit();
     }
     showToast("선택한 직원을 삭제했습니다");
   };
@@ -194,112 +196,133 @@ export default function EmployeeList() {
         <StatCard label="매니저" value={managerCount} unit="명" icon="🛠️" tone="amber" />
       </div>
 
-      {draft && (
-        <Card title={`${editing?.name ?? "직원"} 정보 수정`} icon="✎">
-          <div className="grid grid-3" style={{ gap: 12 }}>
-            <div>
-              <label className="field-label">이름</label>
-              <input className="input" value={draft.name} onChange={(e) => updateDraft("name", e.target.value)} />
+      {draft && editing && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeEdit();
+          }}
+        >
+          <section className="modal-panel employee-edit-modal" role="dialog" aria-modal="true" aria-labelledby="employee-edit-title">
+            <div className="modal-head">
+              <div>
+                <h2 id="employee-edit-title">{editing.name} 정보 수정</h2>
+                <p>직원 기본 정보와 급여 기준을 수정합니다.</p>
+              </div>
+              <button className="icon-btn" type="button" onClick={closeEdit} aria-label="닫기">×</button>
             </div>
-            <div>
-              <label className="field-label">직무</label>
-              <select className="select" value={draft.role} onChange={(e) => updateDraft("role", e.target.value)}>
-                {WORK_ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="field-label">직책 표시</label>
-              <input className="input" value={draft.roleLabel ?? ""} onChange={(e) => updateDraft("roleLabel", e.target.value || undefined)} placeholder="사장, 점장, 팀장 등" />
-            </div>
-          </div>
 
-          <div className="grid grid-3" style={{ gap: 12, marginTop: 14 }}>
-            <div>
-              <label className="field-label">고용형태</label>
-              <select className="select" value={draft.employmentType} onChange={(e) => updateDraft("employmentType", e.target.value as EmploymentType)}>
-                <option value="fullTime">정직원</option>
-                <option value="partTime">아르바이트</option>
-              </select>
-            </div>
-            <div>
-              <label className="field-label">급여방식</label>
-              <select className="select" value={draft.salaryType} onChange={(e) => updateDraft("salaryType", e.target.value as SalaryType)}>
-                <option value="monthly">월급</option>
-                <option value="hourly">시급</option>
-                <option value="perSlot">건별수당</option>
-              </select>
-            </div>
-            <div>
-              <label className="field-label">금액</label>
-              {draft.salaryType === "monthly" ? (
-                <input className="input" inputMode="numeric" value={draft.monthlySalary ?? ""} onChange={(e) => updateDraft("monthlySalary", toNumber(e.target.value))} placeholder="월급" />
-              ) : draft.salaryType === "perSlot" ? (
-                <input className="input" inputMode="numeric" value={draft.slotRate ?? ""} onChange={(e) => updateDraft("slotRate", toNumber(e.target.value))} placeholder="슬롯당 금액" />
-              ) : (
-                <input className="input" inputMode="numeric" value={draft.hourly ?? ""} onChange={(e) => updateDraft("hourly", toNumber(e.target.value))} placeholder="시급" />
+            <div className="modal-body">
+              <div className="modal-section-title">기본 정보</div>
+              <div className="grid grid-3 employee-edit-grid">
+                <div>
+                  <label className="field-label">이름</label>
+                  <input className="input" value={draft.name} onChange={(e) => updateDraft("name", e.target.value)} />
+                </div>
+                <div>
+                  <label className="field-label">직무</label>
+                  <select className="select" value={draft.role} onChange={(e) => updateDraft("role", e.target.value)}>
+                    {WORK_ROLE_OPTIONS.map((workRole) => <option key={workRole} value={workRole}>{workRole}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">직책 표시</label>
+                  <input className="input" value={draft.roleLabel ?? ""} onChange={(e) => updateDraft("roleLabel", e.target.value || undefined)} placeholder="사장, 점장, 팀장 등" />
+                </div>
+              </div>
+
+              <div className="modal-section-title">급여 정보</div>
+              <div className="grid grid-3 employee-edit-grid">
+                <div>
+                  <label className="field-label">고용형태</label>
+                  <select className="select" value={draft.employmentType} onChange={(e) => updateDraft("employmentType", e.target.value as EmploymentType)}>
+                    <option value="fullTime">정직원</option>
+                    <option value="partTime">아르바이트</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">급여방식</label>
+                  <select className="select" value={draft.salaryType} onChange={(e) => updateDraft("salaryType", e.target.value as SalaryType)}>
+                    <option value="monthly">월급</option>
+                    <option value="hourly">시급</option>
+                    <option value="perSlot">건별수당</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">금액</label>
+                  {draft.salaryType === "monthly" ? (
+                    <input className="input" inputMode="numeric" value={draft.monthlySalary ?? ""} onChange={(e) => updateDraft("monthlySalary", toNumber(e.target.value))} placeholder="월급" />
+                  ) : draft.salaryType === "perSlot" ? (
+                    <input className="input" inputMode="numeric" value={draft.slotRate ?? ""} onChange={(e) => updateDraft("slotRate", toNumber(e.target.value))} placeholder="슬롯당 금액" />
+                  ) : (
+                    <input className="input" inputMode="numeric" value={draft.hourly ?? ""} onChange={(e) => updateDraft("hourly", toNumber(e.target.value))} placeholder="시급" />
+                  )}
+                </div>
+              </div>
+
+              <label className="insurance-toggle-card employee-edit-insurance">
+                <input
+                  type="checkbox"
+                  checked={draft.socialInsurance === true}
+                  onChange={(e) => updateDraft("socialInsurance", e.target.checked)}
+                />
+                <span className={`checkbox ${draft.socialInsurance ? "checked" : ""}`}>
+                  {draft.socialInsurance ? "✓" : ""}
+                </span>
+                <span>
+                  <strong>4대보험 적용 대상자</strong>
+                  <small>체크한 직원만 급여관리에서 근로자 부담분을 자동 차감합니다.</small>
+                </span>
+              </label>
+
+              {draft.employmentType === "fullTime" && (
+                <div className="grid grid-2 employee-edit-grid">
+                  <div>
+                    <label className="field-label">고정 출근</label>
+                    <input className="input" value={draft.standardStart ?? ""} onChange={(e) => updateDraft("standardStart", e.target.value || undefined)} placeholder="10:00" />
+                  </div>
+                  <div>
+                    <label className="field-label">고정 퇴근</label>
+                    <input className="input" value={draft.standardEnd ?? ""} onChange={(e) => updateDraft("standardEnd", e.target.value || undefined)} placeholder="22:00" />
+                  </div>
+                </div>
               )}
-            </div>
-          </div>
 
-          <div className="grid grid-3" style={{ gap: 12, marginTop: 14 }}>
-            <div>
-              <label className="field-label">연락처</label>
-              <input className="input" value={draft.phone ?? ""} onChange={(e) => updateDraft("phone", e.target.value || undefined)} />
-            </div>
-            <div>
-              <label className="field-label">주소</label>
-              <input className="input" value={draft.address ?? ""} onChange={(e) => updateDraft("address", e.target.value || undefined)} />
-            </div>
-            <div>
-              <label className="field-label">주민번호</label>
-              <input className="input" value={draft.residentRegistrationNumber ?? ""} onChange={(e) => updateDraft("residentRegistrationNumber", e.target.value || undefined)} placeholder="000000-0000000" />
-            </div>
-          </div>
-
-          <div className="grid grid-2" style={{ gap: 12, marginTop: 14 }}>
-            <div>
-              <label className="field-label">은행</label>
-              <input className="input" value={draft.bank ?? ""} onChange={(e) => updateDraft("bank", e.target.value || undefined)} />
-            </div>
-            <div>
-              <label className="field-label">계좌번호</label>
-              <input className="input" value={draft.account ?? ""} onChange={(e) => updateDraft("account", e.target.value || undefined)} />
-            </div>
-          </div>
-
-          <label className="insurance-toggle-card" style={{ marginTop: 14 }}>
-            <input
-              type="checkbox"
-              checked={draft.socialInsurance === true}
-              onChange={(e) => updateDraft("socialInsurance", e.target.checked)}
-            />
-            <span className={`checkbox ${draft.socialInsurance ? "checked" : ""}`}>
-              {draft.socialInsurance ? "✓" : ""}
-            </span>
-            <span>
-              <strong>4대보험 적용 대상자</strong>
-              <small>체크한 직원만 급여관리에서 근로자 부담분을 자동 차감합니다.</small>
-            </span>
-          </label>
-
-          {draft.employmentType === "fullTime" && (
-            <div className="grid grid-2" style={{ gap: 12, marginTop: 14 }}>
-              <div>
-                <label className="field-label">고정 출근</label>
-                <input className="input" value={draft.standardStart ?? ""} onChange={(e) => updateDraft("standardStart", e.target.value || undefined)} placeholder="10:00" />
+              <div className="modal-section-title">연락처와 계좌</div>
+              <div className="grid grid-3 employee-edit-grid">
+                <div>
+                  <label className="field-label">연락처</label>
+                  <input className="input" value={draft.phone ?? ""} onChange={(e) => updateDraft("phone", e.target.value || undefined)} />
+                </div>
+                <div>
+                  <label className="field-label">주소</label>
+                  <input className="input" value={draft.address ?? ""} onChange={(e) => updateDraft("address", e.target.value || undefined)} />
+                </div>
+                <div>
+                  <label className="field-label">주민번호</label>
+                  <input className="input" value={draft.residentRegistrationNumber ?? ""} onChange={(e) => updateDraft("residentRegistrationNumber", e.target.value || undefined)} placeholder="000000-0000000" />
+                </div>
               </div>
-              <div>
-                <label className="field-label">고정 퇴근</label>
-                <input className="input" value={draft.standardEnd ?? ""} onChange={(e) => updateDraft("standardEnd", e.target.value || undefined)} placeholder="22:00" />
+
+              <div className="grid grid-2 employee-edit-grid">
+                <div>
+                  <label className="field-label">은행</label>
+                  <input className="input" value={draft.bank ?? ""} onChange={(e) => updateDraft("bank", e.target.value || undefined)} />
+                </div>
+                <div>
+                  <label className="field-label">계좌번호</label>
+                  <input className="input" value={draft.account ?? ""} onChange={(e) => updateDraft("account", e.target.value || undefined)} />
+                </div>
               </div>
             </div>
-          )}
 
-          <div className="row" style={{ justifyContent: "flex-end", marginTop: 16 }}>
-            <button className="btn btn-outline" onClick={() => { setEditing(null); setDraft(null); }}>취소</button>
-            <button className="btn btn-primary" onClick={saveEmployee}>저장</button>
-          </div>
-        </Card>
+            <div className="modal-actions">
+              <button className="btn btn-outline" type="button" onClick={closeEdit}>취소</button>
+              <button className="btn btn-primary" type="button" onClick={saveEmployee}>저장</button>
+            </div>
+          </section>
+        </div>
       )}
 
       {contractEmployee && (

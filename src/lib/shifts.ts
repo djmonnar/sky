@@ -96,8 +96,16 @@ export function countSlots(shifts: Shift[], employeeId?: number): {
     ? shifts
     : shifts.filter((s) => s.employeeId === employeeId || s.empId === employeeId);
   const active = target.filter((s) => !s.off);
-  const morningCount = active.filter((s) => s.period === "morning").length;
-  const afternoonCount = active.filter((s) => s.period === "afternoon").length;
+  const uniqueKeys = new Set(
+    active.map((s) => {
+      const targetEmployeeId = employeeId ?? s.employeeId ?? s.empId;
+      const targetDate = s.date || `day:${s.dayIndex ?? s.day}`;
+      return `${targetEmployeeId}_${targetDate}_${s.period}`;
+    })
+  );
+  const unique = Array.from(uniqueKeys).map((key) => key.endsWith("_morning") ? "morning" : "afternoon");
+  const morningCount = unique.filter((period) => period === "morning").length;
+  const afternoonCount = unique.filter((period) => period === "afternoon").length;
   return { morningCount, afternoonCount, slotCount: morningCount + afternoonCount };
 }
 
