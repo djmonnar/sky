@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, StatusBadge, Badge } from "../components/ui";
-import { TODAY, TODAY_DOW, TODAY_STR, DOW_KO, weekDates } from "../data";
+import { DOW_KO, dowIndex, fmtDate, weekDates } from "../data";
 import {
   countSlots,
   planTimesForShifts,
@@ -20,12 +20,20 @@ export default function StaffDashboard() {
   } = useStore();
 
   const me = currentEmployee;
-  const week = weekDates(TODAY);
-  const todaySlots = shiftsForEmployeeDay(shifts, me?.id, TODAY_STR, TODAY_DOW);
+  const [now, setNow] = useState(() => new Date());
+  const todayStr = useMemo(() => fmtDate(now), [now]);
+  const todayDow = useMemo(() => dowIndex(now), [now]);
+  const week = useMemo(() => weekDates(now), [now]);
+  const todaySlots = shiftsForEmployeeDay(shifts, me?.id, todayStr, todayDow);
   const hasWork = todaySlots.length > 0;
   const fixedSalary = !!me && isMonthlyEmployee(me);
   const plan = planTimesForShifts(todaySlots);
   const [quickSaved, setQuickSaved] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const myWeekSlots = week.map((_, dayIndex) => {
     const date = shiftDateForDay(week, dayIndex);
@@ -34,7 +42,7 @@ export default function StaffDashboard() {
   const weekCounts = countSlots(myWeekSlots.flat());
 
   const todayResv = reservations
-    .filter((r) => r.status !== "취소" && r.status !== "노쇼")
+    .filter((r) => r.date === todayStr && r.status !== "취소" && r.status !== "노쇼")
     .slice(0, 4);
 
   const saveQuick = () => {
@@ -42,7 +50,7 @@ export default function StaffDashboard() {
     addRecord({
       id: Date.now(),
       empId: me.id,
-      date: TODAY_STR,
+      date: todayStr,
       periods: Array.from(new Set(todaySlots.map((s) => s.period))),
       departments: Array.from(new Set(todaySlots.map((s) => s.department))),
       slotSummary: slotSummary(todaySlots),
@@ -90,7 +98,7 @@ export default function StaffDashboard() {
                   <div className="row" style={{ gap: 8 }}>
                     <span className="muted small bold">오늘 근무</span>
                     <Badge tone="green">
-                      {TODAY.getMonth() + 1}.{TODAY.getDate()} ({DOW_KO[TODAY_DOW]})
+                      {now.getMonth() + 1}.{now.getDate()} ({DOW_KO[todayDow]})
                     </Badge>
                   </div>
                   {hasWork && punchBadge}
@@ -216,7 +224,7 @@ export default function StaffDashboard() {
               {week.map((d, i) => {
                 const daySlots = myWeekSlots[i];
                 return (
-                  <div className={`week-day ${i === TODAY_DOW ? "today" : ""}`} key={i}>
+                  <div className={`week-day ${i === todayDow ? "today" : ""}`} key={i}>
                     <span className="dow">{DOW_KO[i]}</span>
                     <span className="dt">{d.getMonth() + 1}/{d.getDate()}</span>
                     {daySlots.length > 0 ? (

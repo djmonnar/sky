@@ -5,6 +5,16 @@ export type EmploymentType = "fullTime" | "partTime";
 export type SalaryType = "monthly" | "hourly" | "perSlot";
 export type ShiftPeriod = "morning" | "afternoon";
 export type Department = "hall" | "kitchen";
+export type WorkDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface WeeklyWorkDay {
+  useDefault?: boolean;
+  off?: boolean;
+  start?: string;
+  end?: string;
+}
+
+export type WeeklyWorkSchedule = Partial<Record<WorkDayKey, WeeklyWorkDay>>;
 export type ManagerPermissionKey =
   | "dashboard"
   | "reservations"
@@ -61,6 +71,8 @@ export interface Employee {
   slotRate?: number; // 오전/오후 슬롯 1회당 수당
   standardStart?: string;
   standardEnd?: string;
+  weeklyScheduleEnabled?: boolean;
+  weeklySchedule?: WeeklyWorkSchedule;
   // 회원가입(자가 등록) 직원 정보
   phone?: string;
   address?: string;

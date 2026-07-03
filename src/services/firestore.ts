@@ -76,6 +76,8 @@ export function subscribeEmployees(cb: (v: Employee[]) => void, onError: ErrCb):
       slotRate: d.slotRate,
       standardStart: d.standardStart,
       standardEnd: d.standardEnd,
+      weeklyScheduleEnabled: d.weeklyScheduleEnabled === true,
+      weeklySchedule: d.weeklySchedule,
       phone: d.phone,
       address: d.address,
       residentRegistrationNumber: d.residentRegistrationNumber,

@@ -4,7 +4,52 @@ import { useStore } from "../store";
 import { Card, Badge, StatCard } from "../components/ui";
 import EmploymentContractBuilder from "../components/EmploymentContractBuilder";
 import { salaryTypeLabel, employmentLabel } from "../lib/payroll";
-import type { Employee, EmploymentType, Role, SalaryType } from "../data/types";
+import type { Employee, EmploymentType, Role, SalaryType, WeeklyWorkSchedule, WorkDayKey } from "../data/types";
+
+const WORK_DAYS: { key: WorkDayKey; label: string; short: string }[] = [
+  { key: "mon", label: "월요일", short: "월" },
+  { key: "tue", label: "화요일", short: "화" },
+  { key: "wed", label: "수요일", short: "수" },
+  { key: "thu", label: "목요일", short: "목" },
+  { key: "fri", label: "금요일", short: "금" },
+  { key: "sat", label: "토요일", short: "토" },
+  { key: "sun", label: "일요일", short: "일" },
+];
+const WORK_TIME_PRESETS = [
+  { label: "오전", start: "10:00", end: "15:00" },
+  { label: "오후", start: "17:00", end: "22:00" },
+  { label: "풀타임", start: "10:00", end: "22:00" },
+];
+
+function defaultWeeklySchedule(): WeeklyWorkSchedule {
+  return Object.fromEntries(WORK_DAYS.map(({ key }) => [key, { useDefault: true }])) as WeeklyWorkSchedule;
+}
+
+function normalizeWeeklySchedule(schedule?: WeeklyWorkSchedule): WeeklyWorkSchedule {
+  const next = defaultWeeklySchedule();
+  WORK_DAYS.forEach(({ key }) => {
+    next[key] = { ...next[key], ...(schedule?.[key] ?? {}) };
+  });
+  return next;
+}
+
+function workTimeSummary(employee: Employee): string | null {
+  if (employee.employmentType !== "fullTime") return null;
+  const base = employee.standardStart && employee.standardEnd
+    ? `${employee.standardStart}~${employee.standardEnd}`
+    : "근무시간 미설정";
+  if (!employee.weeklyScheduleEnabled || !employee.weeklySchedule) return base;
+  const schedule = normalizeWeeklySchedule(employee.weeklySchedule);
+  const exceptions = WORK_DAYS.filter(({ key }) => {
+    const day = schedule[key];
+    return day && (day.off || day.useDefault === false);
+  }).map(({ key, short }) => {
+    const day = schedule[key];
+    if (day?.off) return `${short} 휴무`;
+    return `${short} ${day?.start || employee.standardStart || "--:--"}~${day?.end || employee.standardEnd || "--:--"}`;
+  });
+  return exceptions.length > 0 ? `${base} · 예외 ${exceptions.join(", ")}` : base;
+}
 
 const ROLE_OPTIONS: Role[] = ["staff", "manager"];
 const WORK_ROLE_OPTIONS = ["홀", "주방", "홀/주방"];
@@ -84,7 +129,10 @@ export default function EmployeeList() {
 
   const openEdit = (employee: Employee) => {
     setEditing(employee);
-    setDraft({ ...employee });
+    setDraft({
+      ...employee,
+      weeklySchedule: normalizeWeeklySchedule(employee.weeklySchedule),
+    });
     setContractEmployee(null);
   };
 
@@ -122,6 +170,10 @@ export default function EmployeeList() {
       account: draft.account?.trim(),
       standardStart: draft.employmentType === "fullTime" ? draft.standardStart : undefined,
       standardEnd: draft.employmentType === "fullTime" ? draft.standardEnd : undefined,
+      weeklyScheduleEnabled: draft.employmentType === "fullTime" && draft.weeklyScheduleEnabled === true,
+      weeklySchedule: draft.employmentType === "fullTime" && draft.weeklyScheduleEnabled === true
+        ? normalizeWeeklySchedule(draft.weeklySchedule)
+        : undefined,
     };
     upsertEmployee(normalized);
     closeEdit();
@@ -154,6 +206,44 @@ export default function EmployeeList() {
   const updateDraft = <K extends keyof Employee>(key: K, value: Employee[K]) => {
     if (!draft) return;
     setDraft({ ...draft, [key]: value });
+  };
+
+  const updateDraftPatch = (patch: Partial<Employee>) => {
+    if (!draft) return;
+    setDraft({ ...draft, ...patch });
+  };
+
+  const toggleWeeklySchedule = (enabled: boolean) => {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      weeklyScheduleEnabled: enabled,
+      weeklySchedule: enabled ? normalizeWeeklySchedule(draft.weeklySchedule) : undefined,
+    });
+  };
+
+  const patchWorkDay = (day: WorkDayKey, patch: NonNullable<WeeklyWorkSchedule[WorkDayKey]>) => {
+    if (!draft) return;
+    const schedule = normalizeWeeklySchedule(draft.weeklySchedule);
+    schedule[day] = { ...(schedule[day] ?? { useDefault: true }), ...patch };
+    setDraft({ ...draft, weeklySchedule: schedule });
+  };
+
+  const setDayTime = (day: WorkDayKey, start: string, end: string) => {
+    patchWorkDay(day, { useDefault: false, off: false, start, end });
+  };
+
+  const applyDefaultToAllDays = () => {
+    if (!draft) return;
+    setDraft({ ...draft, weeklySchedule: defaultWeeklySchedule() });
+  };
+
+  const setWeekendOff = () => {
+    if (!draft) return;
+    const schedule = normalizeWeeklySchedule(draft.weeklySchedule);
+    schedule.sat = { useDefault: false, off: true };
+    schedule.sun = { useDefault: false, off: true };
+    setDraft({ ...draft, weeklySchedule: schedule });
   };
 
   return (
@@ -236,7 +326,18 @@ export default function EmployeeList() {
               <div className="grid grid-3 employee-edit-grid">
                 <div>
                   <label className="field-label">고용형태</label>
-                  <select className="select" value={draft.employmentType} onChange={(e) => updateDraft("employmentType", e.target.value as EmploymentType)}>
+                  <select
+                    className="select"
+                    value={draft.employmentType}
+                    onChange={(e) => {
+                      const employmentType = e.target.value as EmploymentType;
+                      updateDraftPatch({
+                        employmentType,
+                        weeklyScheduleEnabled: employmentType === "fullTime" ? draft.weeklyScheduleEnabled : false,
+                        weeklySchedule: employmentType === "fullTime" ? draft.weeklySchedule : undefined,
+                      });
+                    }}
+                  >
                     <option value="fullTime">정직원</option>
                     <option value="partTime">아르바이트</option>
                   </select>
@@ -277,15 +378,107 @@ export default function EmployeeList() {
               </label>
 
               {draft.employmentType === "fullTime" && (
-                <div className="grid grid-2 employee-edit-grid">
-                  <div>
-                    <label className="field-label">고정 출근</label>
-                    <input className="input" value={draft.standardStart ?? ""} onChange={(e) => updateDraft("standardStart", e.target.value || undefined)} placeholder="10:00" />
+                <div className="worktime-editor">
+                  <div className="grid grid-2 employee-edit-grid">
+                    <div>
+                      <label className="field-label">기본 출근시간</label>
+                      <input className="input" value={draft.standardStart ?? ""} onChange={(e) => updateDraft("standardStart", e.target.value || undefined)} placeholder="10:00" />
+                    </div>
+                    <div>
+                      <label className="field-label">기본 퇴근시간</label>
+                      <input className="input" value={draft.standardEnd ?? ""} onChange={(e) => updateDraft("standardEnd", e.target.value || undefined)} placeholder="22:00" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="field-label">고정 퇴근</label>
-                    <input className="input" value={draft.standardEnd ?? ""} onChange={(e) => updateDraft("standardEnd", e.target.value || undefined)} placeholder="22:00" />
+
+                  <div className="preset-row">
+                    {WORK_TIME_PRESETS.map((preset) => (
+                      <button
+                        className="btn btn-soft btn-sm"
+                        type="button"
+                        key={preset.label}
+                        onClick={() => updateDraftPatch({ standardStart: preset.start, standardEnd: preset.end })}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
                   </div>
+
+                  <label className="insurance-toggle-card employee-edit-insurance">
+                    <input
+                      type="checkbox"
+                      checked={draft.weeklyScheduleEnabled === true}
+                      onChange={(e) => toggleWeeklySchedule(e.target.checked)}
+                    />
+                    <span className={`checkbox ${draft.weeklyScheduleEnabled ? "checked" : ""}`}>
+                      {draft.weeklyScheduleEnabled ? "✓" : ""}
+                    </span>
+                    <span>
+                      <strong>요일별로 다른 시간이 있어요</strong>
+                      <small>대부분은 기본 시간을 그대로 쓰고, 다른 요일만 휴무나 별도 시간으로 바꿉니다.</small>
+                    </span>
+                  </label>
+
+                  {draft.weeklyScheduleEnabled && (
+                    <div className="weekly-work-editor">
+                      <div className="weekly-work-actions">
+                        <button className="btn btn-outline btn-sm" type="button" onClick={applyDefaultToAllDays}>전체 기본값</button>
+                        <button className="btn btn-outline btn-sm" type="button" onClick={setWeekendOff}>주말 휴무</button>
+                      </div>
+                      <div className="weekly-work-grid">
+                        {WORK_DAYS.map((day) => {
+                          const value = normalizeWeeklySchedule(draft.weeklySchedule)[day.key] ?? { useDefault: true };
+                          const usesDefault = value.useDefault !== false && value.off !== true;
+                          return (
+                            <div className={`weekly-work-day ${value.off ? "off" : ""}`} key={day.key}>
+                              <div className="weekly-work-day-head">
+                                <strong>{day.short}</strong>
+                                <span>{usesDefault ? "기본" : value.off ? "휴무" : "예외"}</span>
+                              </div>
+                              <div className="segmented compact">
+                                <button
+                                  type="button"
+                                  className={usesDefault ? "on" : ""}
+                                  onClick={() => patchWorkDay(day.key, { useDefault: true, off: false, start: undefined, end: undefined })}
+                                >
+                                  기본
+                                </button>
+                                <button
+                                  type="button"
+                                  className={value.off ? "on" : ""}
+                                  onClick={() => patchWorkDay(day.key, { useDefault: false, off: true })}
+                                >
+                                  휴무
+                                </button>
+                              </div>
+                              <div className="grid grid-2 employee-edit-grid">
+                                <input
+                                  className="input"
+                                  value={value.start ?? ""}
+                                  disabled={usesDefault || value.off}
+                                  onChange={(e) => patchWorkDay(day.key, { useDefault: false, off: false, start: e.target.value })}
+                                  placeholder={draft.standardStart ?? "10:00"}
+                                />
+                                <input
+                                  className="input"
+                                  value={value.end ?? ""}
+                                  disabled={usesDefault || value.off}
+                                  onChange={(e) => patchWorkDay(day.key, { useDefault: false, off: false, end: e.target.value })}
+                                  placeholder={draft.standardEnd ?? "22:00"}
+                                />
+                              </div>
+                              <div className="weekly-work-presets">
+                                {WORK_TIME_PRESETS.map((preset) => (
+                                  <button className="chip-button" type="button" key={preset.label} onClick={() => setDayTime(day.key, preset.start, preset.end)}>
+                                    {preset.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -383,6 +576,7 @@ export default function EmployeeList() {
                       {emp.phone && ` · ${emp.phone}`}
                       {emp.address && ` · ${emp.address}`}
                       {emp.socialInsurance && " · 4대보험"}
+                      {workTimeSummary(emp) && ` · ${workTimeSummary(emp)}`}
                     </div>
                   </div>
 

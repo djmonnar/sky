@@ -404,6 +404,69 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .employee-edit-insurance {
   margin: 14px 0;
 }
+.worktime-editor {
+  display: grid;
+  gap: 12px;
+}
+.preset-row,
+.weekly-work-actions,
+.weekly-work-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.weekly-work-editor {
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.weekly-work-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.weekly-work-day {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+.weekly-work-day.off {
+  background: var(--gray-bg);
+}
+.weekly-work-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.weekly-work-day-head strong {
+  font-size: 15px;
+}
+.weekly-work-day-head span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.weekly-work-presets {
+  margin-top: 8px;
+}
+.chip-button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-alt);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+.chip-button:hover {
+  border-color: var(--green-600);
+  color: var(--green-700);
+}
 
 /* ============ Badges ============ */
 .badge {
@@ -2295,6 +2358,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-size: 13px; color: var(--text-muted);
 }
 .segmented button.on { background: var(--card); color: var(--text); font-weight: 700; box-shadow: var(--shadow); }
+.segmented.compact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.segmented.compact button {
+  padding: 6px 8px;
+}
 
 /* ============ Toast ============ */
 .toast {
@@ -2353,6 +2425,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
     min-height: 46px;
   }
   .employee-edit-grid {
+    grid-template-columns: 1fr;
+  }
+  .weekly-work-grid {
     grid-template-columns: 1fr;
   }
   .hero-time { font-size: 32px; }
