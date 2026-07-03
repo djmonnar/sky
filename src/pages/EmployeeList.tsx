@@ -16,10 +16,12 @@ const WORK_DAYS: { key: WorkDayKey; label: string; short: string }[] = [
   { key: "sun", label: "일요일", short: "일" },
 ];
 const WORK_TIME_PRESETS = [
-  { label: "오전", start: "10:00", end: "15:00" },
-  { label: "오후", start: "17:00", end: "22:00" },
-  { label: "풀타임", start: "10:00", end: "22:00" },
+  { label: "오전", start: "10:20", end: "15:00" },
+  { label: "오후", start: "16:30", end: "21:30" },
+  { label: "풀타임", start: "10:20", end: "21:30" },
 ];
+const DEFAULT_STANDARD_START = "10:20";
+const DEFAULT_STANDARD_END = "21:30";
 
 function defaultWeeklySchedule(): WeeklyWorkSchedule {
   return Object.fromEntries(WORK_DAYS.map(({ key }) => [key, { useDefault: true }])) as WeeklyWorkSchedule;
@@ -147,6 +149,12 @@ export default function EmployeeList() {
     setEditing(employee);
     setDraft({
       ...employee,
+      standardStart: employee.employmentType === "fullTime"
+        ? employee.standardStart ?? DEFAULT_STANDARD_START
+        : employee.standardStart,
+      standardEnd: employee.employmentType === "fullTime"
+        ? employee.standardEnd ?? DEFAULT_STANDARD_END
+        : employee.standardEnd,
       weeklySchedule: normalizeWeeklySchedule(employee.weeklySchedule),
     });
     setContractEmployee(null);
@@ -184,8 +192,8 @@ export default function EmployeeList() {
       residentRegistrationNumber: draft.residentRegistrationNumber?.trim(),
       bank: draft.bank?.trim(),
       account: draft.account?.trim(),
-      standardStart: draft.employmentType === "fullTime" ? draft.standardStart : undefined,
-      standardEnd: draft.employmentType === "fullTime" ? draft.standardEnd : undefined,
+      standardStart: draft.employmentType === "fullTime" ? draft.standardStart || DEFAULT_STANDARD_START : undefined,
+      standardEnd: draft.employmentType === "fullTime" ? draft.standardEnd || DEFAULT_STANDARD_END : undefined,
       weeklyScheduleEnabled: draft.employmentType === "fullTime" && draft.weeklyScheduleEnabled === true,
       weeklySchedule: draft.employmentType === "fullTime" && draft.weeklyScheduleEnabled === true
         ? normalizeWeeklySchedule(draft.weeklySchedule)
@@ -427,11 +435,11 @@ export default function EmployeeList() {
                   <div className="grid grid-2 employee-edit-grid">
                     <div>
                       <label className="field-label">기본 출근시간</label>
-                      <input className="input" value={draft.standardStart ?? ""} onChange={(e) => updateDraft("standardStart", e.target.value || undefined)} placeholder="10:00" />
+                      <input className="input" value={draft.standardStart ?? ""} onChange={(e) => updateDraft("standardStart", e.target.value || undefined)} placeholder={DEFAULT_STANDARD_START} />
                     </div>
                     <div>
                       <label className="field-label">기본 퇴근시간</label>
-                      <input className="input" value={draft.standardEnd ?? ""} onChange={(e) => updateDraft("standardEnd", e.target.value || undefined)} placeholder="22:00" />
+                      <input className="input" value={draft.standardEnd ?? ""} onChange={(e) => updateDraft("standardEnd", e.target.value || undefined)} placeholder={DEFAULT_STANDARD_END} />
                     </div>
                   </div>
 
@@ -501,14 +509,14 @@ export default function EmployeeList() {
                                   value={value.start ?? ""}
                                   disabled={usesDefault || value.off}
                                   onChange={(e) => patchWorkDay(day.key, { useDefault: false, off: false, start: e.target.value })}
-                                  placeholder={draft.standardStart ?? "10:00"}
+                                  placeholder={draft.standardStart ?? DEFAULT_STANDARD_START}
                                 />
                                 <input
                                   className="input"
                                   value={value.end ?? ""}
                                   disabled={usesDefault || value.off}
                                   onChange={(e) => patchWorkDay(day.key, { useDefault: false, off: false, end: e.target.value })}
-                                  placeholder={draft.standardEnd ?? "22:00"}
+                                  placeholder={draft.standardEnd ?? DEFAULT_STANDARD_END}
                                 />
                               </div>
                               <div className="weekly-work-presets">

@@ -15,8 +15,8 @@ export const DEPARTMENT_LABEL: Record<Department, string> = {
 };
 
 export const PERIOD_TIME: Record<ShiftPeriod, { start: string; end: string; breakMin: number }> = {
-  morning: { start: "10:00", end: "15:00", breakMin: 30 },
-  afternoon: { start: "17:00", end: "22:00", breakMin: 30 },
+  morning: { start: "10:20", end: "15:00", breakMin: 30 },
+  afternoon: { start: "16:30", end: "21:30", breakMin: 30 },
 };
 
 export function shiftDateForDay(week: Date[], dayIndex: number): string {

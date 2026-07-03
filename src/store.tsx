@@ -497,6 +497,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       salaryType: "monthly",
       hourly: 0,
       monthlySalary: 0,
+      standardStart: "10:20",
+      standardEnd: "21:30",
       phone: userProfile.phone,
       address: userProfile.address,
       residentRegistrationNumber: userProfile.residentRegistrationNumber,

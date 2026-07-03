@@ -22,10 +22,10 @@ import type {
 export const CURRENT_STAFF_ID = 5; // 로그인 세션 스텁: 김현지
 
 export const EMPLOYEES: Employee[] = [
-  { id: 1, name: "김지현", role: "홀", roleLabel: "사장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3800000, standardStart: "10:00", standardEnd: "22:00" },
-  { id: 2, name: "박현제", role: "홀", roleLabel: "점장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3400000, standardStart: "10:00", standardEnd: "22:00" },
-  { id: 3, name: "윤경원", role: "홀", roleLabel: "팀장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3100000, standardStart: "10:00", standardEnd: "22:00" },
-  { id: 4, name: "박기빈", role: "홀", roleLabel: "실장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3000000, standardStart: "10:00", standardEnd: "22:00" },
+  { id: 1, name: "김지현", role: "홀", roleLabel: "사장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3800000, standardStart: "10:20", standardEnd: "21:30" },
+  { id: 2, name: "박현제", role: "홀", roleLabel: "점장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3400000, standardStart: "10:20", standardEnd: "21:30" },
+  { id: 3, name: "윤경원", role: "홀", roleLabel: "팀장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3100000, standardStart: "10:20", standardEnd: "21:30" },
+  { id: 4, name: "박기빈", role: "홀", roleLabel: "실장", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3000000, standardStart: "10:20", standardEnd: "21:30" },
   { id: 5, name: "김현지", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10500 },
   { id: 6, name: "옥수민", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10500 },
   { id: 7, name: "김영선", role: "홀", employmentType: "partTime", salaryType: "perSlot", hourly: 0, slotRate: 52000 },
@@ -39,8 +39,8 @@ export const EMPLOYEES: Employee[] = [
   { id: 15, name: "손유찬", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10300 },
   { id: 16, name: "이예지", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10300 },
   { id: 17, name: "이정현", role: "홀", employmentType: "partTime", salaryType: "hourly", hourly: 10300 },
-  { id: 18, name: "혜영고모", role: "주방", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 2700000, standardStart: "10:00", standardEnd: "15:00" },
-  { id: 19, name: "원봉덕", role: "주방", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 2700000, standardStart: "10:00", standardEnd: "15:00" },
+  { id: 18, name: "혜영고모", role: "주방", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 2700000, standardStart: "10:20", standardEnd: "15:00" },
+  { id: 19, name: "원봉덕", role: "주방", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 2700000, standardStart: "10:20", standardEnd: "15:00" },
   { id: 20, name: "박혜영", role: "주방", employmentType: "partTime", salaryType: "perSlot", hourly: 0, slotRate: 55000 },
   { id: 21, name: "박미경", role: "주방", employmentType: "partTime", salaryType: "hourly", hourly: 11000 },
   { id: 22, name: "차준형", role: "주방", employmentType: "partTime", salaryType: "hourly", hourly: 11000 },
@@ -64,8 +64,8 @@ export const SEED_RESERVATIONS: Reservation[] = [
 const EMPLOYEE_BY_ID = new Map(EMPLOYEES.map((e) => [e.id, e]));
 const WEEK = weekDates(TODAY);
 const PERIOD_TIME: Record<ShiftPeriod, { start: string; end: string; breakMin: number }> = {
-  morning: { start: "10:00", end: "15:00", breakMin: 30 },
-  afternoon: { start: "17:00", end: "22:00", breakMin: 30 },
+  morning: { start: "10:20", end: "15:00", breakMin: 30 },
+  afternoon: { start: "16:30", end: "21:30", breakMin: 30 },
 };
 
 type SlotSeed = Record<ShiftPeriod, Record<Department, number[]>>;
@@ -132,11 +132,11 @@ export const SEED_SHIFTS: Shift[] = WEEK_PLAN.flatMap((dayPlan, dayIndex) =>
 );
 
 export const SEED_RECORDS: WorkRecord[] = [
-  { id: 1, empId: 5, date: fmtDate(WEEK[0]), periods: ["morning"], departments: ["hall"], slotSummary: "오전 · 홀", workType: "slot", planStart: "10:00", planEnd: "15:00", actualStart: "10:00", actualEnd: "15:00", breakMin: 30, status: "승인완료" },
-  { id: 2, empId: 5, date: fmtDate(WEEK[1]), periods: ["morning", "afternoon"], departments: ["hall"], slotSummary: "오전+오후 · 홀", workType: "slot", planStart: "10:00", planEnd: "22:00", actualStart: "10:00", actualEnd: "22:10", breakMin: 60, status: "승인완료", note: "마감 정리 10분 연장" },
-  { id: 3, empId: 7, date: fmtDate(WEEK[2]), periods: ["morning"], departments: ["hall"], slotSummary: "오전 · 홀", workType: "slot", planStart: "10:00", planEnd: "15:00", actualStart: "10:05", actualEnd: "15:00", breakMin: 30, status: "승인대기", note: "버스 지연" },
-  { id: 4, empId: 20, date: fmtDate(WEEK[3]), periods: ["afternoon"], departments: ["kitchen"], slotSummary: "오후 · 주방", workType: "slot", planStart: "17:00", planEnd: "22:00", actualStart: "17:00", actualEnd: "22:00", breakMin: 30, status: "승인대기" },
-  { id: 5, empId: 11, date: fmtDate(WEEK[4]), periods: ["morning", "afternoon"], departments: ["hall", "kitchen"], slotSummary: "오전+오후 · 홀/주방", workType: "slot", planStart: "10:00", planEnd: "22:00", actualStart: "10:00", actualEnd: "22:00", breakMin: 60, status: "제출" },
+  { id: 1, empId: 5, date: fmtDate(WEEK[0]), periods: ["morning"], departments: ["hall"], slotSummary: "오전 · 홀", workType: "slot", planStart: "10:20", planEnd: "15:00", actualStart: "10:20", actualEnd: "15:00", breakMin: 30, status: "승인완료" },
+  { id: 2, empId: 5, date: fmtDate(WEEK[1]), periods: ["morning", "afternoon"], departments: ["hall"], slotSummary: "오전+오후 · 홀", workType: "slot", planStart: "10:20", planEnd: "21:30", actualStart: "10:20", actualEnd: "21:40", breakMin: 60, status: "승인완료", note: "마감 정리 10분 연장" },
+  { id: 3, empId: 7, date: fmtDate(WEEK[2]), periods: ["morning"], departments: ["hall"], slotSummary: "오전 · 홀", workType: "slot", planStart: "10:20", planEnd: "15:00", actualStart: "10:25", actualEnd: "15:00", breakMin: 30, status: "승인대기", note: "버스 지연" },
+  { id: 4, empId: 20, date: fmtDate(WEEK[3]), periods: ["afternoon"], departments: ["kitchen"], slotSummary: "오후 · 주방", workType: "slot", planStart: "16:30", planEnd: "21:30", actualStart: "16:30", actualEnd: "21:30", breakMin: 30, status: "승인대기" },
+  { id: 5, empId: 11, date: fmtDate(WEEK[4]), periods: ["morning", "afternoon"], departments: ["hall", "kitchen"], slotSummary: "오전+오후 · 홀/주방", workType: "slot", planStart: "10:20", planEnd: "21:30", actualStart: "10:20", actualEnd: "21:30", breakMin: 60, status: "제출" },
 ];
 
 function payrollRow(employee: Employee): PayrollRow {

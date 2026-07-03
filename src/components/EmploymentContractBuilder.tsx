@@ -99,7 +99,7 @@ function defaultWagePeriodEnd(startDate: string): string {
 
 function defaultDraft(employee: Employee): ContractDraft {
   const contractType: ContractType = employee.employmentType === "fullTime" ? "fullTime" : "partTime";
-  const workStart = employee.standardStart ?? "11:00";
+  const workStart = employee.standardStart ?? "10:20";
   const workEnd = employee.standardEnd ?? "21:30";
   const wageAmount = moneyValue(employee);
   return {
@@ -113,7 +113,7 @@ function defaultDraft(employee: Employee): ContractDraft {
     workDaysPerWeek: contractType === "fullTime" ? "6" : "",
     workStart,
     workEnd,
-    breakTime: "15:00-17:00",
+    breakTime: "15:00-16:30",
     weeklyHoliday: "업무 사정상 주중 1일을 직원간 협의하여 교대로 사용",
     partTimeSchedule: "근무일 및 근로일별 근로시간은 매장 근무표에 따름",
     wageType: salaryTypeLabel(employee),
@@ -245,7 +245,7 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
             </label>
             <label>
               <span className="field-label">시업시간</span>
-              <input className="input" value={draft.workStart} onChange={(e) => update("workStart", e.target.value)} placeholder="11:00" />
+              <input className="input" value={draft.workStart} onChange={(e) => update("workStart", e.target.value)} placeholder="10:20" />
             </label>
             <label>
               <span className="field-label">종업시간</span>
@@ -253,7 +253,7 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
             </label>
             <label>
               <span className="field-label">휴게시간</span>
-              <input className="input" value={draft.breakTime} onChange={(e) => update("breakTime", e.target.value)} placeholder="15:00-17:00" />
+              <input className="input" value={draft.breakTime} onChange={(e) => update("breakTime", e.target.value)} placeholder="15:00-16:30" />
             </label>
             <label>
               <span className="field-label">임금형태</span>
