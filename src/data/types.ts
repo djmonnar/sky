@@ -170,6 +170,8 @@ export interface OwnerSchedule {
   memo?: string;
   important?: boolean;
   done?: boolean;
+  repeat?: boolean;
+  repeatCycle?: "monthly" | "yearly";
   createdAt?: string;
   updatedAt?: string;
 }

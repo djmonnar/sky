@@ -245,6 +245,8 @@ export function subscribeOwnerSchedules(cb: (v: OwnerSchedule[]) => void, onErro
       memo: d.memo ? String(d.memo) : "",
       important: d.important === true,
       done: d.done === true,
+      repeat: d.repeat === true,
+      repeatCycle: (d.repeatCycle === "yearly" ? "yearly" : d.repeat === true ? "monthly" : undefined) as OwnerSchedule["repeatCycle"],
       createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
       updatedAt: asDisplayDate(d.updatedAt) || String(d.updatedAt ?? ""),
     }),

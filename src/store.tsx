@@ -558,10 +558,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       memo: item.memo?.trim(),
       important: item.important ?? false,
       done: item.done ?? false,
+      repeat: item.repeat ?? false,
+      repeatCycle: item.repeat ? item.repeatCycle ?? "monthly" : undefined,
       updatedAt: new Date().toISOString(),
     };
     if (APP_MODE === "live") {
-      fsUpsertOwnerSchedule(normalized).catch(fail("대표 일정 저장"));
+      fsUpsertOwnerSchedule(normalized).catch(fail("재무 일정 저장"));
       return;
     }
     setOwnerSchedules((prev) => {
@@ -575,7 +577,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteOwnerSchedule = useCallback((id: number) => {
     if (APP_MODE === "live") {
-      fsDeleteOwnerSchedule(id).catch(fail("대표 일정 삭제"));
+      fsDeleteOwnerSchedule(id).catch(fail("재무 일정 삭제"));
       return;
     }
     setOwnerSchedules((prev) => prev.filter((item) => item.id !== id));

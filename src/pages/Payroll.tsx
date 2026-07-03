@@ -40,17 +40,17 @@ const PAY_REVIEW = "검토중" as PayrollRow["status"];
 const PAY_APPROVED = "승인완료" as PayrollRow["status"];
 
 const CATEGORY_LABEL: Record<OwnerScheduleCategory, string> = {
-  personal: "개인",
-  store: "매장",
-  meeting: "미팅",
-  finance: "정산",
+  personal: "급여",
+  store: "카드",
+  meeting: "이자",
+  finance: "세금·정산",
   other: "기타",
 };
 
 const CATEGORY_TONE: Record<OwnerScheduleCategory, string> = {
-  personal: "green",
-  store: "blue",
-  meeting: "amber",
+  personal: "blue",
+  store: "amber",
+  meeting: "red",
   finance: "red",
   other: "gray",
 };
@@ -62,11 +62,13 @@ function blankSchedule(date = TODAY_STR): OwnerSchedule {
     startTime: "10:00",
     endTime: "",
     title: "",
-    category: "personal",
+    category: "finance",
     location: "",
     memo: "",
     important: false,
     done: false,
+    repeat: false,
+    repeatCycle: "monthly",
   };
 }
 
@@ -182,6 +184,35 @@ function nextDate(date: string, days: number): string {
   return next.toISOString().slice(0, 10);
 }
 
+function dateWithDay(baseDate: string, day: number): string {
+  return `${baseDate.slice(0, 7)}-${String(day).padStart(2, "0")}`;
+}
+
+function scheduleMatchesDate(item: OwnerSchedule, date: string): boolean {
+  if (item.date === date) return true;
+  if (!item.repeat || item.date > date) return false;
+  if (item.repeatCycle === "yearly") return item.date.slice(5) === date.slice(5);
+  return item.date.slice(8) === date.slice(8);
+}
+
+function scheduleMatchesMonth(item: OwnerSchedule, month: string): boolean {
+  if (item.date.startsWith(month)) return true;
+  if (!item.repeat || item.date.slice(0, 7) > month) return false;
+  if (item.repeatCycle === "yearly") return item.date.slice(5, 7) === month.slice(5, 7);
+  return true;
+}
+
+function scheduleWhenText(item: OwnerSchedule): string {
+  const time = item.startTime ? ` · ${item.startTime}${item.endTime ? `-${item.endTime}` : ""}` : "";
+  if (item.repeat) {
+    const repeatText = item.repeatCycle === "yearly"
+      ? `매년 ${Number(item.date.slice(5, 7))}월 ${Number(item.date.slice(8))}일`
+      : `매월 ${Number(item.date.slice(8))}일`;
+    return `${repeatText}${time}`;
+  }
+  return `${item.date}${time}`;
+}
+
 export default function Payroll() {
   const {
     payroll, records, shifts, updatePayroll, approveRecord, showToast, employees,
@@ -243,12 +274,14 @@ export default function Payroll() {
     setPermissionDraft(normalizeManagerPermissions(managerPermissions));
   }, [managerPermissions]);
 
-  const daySchedules = ownerSchedules.filter((item) => item.date === scheduleDate);
-  const monthScheduleCount = ownerSchedules.filter((item) => item.date.startsWith(scheduleDate.slice(0, 7))).length;
+  const daySchedules = ownerSchedules.filter((item) => scheduleMatchesDate(item, scheduleDate));
+  const monthScheduleCount = ownerSchedules.filter((item) => scheduleMatchesMonth(item, scheduleDate.slice(0, 7))).length;
   const upcomingSchedules = ownerSchedules
-    .filter((item) => item.date >= TODAY_STR && !item.done)
+    .filter((item) => !item.done && (item.date >= TODAY_STR || item.repeat))
     .slice(0, 8);
   const importantCount = ownerSchedules.filter((item) => item.important && !item.done).length;
+  const todayFinanceCount = ownerSchedules.filter((item) => scheduleMatchesDate(item, TODAY_STR)).length;
+  const repeatingCount = ownerSchedules.filter((item) => item.repeat && !item.done).length;
 
   const totalPay = rows.reduce((a, { emp, pay }) => a + finalPay(pay, emp), 0);
   const insuranceCount = rows.filter(({ emp }) => emp.socialInsurance).length;
@@ -268,20 +301,35 @@ export default function Payroll() {
     setScheduleForm(blankSchedule(date));
   };
 
+  const applyFinancePreset = (preset: Partial<OwnerSchedule>) => {
+    setScheduleForm((prev) => ({
+      ...prev,
+      ...preset,
+      repeat: preset.repeat ?? true,
+      repeatCycle: preset.repeatCycle ?? "monthly",
+      done: false,
+    }));
+    if (preset.date) setScheduleDate(preset.date);
+  };
+
   const saveSchedule = () => {
     const title = scheduleForm.title.trim();
     if (!title) {
-      showToast("일정 제목을 입력해주세요");
+      showToast("재무 일정 제목을 입력해주세요");
       return;
     }
     if (!scheduleForm.date || !scheduleForm.startTime) {
-      showToast("날짜와 시작 시간을 확인해주세요");
+      showToast("날짜와 처리 시간을 확인해주세요");
       return;
     }
-    upsertOwnerSchedule({ ...scheduleForm, title });
+    upsertOwnerSchedule({
+      ...scheduleForm,
+      title,
+      repeatCycle: scheduleForm.repeat ? scheduleForm.repeatCycle ?? "monthly" : undefined,
+    });
     setScheduleDate(scheduleForm.date);
     resetScheduleForm(scheduleForm.date);
-    showToast("대표 일정을 저장했습니다");
+    showToast("재무 일정을 저장했습니다");
   };
 
   const editSchedule = (item: OwnerSchedule) => {
@@ -291,7 +339,7 @@ export default function Payroll() {
 
   const toggleScheduleDone = (item: OwnerSchedule) => {
     upsertOwnerSchedule({ ...item, done: !item.done });
-    showToast(!item.done ? "일정을 완료 처리했습니다" : "일정을 다시 진행 중으로 바꿨습니다");
+    showToast(!item.done ? "재무 일정을 완료 처리했습니다" : "재무 일정을 다시 진행 중으로 바꿨습니다");
   };
 
   const persistPayroll = (emp: Employee, pay: PayrollRow, patch: Partial<PayrollRow>) => {
@@ -425,10 +473,11 @@ export default function Payroll() {
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           <strong>{item.title}</strong>
           <Badge tone={CATEGORY_TONE[item.category]}>{CATEGORY_LABEL[item.category]}</Badge>
+          {item.repeat && <Badge tone="blue">{item.repeatCycle === "yearly" ? "매년 반복" : "매월 반복"}</Badge>}
           {item.important && <Badge tone="red">중요</Badge>}
         </div>
         <div className="muted small">
-          {item.date} · {item.startTime}{item.endTime ? `-${item.endTime}` : ""}
+          {scheduleWhenText(item)}
           {item.location ? ` · ${item.location}` : ""}
         </div>
         {item.memo && <div className="owner-schedule-memo">{item.memo}</div>}
@@ -438,10 +487,10 @@ export default function Payroll() {
         <button
           className="btn btn-danger btn-sm"
           onClick={() => {
-            if (window.confirm("이 일정을 삭제할까요?")) {
+            if (window.confirm("이 재무 일정을 삭제할까요?")) {
               deleteOwnerSchedule(item.id);
               if (scheduleForm.id === item.id) resetScheduleForm(item.date);
-              showToast("일정을 삭제했습니다");
+              showToast("재무 일정을 삭제했습니다");
             }
           }}
         >
@@ -454,26 +503,70 @@ export default function Payroll() {
   const renderSchedulePanel = () => (
     <div className="stack">
       <div className="grid grid-4">
-        <StatCard label="오늘 대표 일정" value={ownerSchedules.filter((item) => item.date === TODAY_STR).length} unit="건" trend="오늘 기준" trendUp icon="🗓️" />
-        <StatCard label="선택일 일정" value={daySchedules.length} unit="건" trend={scheduleDate} trendUp icon="📌" tone="blue" />
-        <StatCard label="이번달 일정" value={monthScheduleCount} unit="건" trend={scheduleDate.slice(0, 7)} trendUp icon="📆" tone="amber" />
+        <StatCard label="오늘 재무 일정" value={todayFinanceCount} unit="건" trend="오늘 처리" trendUp={todayFinanceCount === 0} icon="🗓️" />
+        <StatCard label="선택일 할 일" value={daySchedules.length} unit="건" trend={scheduleDate} trendUp icon="📌" tone="blue" />
+        <StatCard label="이번달 예정" value={monthScheduleCount} unit="건" trend={scheduleDate.slice(0, 7)} trendUp icon="📆" tone="amber" />
+        <StatCard label="반복 일정" value={repeatingCount} unit="건" trend="매월/매년" trendUp icon="🔁" tone="blue" />
         <StatCard label="중요 미완료" value={importantCount} unit="건" trend="확인 필요" trendUp={importantCount === 0} icon="⭐" tone="red" />
       </div>
 
       <div className="admin-owner-grid">
-        <Card title="대표 일정 등록" icon="✍️">
+        <Card title="재무 일정 등록" icon="✍️">
           <div className="owner-schedule-form">
-            <label className="field-label">일정 제목</label>
+            <label className="field-label">재무 일정</label>
             <input
               className="input"
               value={scheduleForm.title}
               onChange={(e) => updateScheduleField("title", e.target.value)}
-              placeholder="예: 세무사 미팅, 거래처 방문, 개인 일정"
+              placeholder="예: 직원 월급날, 카드값 납부, 대출 이자"
             />
+            <div className="finance-preset-row">
+              <button
+                className="chip"
+                type="button"
+                onClick={() => applyFinancePreset({
+                  title: "직원 월급날",
+                  date: dateWithDay(scheduleDate, 10),
+                  startTime: "09:00",
+                  category: "personal",
+                  location: "직원",
+                  memo: "월급 지급 금액과 특이사항을 적어두세요.",
+                })}
+              >
+                10일 월급날
+              </button>
+              <button
+                className="chip"
+                type="button"
+                onClick={() => applyFinancePreset({
+                  title: "카드값 납부",
+                  date: dateWithDay(scheduleDate, 15),
+                  startTime: "09:00",
+                  category: "store",
+                  location: "카드사",
+                  memo: "결제 카드, 금액, 출금 계좌를 적어두세요.",
+                })}
+              >
+                15일 카드값
+              </button>
+              <button
+                className="chip"
+                type="button"
+                onClick={() => applyFinancePreset({
+                  title: "대출 이자 납부",
+                  startTime: "09:00",
+                  category: "meeting",
+                  location: "은행",
+                  memo: "이자 금액, 대출명, 출금 계좌를 적어두세요.",
+                })}
+              >
+                이자 납부
+              </button>
+            </div>
 
             <div className="owner-schedule-form-grid">
               <div>
-                <label className="field-label">날짜</label>
+                <label className="field-label">처리 날짜</label>
                 <input
                   className="input"
                   type="date"
@@ -482,7 +575,7 @@ export default function Payroll() {
                 />
               </div>
               <div>
-                <label className="field-label">시작</label>
+                <label className="field-label">처리 시간</label>
                 <input
                   className="input"
                   type="time"
@@ -491,7 +584,7 @@ export default function Payroll() {
                 />
               </div>
               <div>
-                <label className="field-label">종료</label>
+                <label className="field-label">마감 시간</label>
                 <input
                   className="input"
                   type="time"
@@ -515,12 +608,12 @@ export default function Payroll() {
                 </select>
               </div>
               <div>
-                <label className="field-label">장소</label>
+                <label className="field-label">대상</label>
                 <input
                   className="input"
                   value={scheduleForm.location ?? ""}
                   onChange={(e) => updateScheduleField("location", e.target.value)}
-                  placeholder="장소 또는 업체명"
+                  placeholder="은행, 카드사, 거래처, 직원"
                 />
               </div>
             </div>
@@ -530,7 +623,7 @@ export default function Payroll() {
               className="textarea"
               value={scheduleForm.memo ?? ""}
               onChange={(e) => updateScheduleField("memo", e.target.value)}
-              placeholder="준비물, 연락처, 처리할 일"
+              placeholder="금액, 계좌, 자세한 내용, 처리 방법"
             />
 
             <div className="owner-schedule-options">
@@ -541,7 +634,16 @@ export default function Payroll() {
                   checked={scheduleForm.important ?? false}
                   onChange={(e) => updateScheduleField("important", e.target.checked)}
                 />
-                중요 일정
+                중요
+              </label>
+              <label className="check-item">
+                <span className={`checkbox ${scheduleForm.repeat ? "checked" : ""}`}>{scheduleForm.repeat ? "✓" : ""}</span>
+                <input
+                  type="checkbox"
+                  checked={scheduleForm.repeat ?? false}
+                  onChange={(e) => updateScheduleField("repeat", e.target.checked)}
+                />
+                매월 반복
               </label>
               <label className="check-item">
                 <span className={`checkbox ${scheduleForm.done ? "checked" : ""}`}>{scheduleForm.done ? "✓" : ""}</span>
@@ -550,7 +652,7 @@ export default function Payroll() {
                   checked={scheduleForm.done ?? false}
                   onChange={(e) => updateScheduleField("done", e.target.checked)}
                 />
-                완료 처리
+                처리 완료
               </label>
             </div>
 
@@ -559,14 +661,14 @@ export default function Payroll() {
                 새로 입력
               </button>
               <button className="btn btn-primary" onClick={saveSchedule}>
-                {ownerSchedules.some((item) => item.id === scheduleForm.id) ? "수정 저장" : "일정 등록"}
+                {ownerSchedules.some((item) => item.id === scheduleForm.id) ? "수정 저장" : "재무 일정 등록"}
               </button>
             </div>
           </div>
         </Card>
 
         <div className="stack">
-          <Card title="날짜별 일정" icon="🗓️">
+          <Card title="날짜별 재무 일정" icon="🗓️">
             <div className="owner-date-control">
               <button className="btn btn-outline btn-sm" onClick={() => setScheduleDate(nextDate(scheduleDate, -1))}>‹</button>
               <input
@@ -587,15 +689,15 @@ export default function Payroll() {
             </div>
             <div className="owner-schedule-list">
               {daySchedules.length > 0 ? daySchedules.map(renderScheduleItem) : (
-                <div className="empty-state">선택한 날짜에 등록된 대표 일정이 없습니다.</div>
+                <div className="empty-state">선택한 날짜에 등록된 재무 일정이 없습니다.</div>
               )}
             </div>
           </Card>
 
-          <Card title="다가오는 일정" icon="🔔">
+          <Card title="다가오는 재무 할 일" icon="🔔">
             <div className="owner-schedule-list compact">
               {upcomingSchedules.length > 0 ? upcomingSchedules.map(renderScheduleItem) : (
-                <div className="empty-state">다가오는 미완료 일정이 없습니다.</div>
+                <div className="empty-state">다가오는 미완료 재무 일정이 없습니다.</div>
               )}
             </div>
           </Card>
@@ -608,7 +710,7 @@ export default function Payroll() {
     <div className="payroll-lock-wrap">
       <Card title="관리자 모드 잠금" icon="🔐">
         <p className="muted small" style={{ marginTop: 0 }}>
-          대표 일정표와 급여 관리는 비밀번호 확인 후 볼 수 있습니다.
+          재무 일정표와 급여 관리는 비밀번호 확인 후 볼 수 있습니다.
         </p>
         <label className="field-label">비밀번호</label>
         <input
@@ -953,11 +1055,11 @@ export default function Payroll() {
       <div className="admin-mode-head">
         <div>
           <h2>관리자 모드</h2>
-          <p>대표 개인 일정과 급여 관리처럼 민감한 관리자 업무를 한곳에서 처리합니다.</p>
+          <p>재무 일정표, 급여 관리처럼 민감한 관리자 업무를 한곳에서 처리합니다.</p>
         </div>
         <div className="admin-mode-tabs" role="tablist" aria-label="관리자 모드">
           <button className={activeTab === "schedule" ? "on" : ""} onClick={() => setActiveTab("schedule")}>
-            🗓️ 대표 일정표
+            🗓️ 재무 일정표
           </button>
           <button className={activeTab === "payroll" ? "on" : ""} onClick={() => setActiveTab("payroll")}>
             💰 급여 관리
