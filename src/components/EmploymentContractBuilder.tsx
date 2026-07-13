@@ -38,6 +38,10 @@ interface ContractDraft {
   employerAddress: string;
   businessType: string;
   businessNumber: string;
+  employeeName: string;
+  employeePhone: string;
+  employeeAddress: string;
+  employeeResidentRegistrationNumber: string;
   issueDate: string;
   notes: string;
 }
@@ -81,17 +85,6 @@ function formatTimeKorean(value: string): string {
   return `${Number(hour)}시 ${minute.padStart(2, "0")}분`;
 }
 
-function birthDateFromResident(value?: string): string {
-  const digits = value?.replace(/[^0-9]/g, "") ?? "";
-  if (digits.length < 6) return "____ 년 __ 월 __ 일";
-  const yy = Number(digits.slice(0, 2));
-  const mm = Number(digits.slice(2, 4));
-  const dd = Number(digits.slice(4, 6));
-  const genderCode = digits[6];
-  const century = ["3", "4", "7", "8"].includes(genderCode) ? 2000 : 1900;
-  return `${century + yy} 년 ${mm} 월 ${dd} 일`;
-}
-
 function defaultWagePeriodEnd(startDate: string): string {
   const year = startDate.slice(0, 4) || TODAY_STR.slice(0, 4);
   return `${year}-12`;
@@ -131,6 +124,10 @@ function defaultDraft(employee: Employee): ContractDraft {
     employerAddress: "경상남도 창원시 진해구 병암로 49",
     businessType: "음식점업",
     businessNumber: "",
+    employeeName: employee.name,
+    employeePhone: employee.phone ?? "",
+    employeeAddress: employee.address ?? "",
+    employeeResidentRegistrationNumber: employee.residentRegistrationNumber ?? "",
     issueDate: TODAY_STR,
     notes: "",
   };
@@ -293,6 +290,31 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
             <span className="field-label">사업장 주소</span>
             <input className="input" value={draft.employerAddress} onChange={(e) => update("employerAddress", e.target.value)} />
           </label>
+          <div className="field-label">근로자 정보</div>
+          <div className="contract-form-grid">
+            <label>
+              <span className="field-label">근로자 성명</span>
+              <input className="input" value={draft.employeeName} onChange={(e) => update("employeeName", e.target.value)} />
+            </label>
+            <label>
+              <span className="field-label">근로자 연락처</span>
+              <input className="input" value={draft.employeePhone} onChange={(e) => update("employeePhone", e.target.value)} />
+            </label>
+          </div>
+          <label className="contract-wide-field">
+            <span className="field-label">근로자 주소</span>
+            <input className="input" value={draft.employeeAddress} onChange={(e) => update("employeeAddress", e.target.value)} />
+          </label>
+          <label className="contract-wide-field">
+            <span className="field-label">근로자 주민번호</span>
+            <input
+              className="input"
+              inputMode="numeric"
+              value={draft.employeeResidentRegistrationNumber}
+              onChange={(e) => update("employeeResidentRegistrationNumber", e.target.value)}
+              placeholder="000000-0000000"
+            />
+          </label>
           <label className="contract-wide-field">
             <span className="field-label">지급방법</span>
             <input className="input" value={draft.payMethod} onChange={(e) => update("payMethod", e.target.value)} />
@@ -321,7 +343,13 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
           </div>
         </div>
 
-        <article className="contract-print-area contract-paper contract-hwp-paper">
+        <article
+          className="contract-print-area contract-paper contract-hwp-paper"
+          contentEditable
+          suppressContentEditableWarning
+          spellCheck={false}
+          aria-label="직접 수정 가능한 근로계약서 미리보기"
+        >
           <h2>{title}</h2>
 
           <p className="contract-section-title">계약당사자</p>
@@ -345,17 +373,17 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
               <tr>
                 <th className="contract-side-head" rowSpan={3}>근로자(을)</th>
                 <th>성명</th>
-                <td>{employee.name}</td>
-                <th>생년월일</th>
-                <td>{birthDateFromResident(employee.residentRegistrationNumber)}</td>
+                <td>{draft.employeeName || "________"}</td>
+                <th>주민등록번호</th>
+                <td>{draft.employeeResidentRegistrationNumber || "________"}</td>
               </tr>
               <tr>
                 <th>주소</th>
-                <td colSpan={3}>{employee.address || "________"}</td>
+                <td colSpan={3}>{draft.employeeAddress || "________"}</td>
               </tr>
               <tr>
                 <th>연락처</th>
-                <td colSpan={3}>{employee.phone || "________"}</td>
+                <td colSpan={3}>{draft.employeePhone || "________"}</td>
               </tr>
             </tbody>
           </table>
@@ -496,9 +524,9 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
             </div>
             <div>
               <p><b>“을”(근로자)</b></p>
-              <p>주소: {employee.address || "________"}</p>
-              <p>생년월일: {birthDateFromResident(employee.residentRegistrationNumber)}</p>
-              <p>성명: {employee.name} <span className="signature-line">(서명)</span></p>
+              <p>주소: {draft.employeeAddress || "________"}</p>
+              <p>주민등록번호: {draft.employeeResidentRegistrationNumber || "________"}</p>
+              <p>성명: {draft.employeeName || "________"} <span className="signature-line">(서명)</span></p>
             </div>
           </div>
 
