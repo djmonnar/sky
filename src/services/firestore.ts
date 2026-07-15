@@ -503,6 +503,36 @@ export async function fsUpsertEmployee(e: Employee): Promise<void> {
   );
 }
 
+export async function fsGetEmploymentContract<T>(employeeId: number): Promise<{
+  draft: T;
+  html: string;
+} | null> {
+  const snap = await getDoc(doc(col("employmentContracts"), String(employeeId)));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return {
+    draft: data.draft as T,
+    html: String(data.html ?? ""),
+  };
+}
+
+export async function fsSaveEmploymentContract<T>(
+  employeeId: number,
+  draft: T,
+  html: string
+): Promise<void> {
+  await setDoc(
+    doc(col("employmentContracts"), String(employeeId)),
+    {
+      employeeId,
+      draft,
+      html,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
 export async function fsCreateLinkedEmployee(
   employee: Employee,
   minEmployeeId: number

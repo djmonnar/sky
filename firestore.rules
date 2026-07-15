@@ -352,6 +352,10 @@ service cloud.firestore {
         allow delete: if isAdmin(storeId);
       }
 
+      match /employmentContracts/{employeeId} {
+        allow read, write: if canManageEmployees(storeId);
+      }
+
       match /reservations/{id} {
         allow read: if isStaff(storeId) || canManageReservations(storeId);
         // 전화예약 입력/상태 변경/메모는 staff도 가능

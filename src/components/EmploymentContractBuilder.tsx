@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Employee, EmploymentType } from "../data/types";
 import { TODAY_STR } from "../data";
 import { employmentLabel, salaryTypeLabel } from "../lib/payroll";
+import { fsGetEmploymentContract, fsSaveEmploymentContract } from "../services/firestore";
 
 interface Props {
   employee: Employee;
@@ -135,11 +136,33 @@ function defaultDraft(employee: Employee): ContractDraft {
 
 export default function EmploymentContractBuilder({ employee, onClose, showToast }: Props) {
   const [draft, setDraft] = useState<ContractDraft>(() => defaultDraft(employee));
+  const [saving, setSaving] = useState(false);
+  const printAreaRef = useRef<HTMLElement>(null);
   const title = "근로계약서";
   const employeeMeta = useMemo(
     () => `${employmentLabel(employee)} · ${salaryTypeLabel(employee)} · #${employee.id}`,
     [employee]
   );
+
+  useEffect(() => {
+    let active = true;
+    void fsGetEmploymentContract<ContractDraft>(employee.id)
+      .then((saved) => {
+        if (!active || !saved) return;
+        setDraft((current) => ({ ...current, ...saved.draft }));
+        window.requestAnimationFrame(() => {
+          if (active && printAreaRef.current && saved.html) {
+            printAreaRef.current.innerHTML = saved.html;
+          }
+        });
+      })
+      .catch(() => {
+        if (active) showToast("저장된 근로계약서를 불러오지 못했습니다");
+      });
+    return () => {
+      active = false;
+    };
+  }, [employee.id]);
 
   const update = <K extends keyof ContractDraft>(key: K, value: ContractDraft[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -171,6 +194,19 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
     showToast(`${employee.name} 근로계약서 인쇄 화면을 열었습니다`);
   };
 
+  const saveContract = async () => {
+    if (!printAreaRef.current || saving) return;
+    setSaving(true);
+    try {
+      await fsSaveEmploymentContract(employee.id, draft, printAreaRef.current.innerHTML);
+      showToast(`${employee.name} 근로계약서를 저장했습니다`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "근로계약서 저장에 실패했습니다");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const wageLine = draft.contractType === "fullTime" && draft.wageType === "월급"
     ? `월급 ${formatMoney(draft.wageAmount)}(기본급:${formatPlainMoney(draft.baseWage)} 고정연장근로수당:${formatPlainMoney(draft.fixedOvertimePay)})(소정근로시간, 연장근로시간 연장근로수당)에 동의하며, 월급적용기간은 ${formatMonthKorean(draft.wagePeriodStart)}부터 ${formatMonthKorean(draft.wagePeriodEnd)}까지로 하며, 다음해에 월급이 조정되지 아니하면 동일한 금액으로 적용되는 것으로 한다.`
     : `${draft.wageType} ${formatMoney(draft.wageAmount)}을 기준으로 지급하며, 구체적인 산정 및 지급은 실제 근로시간, 근무표, 매장 운영기준에 따른다.`;
@@ -184,6 +220,9 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
         </div>
         <div className="row">
           <button className="btn btn-outline btn-sm" onClick={onClose}>닫기</button>
+          <button className="btn btn-soft btn-sm" onClick={saveContract} disabled={saving}>
+            {saving ? "저장 중" : "저장"}
+          </button>
           <button className="btn btn-primary btn-sm" onClick={printContract}>인쇄하기</button>
         </div>
       </div>
@@ -344,6 +383,7 @@ export default function EmploymentContractBuilder({ employee, onClose, showToast
         </div>
 
         <article
+          ref={printAreaRef}
           className="contract-print-area contract-paper contract-hwp-paper"
           contentEditable
           suppressContentEditableWarning
