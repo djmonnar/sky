@@ -2761,7 +2761,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .granter-filter-bar { grid-template-columns: 1fr 1fr; }
   .granter-filter-bar > :first-child,
   .granter-filter-bar select { grid-column: 1 / -1; }
-  .granter-stats.grid-4 { grid-template-columns: 1fr 1fr; }
+  .granter-stats.grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .granter-stats .stat-card {
+    min-width: 0;
+    padding: 12px;
+  }
+  .granter-stats .stat-card > div:first-child { min-width: 0; }
+  .granter-stats .stat-value {
+    font-size: 20px;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+  .granter-stats .stat-icon { display: none; }
   .granter-list { max-height: none; }
   .granter-row {
     grid-template-columns: 28px minmax(0, 1fr);
