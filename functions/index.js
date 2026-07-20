@@ -2689,80 +2689,93 @@ async function routeAction(action, body, chatUser) {
   }
 }
 
-function normalizeGranterTransaction(raw) {
-  const transactionId = String(
-    raw.transactionId || raw.transaction_id || raw.id || raw.txId || raw.tx_id || raw.approvalNo || raw.approval_no || ""
-  ).trim();
-  if (!transactionId) return null;
-  const transactedAt = String(raw.transactedAt || raw.transacted_at || raw.date || raw.usedAt || raw.used_at || raw.createdAt || isoNow());
-  const amount = numberOf(raw.amount, raw.totalAmount, raw.paidAmount, raw.withdrawalAmount, raw.depositAmount);
-  const vendorName = String(
-    raw.vendorName || raw.counterpartyName || raw.counterparty || raw.franchiseName || raw.description || raw.memo || ""
-  ).trim();
+const GRANTER_CARD_TICKET_TYPES = [
+  "MERCHANT_CARD_TRANSACTION_TICKET",
+  "MERCHANT_CARD_SETTLEMENT_DETAIL_TICKET",
+];
+const GRANTER_ACCOUNT_TICKET_TYPES = ["BANK_TRANSACTION_TICKET"];
+
+function normalizeGranterTicket(raw, domain, expectedTicketType) {
+  const ticketId = String(raw?.id ?? "").trim();
+  const ticketType = String(raw?.ticketType ?? "").trim();
+  if (!ticketId || ticketType !== expectedTicketType) return null;
+
+  const transactedAt = String(raw.transactAt || raw.modifiedTransactAt || raw.createdAt || isoNow());
+  const transactionType = String(raw.transactionType || "").toUpperCase();
+  const detail = domain === "account"
+    ? raw.bankTransaction || null
+    : raw.merchantCardTransaction || raw.merchantSettlementDetailTransaction || null;
+
   return {
-    id: `granter-${transactionId}`,
-    granterTransactionId: transactionId,
+    id: `granter-${ticketType.toLowerCase()}-${ticketId}`,
+    granterTicketId: ticketId,
+    ticketType,
+    domain,
     transactedAt,
     businessDate: dateFromTimestamp(transactedAt),
-    amount,
-    direction: amount < 0 || raw.type === "withdrawal" || raw.direction === "out" ? "out" : "in",
-    vendorName,
-    businessNumber: String(raw.businessNumber || raw.business_number || raw.counterpartyBusinessNumber || "").trim(),
-    method: String(raw.method || raw.paymentMethod || raw.accountType || raw.source || "unknown"),
-    memo: String(raw.memo || raw.description || raw.title || ""),
+    amount: numberOf(raw.amount),
+    transactionType,
+    direction: transactionType === "OUT" ? "out" : "in",
+    content: String(raw.content || "").trim(),
+    description: String(raw.description || "").trim(),
+    status: String(raw.status || "").trim(),
+    isIncluded: raw.isIncluded !== false,
+    assetId: raw.assetId ?? null,
+    contactId: raw.contactId ?? null,
+    contactName: String(raw.contact || "").trim(),
+    detail,
     source: "granter",
     syncedAt: isoNow(),
   };
 }
 
-async function fetchGranterTransactions(rangeStart, rangeEnd) {
-  const baseUrl = process.env.GRANTER_BASE_URL;
-  const transactionsPath = process.env.GRANTER_TRANSACTIONS_PATH;
+async function fetchGranterTickets(ticketType, domain, rangeStart, rangeEnd) {
+  const baseUrl = process.env.GRANTER_BASE_URL || "https://app.granter.biz";
+  const ticketsPath = process.env.GRANTER_TICKETS_PATH || "/api/public-docs/tickets";
   const apiKey = granterApiKey.value();
-  if (!baseUrl || !transactionsPath || !apiKey) {
+  if (!apiKey) {
     return {
       status: "config_required",
-      message: "GRANTER_BASE_URL, GRANTER_TRANSACTIONS_PATH, GRANTER_API_KEY 설정이 필요합니다.",
-      transactions: [],
+      message: "GRANTER_API_KEY 설정이 필요합니다.",
+      tickets: [],
+      ignoredCount: 0,
     };
   }
 
-  const url = new URL(transactionsPath, baseUrl);
-  url.searchParams.set("from", rangeStart);
-  url.searchParams.set("to", rangeEnd);
-  const apiKeyHeader = process.env.GRANTER_API_KEY_HEADER || "x-api-key";
-  const authScheme = process.env.GRANTER_AUTH_SCHEME || "Bearer";
-  const response = await fetch(url, {
+  const basicToken = Buffer.from(`${apiKey}:`, "utf8").toString("base64");
+  const response = await fetch(new URL(ticketsPath, baseUrl), {
+    method: "POST",
     headers: {
       Accept: "application/json",
-      Authorization: `${authScheme} ${apiKey}`,
-      [apiKeyHeader]: apiKey,
+      "Content-Type": "application/json",
+      Authorization: `Basic ${basicToken}`,
     },
+    body: JSON.stringify({ ticketType, startDate: rangeStart, endDate: rangeEnd }),
   });
   if (!response.ok) {
-    throw new Error(`그랜터 API 오류: ${response.status}`);
+    throw new Error(`Granter ${ticketType} API 오류: ${response.status}`);
   }
+
   const payload = await response.json();
   const list = Array.isArray(payload)
     ? payload
-    : Array.isArray(payload.transactions)
-      ? payload.transactions
-      : Array.isArray(payload.items)
-        ? payload.items
-        : Array.isArray(payload.data)
-          ? payload.data
-          : [];
+    : Array.isArray(payload.items)
+      ? payload.items
+      : Array.isArray(payload.data)
+        ? payload.data
+        : [];
+  const tickets = list.map((raw) => normalizeGranterTicket(raw, domain, ticketType)).filter(Boolean);
   return {
     status: "success",
-    message: `그랜터 거래내역 ${list.length}건을 가져왔습니다.`,
-    transactions: list.map(normalizeGranterTransaction).filter(Boolean),
+    tickets,
+    ignoredCount: list.length - tickets.length,
   };
 }
 
 async function syncGranterFinanceCore(mode = "manual", requestedBy = "system") {
   const now = new Date();
-  const rangeStart = addHours(now, -24 * 7).toISOString();
-  const rangeEnd = now.toISOString();
+  const rangeStart = formatDate(addHours(now, -24 * 7));
+  const rangeEnd = formatDate(now);
   const runId = `${Date.now()}-${mode}`;
   const runRef = storeDoc("granterSyncRuns", runId);
   await runRef.set({
@@ -2772,6 +2785,11 @@ async function syncGranterFinanceCore(mode = "manual", requestedBy = "system") {
     importedCount: 0,
     updatedCount: 0,
     matchedCount: 0,
+    cardImportedCount: 0,
+    cardUpdatedCount: 0,
+    accountImportedCount: 0,
+    accountUpdatedCount: 0,
+    ignoredCount: 0,
     rangeStart,
     rangeEnd,
     requestedBy,
@@ -2779,36 +2797,66 @@ async function syncGranterFinanceCore(mode = "manual", requestedBy = "system") {
   });
 
   try {
-    const result = await fetchGranterTransactions(rangeStart, rangeEnd);
-    if (result.status === "config_required") {
+    const requests = [
+      ...GRANTER_CARD_TICKET_TYPES.map((ticketType) => fetchGranterTickets(ticketType, "card", rangeStart, rangeEnd)),
+      ...GRANTER_ACCOUNT_TICKET_TYPES.map((ticketType) => fetchGranterTickets(ticketType, "account", rangeStart, rangeEnd)),
+    ];
+    const results = await Promise.all(requests);
+    const configResult = results.find((result) => result.status === "config_required");
+    if (configResult) {
       await runRef.set({
         status: "config_required",
         finishedAt: admin.firestore.FieldValue.serverTimestamp(),
-        message: result.message,
+        message: configResult.message,
       }, { merge: true });
-      return { ok: false, runId, message: result.message };
+      return { ok: false, runId, message: configResult.message };
     }
 
-    let updatedCount = 0;
-    for (const transaction of result.transactions) {
-      const ref = storeDoc("granterCardSales", transaction.id);
+    const cardTickets = results.flatMap((result) => result.tickets.filter((ticket) => ticket.domain === "card"));
+    const accountTickets = results.flatMap((result) => result.tickets.filter((ticket) => ticket.domain === "account"));
+    const ignoredCount = results.reduce((sum, result) => sum + result.ignoredCount, 0);
+
+    let cardUpdatedCount = 0;
+    for (const ticket of cardTickets) {
+      const ref = storeDoc("granterCardSales", ticket.id);
       const exists = (await ref.get()).exists;
-      if (exists) updatedCount += 1;
+      if (exists) cardUpdatedCount += 1;
       await ref.set({
-        ...transaction,
+        ...ticket,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         ...(exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
       }, { merge: true });
     }
+
+    let accountUpdatedCount = 0;
+    for (const ticket of accountTickets) {
+      const ref = storeDoc("granterAccountTransactions", ticket.id);
+      const exists = (await ref.get()).exists;
+      if (exists) accountUpdatedCount += 1;
+      await ref.set({
+        ...ticket,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+      }, { merge: true });
+    }
+
+    const cardImportedCount = cardTickets.length - cardUpdatedCount;
+    const accountImportedCount = accountTickets.length - accountUpdatedCount;
+    const message = `그랜터 카드 ${cardTickets.length}건, 계좌 ${accountTickets.length}건을 동기화했습니다.${ignoredCount > 0 ? ` 요청 유형과 다른 응답 ${ignoredCount}건은 제외했습니다.` : ""}`;
     await runRef.set({
       status: "success",
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
-      importedCount: result.transactions.length - updatedCount,
-      updatedCount,
+      importedCount: cardImportedCount + accountImportedCount,
+      updatedCount: cardUpdatedCount + accountUpdatedCount,
       matchedCount: 0,
-      message: `${result.message} OK포스 매출과 카드사 승인·입금 정산 대조는 API 명세에 맞춰 연결합니다.`,
+      cardImportedCount,
+      cardUpdatedCount,
+      accountImportedCount,
+      accountUpdatedCount,
+      ignoredCount,
+      message,
     }, { merge: true });
-    return { ok: true, runId, message: result.message };
+    return { ok: true, runId, message };
   } catch (error) {
     const message = error instanceof Error ? error.message : "그랜터 동기화에 실패했습니다.";
     await runRef.set({

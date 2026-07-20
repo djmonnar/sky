@@ -69,7 +69,7 @@ export default function Sales() {
     try {
       await syncGranterFinance();
     } catch (e) {
-      showToast((e as Error).message || "카드사 매출 동기화에 실패했습니다");
+      showToast((e as Error).message || "카드·계좌 동기화에 실패했습니다");
     } finally {
       setGranterSyncing(false);
     }
@@ -108,11 +108,11 @@ export default function Sales() {
       </Card>
 
       <Card
-        title="그랜터 카드사 매출 정산"
+        title="그랜터 카드·계좌 연동"
         icon="🏦"
         action={
           <button className="btn btn-primary btn-sm" disabled={granterSyncing} onClick={() => void runGranterSync()}>
-            {granterSyncing ? "동기화 중..." : "카드매출 동기화"}
+            {granterSyncing ? "동기화 중..." : "카드·계좌 동기화"}
           </button>
         }
       >
@@ -120,19 +120,21 @@ export default function Sales() {
           <div className="integration-status-card">
             <span className="muted small">현재 상태</span>
             <Badge tone={granterStatusTone(latestGranterRun?.status)}>{granterStatusLabel(latestGranterRun?.status)}</Badge>
-            <strong>{latestGranterRun?.message ?? "여신금융 카드사 매출 API 정보 연결 대기 중입니다."}</strong>
+            <strong>{latestGranterRun?.message ?? "그랜터 카드·계좌 API 연결 대기 중입니다."}</strong>
           </div>
           <div className="integration-status-card">
             <span className="muted small">최근 동기화</span>
             <strong>{latestGranterRun?.finishedAt || latestGranterRun?.startedAt || "아직 없음"}</strong>
             <span className="muted small">
-              신규 {latestGranterRun?.importedCount ?? 0}건 · 갱신 {latestGranterRun?.updatedCount ?? 0}건 · 대조 {latestGranterRun?.matchedCount ?? 0}건
+              카드 신규 {latestGranterRun?.cardImportedCount ?? 0}건 · 갱신 {latestGranterRun?.cardUpdatedCount ?? 0}건
+              <br />
+              계좌 신규 {latestGranterRun?.accountImportedCount ?? 0}건 · 갱신 {latestGranterRun?.accountUpdatedCount ?? 0}건
             </span>
           </div>
           <div className="integration-status-card">
             <span className="muted small">연동 목표</span>
-            <strong>OK포스 매출과 카드사 승인·입금 정산 내역 대조</strong>
-            <span className="muted small">발주·거래처 매입 정산과는 분리해서 관리합니다.</span>
+            <strong>카드 승인·정산과 계좌 입출금만 수집</strong>
+            <span className="muted small">세금계산서·급여·발주 데이터는 가져오지 않습니다.</span>
           </div>
         </div>
       </Card>

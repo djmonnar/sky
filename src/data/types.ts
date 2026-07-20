@@ -365,6 +365,11 @@ export interface GranterSyncRun {
   importedCount: number;
   updatedCount: number;
   matchedCount: number;
+  cardImportedCount?: number;
+  cardUpdatedCount?: number;
+  accountImportedCount?: number;
+  accountUpdatedCount?: number;
+  ignoredCount?: number;
   rangeStart: string;
   rangeEnd: string;
   message?: string;

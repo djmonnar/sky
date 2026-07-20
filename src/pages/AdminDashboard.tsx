@@ -242,13 +242,13 @@ export default function AdminDashboard() {
           )}
 
           {/* 승인 대기 */}
-          {canAccess("settlements") && (
-            <Card title="그랜터 카드사 매출" icon="🏦" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
+          {canAccess("sales") && (
+            <Card title="그랜터 카드·계좌" icon="🏦" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
               <div className="alert-item info">
                 <span>🔎</span>
                 <div>
                   최근 확인: {latestGranterSync?.finishedAt || latestGranterSync?.startedAt || "아직 없음"}
-                  <div className="desc">{latestGranterSync?.message || "여신금융 카드사 매출 API 연결 대기 중"}</div>
+                  <div className="desc">{latestGranterSync?.message || "카드 승인·정산 및 계좌 입출금 API 연결 대기 중"}</div>
                 </div>
               </div>
             </Card>
