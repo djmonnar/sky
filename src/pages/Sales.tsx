@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useStore } from "../store";
 import { Badge, Card, StatCard } from "../components/ui";
+import GranterFinanceBoard from "../components/GranterFinanceBoard";
 import { TODAY_STR } from "../lib/time";
 import {
   hourlySales,
@@ -40,7 +41,10 @@ function granterStatusTone(status?: string): string {
 export default function Sales() {
   const {
     salesOrders, salesSyncRuns, granterSyncRuns,
-    syncOkposSales, syncGranterFinance, mode, showToast,
+    granterCardSales, granterAccountTransactions, granterFinanceCategories,
+    syncOkposSales, syncGranterFinance, classifyGranterFinanceItems,
+    upsertGranterFinanceCategory, deleteGranterFinanceCategory,
+    mode, role, showToast,
   } = useStore();
   const [date, setDate] = useState(TODAY_STR);
   const [syncing, setSyncing] = useState(false);
@@ -138,6 +142,16 @@ export default function Sales() {
           </div>
         </div>
       </Card>
+
+      <GranterFinanceBoard
+        role={role}
+        cardItems={granterCardSales}
+        accountItems={granterAccountTransactions}
+        categories={granterFinanceCategories}
+        classifyItems={classifyGranterFinanceItems}
+        upsertCategory={upsertGranterFinanceCategory}
+        deleteCategory={deleteGranterFinanceCategory}
+      />
 
       <div className="grid grid-main-side">
         <div className="stack">

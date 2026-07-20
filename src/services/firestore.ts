@@ -22,6 +22,7 @@ import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
   Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, GranterSyncRun, SalesPayment,
+  GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   OwnerSchedule,
   SettlementMethod, SettlementStatus, ManagerPermissions,
 } from "../data/types";
@@ -478,6 +479,68 @@ export function subscribeGranterSyncRuns(cb: (v: GranterSyncRun[]) => void, onEr
   );
 }
 
+function normalizeGranterFinanceItem(d: DocumentData, id: string): GranterFinanceItem {
+  return {
+    id,
+    granterTicketId: String(d.granterTicketId ?? ""),
+    ticketType: String(d.ticketType ?? ""),
+    domain: d.domain === "account" ? "account" : "card",
+    transactedAt: asDisplayDate(d.transactedAt) || String(d.transactedAt ?? ""),
+    businessDate: String(d.businessDate ?? ""),
+    amount: Number(d.amount ?? 0),
+    transactionType: String(d.transactionType ?? ""),
+    direction: d.direction === "out" ? "out" : "in",
+    content: String(d.content ?? ""),
+    description: String(d.description ?? ""),
+    status: String(d.status ?? ""),
+    isIncluded: d.isIncluded !== false,
+    assetId: d.assetId == null ? null : Number(d.assetId),
+    contactId: d.contactId == null ? null : Number(d.contactId),
+    contactName: String(d.contactName ?? ""),
+    detail: d.detail && typeof d.detail === "object" ? d.detail as Record<string, unknown> : null,
+    categoryId: d.categoryId == null ? null : String(d.categoryId),
+    categoryName: String(d.categoryName ?? ""),
+    classifiedAt: asDisplayDate(d.classifiedAt) || String(d.classifiedAt ?? ""),
+    classifiedBy: String(d.classifiedBy ?? ""),
+    syncedAt: asDisplayDate(d.syncedAt) || String(d.syncedAt ?? ""),
+  };
+}
+
+export function subscribeGranterCardSales(cb: (v: GranterFinanceItem[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "granterCardSales",
+    normalizeGranterFinanceItem,
+    (items) => cb(items.sort((a, b) => b.transactedAt.localeCompare(a.transactedAt))),
+    onError
+  );
+}
+
+export function subscribeGranterAccountTransactions(cb: (v: GranterFinanceItem[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "granterAccountTransactions",
+    normalizeGranterFinanceItem,
+    (items) => cb(items.sort((a, b) => b.transactedAt.localeCompare(a.transactedAt))),
+    onError
+  );
+}
+
+export function subscribeGranterFinanceCategories(cb: (v: GranterFinanceCategory[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "granterFinanceCategories",
+    (d, id): GranterFinanceCategory => ({
+      id,
+      name: String(d.name ?? ""),
+      domain: d.domain === "account" ? "account" : "card",
+      color: String(d.color ?? "#42613d"),
+      sortOrder: Number(d.sortOrder ?? 0),
+      createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
+      updatedAt: asDisplayDate(d.updatedAt) || String(d.updatedAt ?? ""),
+    }),
+    (items) => cb(items.filter((item) => item.name).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))),
+    onError
+  );
+}
+
 export function subscribeManagerPermissions(cb: (v: ManagerPermissions) => void, onError: ErrCb): Unsub {
   return onSnapshot(
     metaDoc("managerPermissions"),
@@ -498,6 +561,49 @@ export async function fsUpsertReservation(r: Reservation): Promise<void> {
 
 export async function fsDeleteReservation(id: number): Promise<void> {
   await deleteDoc(doc(col("reservations"), String(id)));
+}
+
+export async function fsClassifyGranterFinanceItems(
+  domain: GranterFinanceDomain,
+  itemIds: string[],
+  category: GranterFinanceCategory | null,
+  classifiedBy: string
+): Promise<void> {
+  const collectionName = domain === "card" ? "granterCardSales" : "granterAccountTransactions";
+  for (let start = 0; start < itemIds.length; start += 400) {
+    const batch = writeBatch(requireDb());
+    itemIds.slice(start, start + 400).forEach((id) => {
+      batch.set(doc(col(collectionName), id), {
+        categoryId: category?.id ?? null,
+        categoryName: category?.name ?? "",
+        classifiedAt: serverTimestamp(),
+        classifiedBy,
+      }, { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
+export async function fsUpsertGranterFinanceCategory(category: GranterFinanceCategory): Promise<void> {
+  await setDoc(doc(col("granterFinanceCategories"), category.id), {
+    name: category.name.trim(),
+    domain: category.domain,
+    color: category.color,
+    sortOrder: category.sortOrder,
+    updatedAt: serverTimestamp(),
+    ...(category.createdAt ? {} : { createdAt: serverTimestamp() }),
+  }, { merge: true });
+}
+
+export async function fsDeleteGranterFinanceCategory(
+  categoryId: string,
+  cardItemIds: string[],
+  accountItemIds: string[],
+  classifiedBy: string
+): Promise<void> {
+  await fsClassifyGranterFinanceItems("card", cardItemIds, null, classifiedBy);
+  await fsClassifyGranterFinanceItems("account", accountItemIds, null, classifiedBy);
+  await deleteDoc(doc(col("granterFinanceCategories"), categoryId));
 }
 
 export async function fsUpsertEmployee(e: Employee): Promise<void> {

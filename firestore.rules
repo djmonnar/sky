@@ -425,6 +425,11 @@ service cloud.firestore {
         allow write: if isAdmin(storeId);
       }
 
+      match /granterFinanceCategories/{id} {
+        allow read: if canManageSales(storeId);
+        allow write: if isAdmin(storeId);
+      }
+
       match /notices/{id} {
         allow read: if inStore(storeId);
         allow write: if canManageNotices(storeId);

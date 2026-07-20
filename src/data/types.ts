@@ -375,6 +375,43 @@ export interface GranterSyncRun {
   message?: string;
 }
 
+export type GranterFinanceDomain = "card" | "account";
+
+export interface GranterFinanceItem {
+  id: string;
+  granterTicketId: string;
+  ticketType: string;
+  domain: GranterFinanceDomain;
+  transactedAt: string;
+  businessDate: string;
+  amount: number;
+  transactionType: string;
+  direction: "in" | "out";
+  content: string;
+  description: string;
+  status: string;
+  isIncluded: boolean;
+  assetId: number | null;
+  contactId: number | null;
+  contactName: string;
+  detail: Record<string, unknown> | null;
+  categoryId?: string | null;
+  categoryName?: string;
+  classifiedAt?: string;
+  classifiedBy?: string;
+  syncedAt?: string;
+}
+
+export interface GranterFinanceCategory {
+  id: string;
+  name: string;
+  domain: GranterFinanceDomain;
+  color: string;
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export const RESV_STATUSES: ResvStatus[] = [
   "예약확정", "방문완료", "취소", "노쇼", "단체", "확인전화필요", "예약대기",
 ];
