@@ -411,12 +411,12 @@ service cloud.firestore {
       }
 
       match /granterSyncRuns/{id} {
-        allow read: if canManagePurchaseOrders(storeId);
+        allow read: if canManageSales(storeId);
         allow write: if isAdmin(storeId);
       }
 
-      match /granterTransactions/{id} {
-        allow read: if canManagePurchaseOrders(storeId);
+      match /granterCardSales/{id} {
+        allow read: if canManageSales(storeId);
         allow write: if isAdmin(storeId);
       }
 

@@ -2,6 +2,7 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
+const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -15,6 +16,7 @@ const db = admin.firestore();
 const STORE_ID = "haneulttang";
 const STORE_PATH = `stores/${STORE_ID}`;
 const TZ = "Asia/Seoul";
+const granterApiKey = defineSecret("GRANTER_API_KEY");
 let visionClient = null;
 
 const ROLE_LABEL = {
@@ -2716,7 +2718,7 @@ function normalizeGranterTransaction(raw) {
 async function fetchGranterTransactions(rangeStart, rangeEnd) {
   const baseUrl = process.env.GRANTER_BASE_URL;
   const transactionsPath = process.env.GRANTER_TRANSACTIONS_PATH;
-  const apiKey = process.env.GRANTER_API_KEY;
+  const apiKey = granterApiKey.value();
   if (!baseUrl || !transactionsPath || !apiKey) {
     return {
       status: "config_required",
@@ -2789,7 +2791,7 @@ async function syncGranterFinanceCore(mode = "manual", requestedBy = "system") {
 
     let updatedCount = 0;
     for (const transaction of result.transactions) {
-      const ref = storeDoc("granterTransactions", transaction.id);
+      const ref = storeDoc("granterCardSales", transaction.id);
       const exists = (await ref.get()).exists;
       if (exists) updatedCount += 1;
       await ref.set({
@@ -2804,7 +2806,7 @@ async function syncGranterFinanceCore(mode = "manual", requestedBy = "system") {
       importedCount: result.transactions.length - updatedCount,
       updatedCount,
       matchedCount: 0,
-      message: `${result.message} 발주/정산 자동 대조는 다음 단계에서 매핑합니다.`,
+      message: `${result.message} OK포스 매출과 카드사 승인·입금 정산 대조는 API 명세에 맞춰 연결합니다.`,
     }, { merge: true });
     return { ok: true, runId, message: result.message };
   } catch (error) {
@@ -3373,7 +3375,9 @@ exports.syncOkposSales = onRequest({ timeoutSeconds: 60, memory: "256MiB" }, asy
   res.status(result.ok ? 200 : 409).json(result);
 });
 
-exports.syncGranterFinance = onRequest({ timeoutSeconds: 60, memory: "256MiB" }, async (req, res) => {
+exports.syncGranterFinance = onRequest(
+  { timeoutSeconds: 60, memory: "256MiB", secrets: [granterApiKey] },
+  async (req, res) => {
   setCors(res);
   if (req.method === "OPTIONS") {
     res.status(204).send("");
@@ -3389,8 +3393,9 @@ exports.syncGranterFinance = onRequest({ timeoutSeconds: 60, memory: "256MiB" },
     return;
   }
   const result = await syncGranterFinanceCore("manual", auth.uid || auth.email || "admin");
-  res.status(result.ok ? 200 : 409).json(result);
-});
+    res.status(result.ok ? 200 : 409).json(result);
+  }
+);
 
 exports.syncOkposSalesScheduled = onSchedule(
   { schedule: "every 10 minutes", timeZone: TZ, timeoutSeconds: 60, memory: "256MiB" },

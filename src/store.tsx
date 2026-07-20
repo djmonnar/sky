@@ -906,10 +906,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       matchedCount: 0,
       rangeStart: TODAY_STR,
       rangeEnd: TODAY_STR,
-      message: "데모 모드입니다. 실제 연동은 Functions 환경변수에 그랜터 API 값을 넣은 뒤 사용할 수 있습니다.",
+      message: "데모 모드입니다. 실제 연동은 그랜터 여신금융 카드사 매출 API 설정 후 사용할 수 있습니다.",
     };
     setGranterSyncRuns((prev) => [run, ...prev].slice(0, 20));
-    showToast("그랜터 연동 준비 로그를 남겼습니다");
+    showToast("그랜터 카드사 매출 연동 준비 로그를 남겼습니다");
   }, [showToast]);
 
   const getPayrollPassword = useCallback(async () => {

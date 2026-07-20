@@ -243,12 +243,12 @@ export default function AdminDashboard() {
 
           {/* 승인 대기 */}
           {canAccess("settlements") && (
-            <Card title="그랜터 정산 연동" icon="🔗" action={<Link to="/settlements" className="card-link">정산 관리 ›</Link>}>
+            <Card title="그랜터 카드사 매출" icon="🏦" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
               <div className="alert-item info">
                 <span>🔎</span>
                 <div>
                   최근 확인: {latestGranterSync?.finishedAt || latestGranterSync?.startedAt || "아직 없음"}
-                  <div className="desc">{latestGranterSync?.message || "API 키를 받으면 정산탭에서 연동 상태를 확인할 수 있습니다."}</div>
+                  <div className="desc">{latestGranterSync?.message || "여신금융 카드사 매출 API 연결 대기 중"}</div>
                 </div>
               </div>
             </Card>

@@ -22,16 +22,36 @@ function statusTone(status: SalesOrder["status"]): string {
   return "red";
 }
 
+function granterStatusLabel(status?: string): string {
+  if (status === "success") return "연결 가능";
+  if (status === "config_required") return "설정 필요";
+  if (status === "failed") return "확인 필요";
+  if (status === "skipped") return "대기";
+  return "준비 전";
+}
+
+function granterStatusTone(status?: string): string {
+  if (status === "success") return "green";
+  if (status === "config_required") return "amber";
+  if (status === "failed") return "red";
+  return "gray";
+}
+
 export default function Sales() {
-  const { salesOrders, salesSyncRuns, syncOkposSales, mode, showToast } = useStore();
+  const {
+    salesOrders, salesSyncRuns, granterSyncRuns,
+    syncOkposSales, syncGranterFinance, mode, showToast,
+  } = useStore();
   const [date, setDate] = useState(TODAY_STR);
   const [syncing, setSyncing] = useState(false);
+  const [granterSyncing, setGranterSyncing] = useState(false);
   const orders = useMemo(() => ordersForDate(salesOrders, date), [salesOrders, date]);
   const summary = useMemo(() => salesSummary(orders), [orders]);
   const payments = useMemo(() => paymentTotals(orders), [orders]);
   const hourly = useMemo(() => hourlySales(orders), [orders]);
   const menus = useMemo(() => menuSales(orders), [orders]);
   const latestRun = latestSyncRun(salesSyncRuns);
+  const latestGranterRun = granterSyncRuns[0];
 
   const runSync = async () => {
     setSyncing(true);
@@ -41,6 +61,17 @@ export default function Sales() {
       showToast((e as Error).message || "매출 동기화에 실패했습니다");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const runGranterSync = async () => {
+    setGranterSyncing(true);
+    try {
+      await syncGranterFinance();
+    } catch (e) {
+      showToast((e as Error).message || "카드사 매출 동기화에 실패했습니다");
+    } finally {
+      setGranterSyncing(false);
     }
   };
 
@@ -72,6 +103,36 @@ export default function Sales() {
             <div className="muted small">
               {latestRun?.message ?? (mode === "demo" ? "데모 모드에서는 샘플 매출을 보여줍니다." : "OK포스 API 설정 후 자동 수집됩니다.")}
             </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title="그랜터 카드사 매출 정산"
+        icon="🏦"
+        action={
+          <button className="btn btn-primary btn-sm" disabled={granterSyncing} onClick={() => void runGranterSync()}>
+            {granterSyncing ? "동기화 중..." : "카드매출 동기화"}
+          </button>
+        }
+      >
+        <div className="integration-status-grid">
+          <div className="integration-status-card">
+            <span className="muted small">현재 상태</span>
+            <Badge tone={granterStatusTone(latestGranterRun?.status)}>{granterStatusLabel(latestGranterRun?.status)}</Badge>
+            <strong>{latestGranterRun?.message ?? "여신금융 카드사 매출 API 정보 연결 대기 중입니다."}</strong>
+          </div>
+          <div className="integration-status-card">
+            <span className="muted small">최근 동기화</span>
+            <strong>{latestGranterRun?.finishedAt || latestGranterRun?.startedAt || "아직 없음"}</strong>
+            <span className="muted small">
+              신규 {latestGranterRun?.importedCount ?? 0}건 · 갱신 {latestGranterRun?.updatedCount ?? 0}건 · 대조 {latestGranterRun?.matchedCount ?? 0}건
+            </span>
+          </div>
+          <div className="integration-status-card">
+            <span className="muted small">연동 목표</span>
+            <strong>OK포스 매출과 카드사 승인·입금 정산 내역 대조</strong>
+            <span className="muted small">발주·거래처 매입 정산과는 분리해서 관리합니다.</span>
           </div>
         </div>
       </Card>
