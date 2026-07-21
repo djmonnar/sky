@@ -6,6 +6,7 @@ import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
   Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, GranterSyncRun,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
+  FinanceDailyClose, FinanceMatch,
   OwnerSchedule, ManagerPermissions, ManagerPermissionKey,
 } from "./data/types";
 import { CURRENT_STAFF_ID } from "./data/mock";
@@ -40,6 +41,8 @@ import {
   subscribeGranterSyncRuns, subscribeGranterCardSales, subscribeGranterAccountTransactions,
   subscribeGranterFinanceCategories, fsSyncGranterFinance,
   fsClassifyGranterFinanceItems, fsUpsertGranterFinanceCategory, fsDeleteGranterFinanceCategory,
+  subscribeFinanceDailyCloses, subscribeFinanceMatches,
+  fsUpsertFinanceDailyClose, fsUpsertFinanceMatch, fsDeleteFinanceMatch,
   fsUpdateMyProfile,
   subscribeManagerPermissions, fsSetManagerPermissions,
 } from "./services/firestore";
@@ -154,6 +157,8 @@ interface Store {
   granterCardSales: GranterFinanceItem[];
   granterAccountTransactions: GranterFinanceItem[];
   granterFinanceCategories: GranterFinanceCategory[];
+  financeDailyCloses: FinanceDailyClose[];
+  financeMatches: FinanceMatch[];
   syncGranterFinance: () => Promise<void>;
   classifyGranterFinanceItems: (
     domain: GranterFinanceDomain,
@@ -162,6 +167,9 @@ interface Store {
   ) => Promise<void>;
   upsertGranterFinanceCategory: (category: GranterFinanceCategory) => Promise<void>;
   deleteGranterFinanceCategory: (categoryId: string) => Promise<void>;
+  upsertFinanceDailyClose: (close: FinanceDailyClose) => Promise<void>;
+  upsertFinanceMatch: (match: FinanceMatch) => Promise<void>;
+  deleteFinanceMatch: (id: string) => Promise<void>;
 
   punchStatus: PunchStatus;
   punchInAt: string | null;
@@ -208,6 +216,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [granterCardSales, setGranterCardSales] = useState<GranterFinanceItem[]>([]);
   const [granterAccountTransactions, setGranterAccountTransactions] = useState<GranterFinanceItem[]>([]);
   const [granterFinanceCategories, setGranterFinanceCategories] = useState<GranterFinanceCategory[]>([]);
+  const [financeDailyCloses, setFinanceDailyCloses] = useState<FinanceDailyClose[]>([]);
+  const [financeMatches, setFinanceMatches] = useState<FinanceMatch[]>([]);
 
   const [punchStatus, setPunchStatus] = useState<PunchStatus>("before");
   const [punchInAt, setPunchInAt] = useState<string | null>(null);
@@ -358,7 +368,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       isAdminRole || managerCan("vendors") || managerCan("inventory") || managerCan("settlements");
     const canRecipeData = isAdminRole || managerCan("recipes");
     const canSalesData = isAdminRole || managerCan("sales");
-    const canGranterData = canSalesData;
+    const canFinanceData = isAdminRole || managerCan("sales") || managerCan("settlements");
+    const canCardFinanceData = isAdminRole || managerCan("sales");
 
     if (!canUserProfileData) setUserProfiles([]);
     if (!canReservationData) setReservations([]);
@@ -377,11 +388,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSalesOrders([]);
       setSalesSyncRuns([]);
     }
-    if (!canGranterData) {
+    if (!canCardFinanceData) {
       setGranterSyncRuns([]);
       setGranterCardSales([]);
+      setFinanceDailyCloses([]);
+    }
+    if (!canFinanceData) {
       setGranterAccountTransactions([]);
       setGranterFinanceCategories([]);
+      setFinanceMatches([]);
     }
 
     let gotFirst = false;
@@ -426,12 +441,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribeSalesSyncRuns(setSalesSyncRuns, onErr),
           ]
         : []),
-      ...(canGranterData
+      ...(canCardFinanceData
         ? [
             subscribeGranterSyncRuns(setGranterSyncRuns, onErr),
             subscribeGranterCardSales(setGranterCardSales, onErr),
-            subscribeGranterAccountTransactions(setGranterAccountTransactions, onErr),
+            subscribeFinanceDailyCloses(setFinanceDailyCloses, onErr),
+          ]
+        : []),
+      ...(canFinanceData
+        ? [
+            subscribeGranterAccountTransactions(
+              setGranterAccountTransactions,
+              onErr,
+              profile.role === "manager" && !managerCan("sales") ? "out" : undefined
+            ),
             subscribeGranterFinanceCategories(setGranterFinanceCategories, onErr),
+            subscribeFinanceMatches(
+              setFinanceMatches,
+              onErr,
+              profile.role === "manager" && managerCan("sales") !== managerCan("settlements")
+                ? (managerCan("sales") ? "salesDeposit" : "purchasePayment")
+                : undefined
+            ),
           ]
         : []),
     ];
@@ -979,6 +1010,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     showToast(`'${category.name}' 분류함을 삭제했습니다`);
   }, [authUser, granterAccountTransactions, granterCardSales, granterFinanceCategories, profile, showToast]);
 
+  const upsertFinanceDailyClose = useCallback(async (close: FinanceDailyClose) => {
+    const next: FinanceDailyClose = {
+      ...close,
+      id: close.date,
+      cashSales: Math.max(0, Number(close.cashSales) || 0),
+      transferSales: Math.max(0, Number(close.transferSales) || 0),
+      otherSales: Math.max(0, Number(close.otherSales) || 0),
+      memo: close.memo?.trim() ?? "",
+    };
+    if (APP_MODE === "live") await fsUpsertFinanceDailyClose(next);
+    setFinanceDailyCloses((items) => {
+      const exists = items.some((item) => item.id === next.id);
+      const merged = exists ? items.map((item) => item.id === next.id ? next : item) : [...items, next];
+      return merged.sort((a, b) => b.date.localeCompare(a.date));
+    });
+    showToast(next.status === "closed" ? `${next.date} 마감을 확정했습니다` : `${next.date} 마감 내용을 저장했습니다`);
+  }, [showToast]);
+
+  const upsertFinanceMatch = useCallback(async (match: FinanceMatch) => {
+    const next: FinanceMatch = {
+      ...match,
+      purchaseOrderIds: [...new Set(match.purchaseOrderIds)],
+      cardItemIds: [...new Set(match.cardItemIds)],
+      accountItemIds: [...new Set(match.accountItemIds)],
+      amount: Math.max(0, Number(match.amount) || 0),
+      memo: match.memo?.trim() ?? "",
+    };
+    if (APP_MODE === "live") await fsUpsertFinanceMatch(next);
+    setFinanceMatches((items) => {
+      const exists = items.some((item) => item.id === next.id);
+      return exists ? items.map((item) => item.id === next.id ? next : item) : [next, ...items];
+    });
+    showToast(next.kind === "purchasePayment" ? "매입과 출금을 연결했습니다" : "카드 정산과 입금을 연결했습니다");
+  }, [showToast]);
+
+  const deleteFinanceMatch = useCallback(async (id: string) => {
+    if (APP_MODE === "live") await fsDeleteFinanceMatch(id);
+    setFinanceMatches((items) => items.filter((item) => item.id !== id));
+    showToast("입출금 연결을 해제했습니다");
+  }, [showToast]);
+
   const syncGranterFinance = useCallback(async () => {
     if (APP_MODE === "live") {
       const result = await fsSyncGranterFinance();
@@ -1251,8 +1323,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       recipes, upsertRecipe, deleteRecipe,
       salesOrders, salesSyncRuns, syncOkposSales,
       granterSyncRuns, granterCardSales, granterAccountTransactions, granterFinanceCategories,
+      financeDailyCloses, financeMatches,
       syncGranterFinance, classifyGranterFinanceItems,
       upsertGranterFinanceCategory, deleteGranterFinanceCategory,
+      upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch,
       punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
       toast, showToast,
     }),
@@ -1261,6 +1335,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
      reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns, granterSyncRuns,
      granterCardSales, granterAccountTransactions, granterFinanceCategories,
+     financeDailyCloses, financeMatches,
      punchStatus, punchInAt, punchOutAt, toast,
      upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
@@ -1275,6 +1350,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      upsertRecipe, deleteRecipe,
      syncOkposSales, syncGranterFinance, classifyGranterFinanceItems,
      upsertGranterFinanceCategory, deleteGranterFinanceCategory,
+     upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch,
      punchIn, punchOut, showToast]
   );
 

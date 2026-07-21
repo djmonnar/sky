@@ -23,6 +23,7 @@ import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
   Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, GranterSyncRun, SalesPayment,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
+  FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
   SettlementMethod, SettlementStatus, ManagerPermissions,
 } from "../data/types";
@@ -314,6 +315,9 @@ export function subscribeInventoryCategories(cb: (v: InventoryCategoryItem[]) =>
       name: String(d.name ?? ""),
       color: d.color ? String(d.color) : undefined,
       sortOrder: Number(d.sortOrder ?? 0),
+      kind: d.kind === "sales" || d.kind === "purchase" || d.kind === "payroll" || d.kind === "fixedExpense"
+        ? d.kind
+        : "other",
       createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
       updatedAt: asDisplayDate(d.updatedAt) || String(d.updatedAt ?? ""),
     }),
@@ -515,12 +519,17 @@ export function subscribeGranterCardSales(cb: (v: GranterFinanceItem[]) => void,
   );
 }
 
-export function subscribeGranterAccountTransactions(cb: (v: GranterFinanceItem[]) => void, onError: ErrCb): Unsub {
+export function subscribeGranterAccountTransactions(
+  cb: (v: GranterFinanceItem[]) => void,
+  onError: ErrCb,
+  direction?: "in" | "out"
+): Unsub {
   return subscribe(
     "granterAccountTransactions",
     normalizeGranterFinanceItem,
     (items) => cb(items.sort((a, b) => b.transactedAt.localeCompare(a.transactedAt))),
-    onError
+    onError,
+    ...(direction ? [where("direction", "==", direction)] : [])
   );
 }
 
@@ -538,6 +547,51 @@ export function subscribeGranterFinanceCategories(cb: (v: GranterFinanceCategory
     }),
     (items) => cb(items.filter((item) => item.name).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))),
     onError
+  );
+}
+
+export function subscribeFinanceDailyCloses(cb: (v: FinanceDailyClose[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "financeDailyCloses",
+    (d, id): FinanceDailyClose => ({
+      id,
+      date: String(d.date ?? id),
+      cashSales: Number(d.cashSales ?? 0),
+      transferSales: Number(d.transferSales ?? 0),
+      otherSales: Number(d.otherSales ?? 0),
+      memo: String(d.memo ?? ""),
+      status: d.status === "closed" ? "closed" : "draft",
+      closedAt: asDisplayDate(d.closedAt) || String(d.closedAt ?? ""),
+      closedBy: String(d.closedBy ?? ""),
+      createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
+      updatedAt: asDisplayDate(d.updatedAt) || String(d.updatedAt ?? ""),
+    }),
+    (items) => cb(items.sort((a, b) => b.date.localeCompare(a.date))),
+    onError
+  );
+}
+
+export function subscribeFinanceMatches(
+  cb: (v: FinanceMatch[]) => void,
+  onError: ErrCb,
+  kind?: FinanceMatchKind
+): Unsub {
+  return subscribe(
+    "financeMatches",
+    (d, id): FinanceMatch => ({
+      id,
+      kind: d.kind === "salesDeposit" ? "salesDeposit" : "purchasePayment",
+      purchaseOrderIds: Array.isArray(d.purchaseOrderIds) ? d.purchaseOrderIds.map(Number).filter(Number.isFinite) : [],
+      cardItemIds: Array.isArray(d.cardItemIds) ? d.cardItemIds.map(String) : [],
+      accountItemIds: Array.isArray(d.accountItemIds) ? d.accountItemIds.map(String) : [],
+      amount: Number(d.amount ?? 0),
+      memo: String(d.memo ?? ""),
+      createdAt: asDisplayDate(d.createdAt) || String(d.createdAt ?? ""),
+      createdBy: String(d.createdBy ?? ""),
+    }),
+    (items) => cb(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt))),
+    onError,
+    ...(kind ? [where("kind", "==", kind)] : [])
   );
 }
 
@@ -590,6 +644,7 @@ export async function fsUpsertGranterFinanceCategory(category: GranterFinanceCat
     domain: category.domain,
     color: category.color,
     sortOrder: category.sortOrder,
+    kind: category.kind ?? "other",
     updatedAt: serverTimestamp(),
     ...(category.createdAt ? {} : { createdAt: serverTimestamp() }),
   }, { merge: true });
@@ -604,6 +659,26 @@ export async function fsDeleteGranterFinanceCategory(
   await fsClassifyGranterFinanceItems("card", cardItemIds, null, classifiedBy);
   await fsClassifyGranterFinanceItems("account", accountItemIds, null, classifiedBy);
   await deleteDoc(doc(col("granterFinanceCategories"), categoryId));
+}
+
+export async function fsUpsertFinanceDailyClose(close: FinanceDailyClose): Promise<void> {
+  await setDoc(doc(col("financeDailyCloses"), close.id), {
+    ...close,
+    updatedAt: serverTimestamp(),
+    ...(close.createdAt ? {} : { createdAt: serverTimestamp() }),
+  }, { merge: true });
+}
+
+export async function fsUpsertFinanceMatch(match: FinanceMatch): Promise<void> {
+  await setDoc(doc(col("financeMatches"), match.id), {
+    ...match,
+    createdAt: match.createdAt || serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export async function fsDeleteFinanceMatch(id: string): Promise<void> {
+  await deleteDoc(doc(col("financeMatches"), id));
 }
 
 export async function fsUpsertEmployee(e: Employee): Promise<void> {

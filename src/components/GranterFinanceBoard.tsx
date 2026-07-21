@@ -3,12 +3,20 @@ import type {
   GranterFinanceCategory,
   GranterFinanceDomain,
   GranterFinanceItem,
+  GranterFinanceCategoryKind,
   Role,
 } from "../data/types";
 import { Badge, Card, StatCard } from "./ui";
 import { money } from "../lib/sales";
 
 const CATEGORY_COLORS = ["#42613d", "#2f6f8f", "#8b5e34", "#8a4f63", "#6d5b8c", "#b16a2f"];
+const CATEGORY_KIND_LABEL: Record<GranterFinanceCategoryKind, string> = {
+  sales: "매출",
+  purchase: "매입",
+  payroll: "인건비",
+  fixedExpense: "고정·운영비",
+  other: "기타",
+};
 
 function detailValue(detail: Record<string, unknown> | null, keys: string[]): string {
   if (!detail) return "";
@@ -82,6 +90,7 @@ export default function GranterFinanceBoard({
   const [editingCategory, setEditingCategory] = useState<GranterFinanceCategory | null>(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryColor, setCategoryColor] = useState(CATEGORY_COLORS[0]);
+  const [categoryKind, setCategoryKind] = useState<GranterFinanceCategoryKind>("other");
   const [savingCategory, setSavingCategory] = useState(false);
   const [classifying, setClassifying] = useState(false);
   const canClassify = role === "admin";
@@ -169,6 +178,7 @@ export default function GranterFinanceBoard({
     setEditingCategory(category ?? null);
     setCategoryName(category?.name ?? "");
     setCategoryColor(category?.color ?? CATEGORY_COLORS[0]);
+    setCategoryKind(category?.kind ?? (domain === "card" ? "sales" : "other"));
     setEditorOpen(true);
   };
 
@@ -182,6 +192,7 @@ export default function GranterFinanceBoard({
         domain,
         color: categoryColor,
         sortOrder: editingCategory?.sortOrder ?? domainCategories.length + 1,
+        kind: categoryKind,
         createdAt: editingCategory?.createdAt,
       });
       setEditorOpen(false);
@@ -337,6 +348,13 @@ export default function GranterFinanceBoard({
               <label>
                 <span className="field-label">분류 이름</span>
                 <input className="input" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="예: 카드 입금, 식자재비, 공과금" autoFocus />
+              </label>
+              <label>
+                <span className="field-label">손익 반영 용도</span>
+                <select className="select" value={categoryKind} onChange={(event) => setCategoryKind(event.target.value as GranterFinanceCategoryKind)}>
+                  {Object.entries(CATEGORY_KIND_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+                <span className="muted small">분류 이름은 자유롭게 적고, 이 값은 손익 계산에만 사용합니다.</span>
               </label>
               <div>
                 <span className="field-label">표시 색상</span>

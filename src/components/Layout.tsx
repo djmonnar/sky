@@ -12,6 +12,7 @@ interface NavDef {
   mobile?: boolean;
   mobileLabel?: string;
   managerPermission?: ManagerPermissionKey;
+  managerPermissions?: ManagerPermissionKey[];
 }
 
 const STAFF_NAV: NavDef[] = [
@@ -28,10 +29,9 @@ const ADMIN_NAV: NavDef[] = [
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표" },
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원" },
   { to: "/payroll", icon: "🛠️", label: "관리자 모드", title: "관리자 모드", mobile: true, mobileLabel: "관리자" },
-  { to: "/sales", icon: "💳", label: "매출 관리", title: "매출 관리", mobile: true, mobileLabel: "매출" },
+  { to: "/finance", icon: "📊", label: "매출·매입", title: "매출·매입 관리", mobile: true, mobileLabel: "재무" },
   { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: true, mobileLabel: "거래처" },
   { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: true, mobileLabel: "재고" },
-  { to: "/settlements", icon: "🧾", label: "정산 관리", title: "정산 관리", mobile: true, mobileLabel: "정산" },
   { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: true, mobileLabel: "레시피" },
   { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, mobileLabel: "공지" },
   { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false },
@@ -42,10 +42,9 @@ const MANAGER_NAV: NavDef[] = [
   { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true, managerPermission: "reservations" },
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표", managerPermission: "scheduleManage" },
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원", managerPermission: "employees" },
-  { to: "/sales", icon: "💳", label: "매출 관리", title: "매출 관리", mobile: true, mobileLabel: "매출", managerPermission: "sales" },
+  { to: "/finance", icon: "📊", label: "매출·매입", title: "매출·매입 관리", mobile: true, mobileLabel: "재무", managerPermissions: ["sales", "settlements"] },
   { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: true, mobileLabel: "거래처", managerPermission: "vendors" },
   { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: true, mobileLabel: "재고", managerPermission: "inventory" },
-  { to: "/settlements", icon: "🧾", label: "정산 관리", title: "정산 관리", mobile: true, mobileLabel: "정산", managerPermission: "settlements" },
   { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: true, mobileLabel: "레시피", managerPermission: "recipes" },
   { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, managerPermission: "notices" },
   { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false, managerPermission: "guide" },
@@ -60,7 +59,10 @@ export default function Layout({ children }: { children: ReactNode }) {
   const nav = role === "admin"
     ? ADMIN_NAV
     : role === "manager"
-      ? MANAGER_NAV.filter((item) => !item.managerPermission || managerPermissions[item.managerPermission])
+      ? MANAGER_NAV.filter((item) =>
+          (!item.managerPermission || managerPermissions[item.managerPermission])
+          && (!item.managerPermissions || item.managerPermissions.some((key) => managerPermissions[key]))
+        )
       : STAFF_NAV;
   const current = nav.find((n) => n.to === loc.pathname);
   const title = current?.title ?? (loc.pathname === "/profile" ? "내 정보 수정" : "하늘땅 매장관리");

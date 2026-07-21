@@ -376,6 +376,7 @@ export interface GranterSyncRun {
 }
 
 export type GranterFinanceDomain = "card" | "account";
+export type GranterFinanceCategoryKind = "sales" | "purchase" | "payroll" | "fixedExpense" | "other";
 
 export interface GranterFinanceItem {
   id: string;
@@ -408,8 +409,39 @@ export interface GranterFinanceCategory {
   domain: GranterFinanceDomain;
   color: string;
   sortOrder: number;
+  kind?: GranterFinanceCategoryKind;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type FinanceCloseStatus = "draft" | "closed";
+
+export interface FinanceDailyClose {
+  id: string; // YYYY-MM-DD
+  date: string;
+  cashSales: number;
+  transferSales: number;
+  otherSales: number;
+  memo?: string;
+  status: FinanceCloseStatus;
+  closedAt?: string;
+  closedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type FinanceMatchKind = "purchasePayment" | "salesDeposit";
+
+export interface FinanceMatch {
+  id: string;
+  kind: FinanceMatchKind;
+  purchaseOrderIds: number[];
+  cardItemIds: string[];
+  accountItemIds: string[];
+  amount: number;
+  memo?: string;
+  createdAt: string;
+  createdBy?: string;
 }
 
 export const RESV_STATUSES: ResvStatus[] = [

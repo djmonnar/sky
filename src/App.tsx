@@ -17,7 +17,6 @@ import Guide from "./pages/Guide";
 import Vendors from "./pages/Vendors";
 import Inventory from "./pages/Inventory";
 import Recipes from "./pages/Recipes";
-import Sales from "./pages/Sales";
 import Settlements from "./pages/Settlements";
 import MyProfile from "./pages/MyProfile";
 import type { ManagerPermissionKey } from "./data/types";
@@ -41,6 +40,7 @@ export default function App() {
   const canUseManagerDashboard = role === "admin" || role === "manager";
   const canUseReservations = role === "admin" || role === "staff" || canManager("reservations");
   const canUseNotices = role === "admin" || role === "staff" || canManager("notices");
+  const canUseFinance = role === "admin" || canManager("sales") || canManager("settlements");
 
   // 라이브 모드: 인증 게이트
   if (mode === "live") {
@@ -63,10 +63,11 @@ export default function App() {
         <Route path="/schedule-manage" element={canAdminOrManager("scheduleManage") ? <ScheduleManage /> : <Navigate to="/" replace />} />
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />
         <Route path="/employees" element={canAdminOrManager("employees") ? <EmployeeList /> : <Navigate to="/" replace />} />
-        <Route path="/sales" element={canAdminOrManager("sales") ? <Sales /> : <Navigate to="/" replace />} />
+        <Route path="/finance" element={canUseFinance ? <Settlements /> : <Navigate to="/" replace />} />
+        <Route path="/sales" element={<Navigate to="/finance?tab=sales" replace />} />
         <Route path="/vendors" element={canAdminOrManager("vendors") ? <Vendors /> : <Navigate to="/" replace />} />
         <Route path="/inventory" element={canAdminOrManager("inventory") ? <Inventory /> : <Navigate to="/" replace />} />
-        <Route path="/settlements" element={canAdminOrManager("settlements") ? <Settlements /> : <Navigate to="/" replace />} />
+        <Route path="/settlements" element={<Navigate to="/finance?tab=purchases" replace />} />
         <Route path="/recipes" element={canAdminOrManager("recipes") ? <Recipes /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<MyProfile />} />
         <Route path="/guide" element={canAdminOrManager("guide") ? <Guide /> : <Navigate to="/" replace />} />

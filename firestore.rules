@@ -79,6 +79,12 @@ service cloud.firestore {
       return isAdmin(storeId) || managerCan(storeId, "sales");
     }
 
+    function canManageFinance(storeId) {
+      return isAdmin(storeId)
+        || managerCan(storeId, "sales")
+        || managerCan(storeId, "settlements");
+    }
+
     function canManageVendors(storeId) {
       return isAdmin(storeId) || managerCan(storeId, "vendors");
     }
@@ -421,13 +427,38 @@ service cloud.firestore {
       }
 
       match /granterAccountTransactions/{id} {
-        allow read: if canManageSales(storeId);
+        allow read: if canManageSales(storeId)
+                    || (managerCan(storeId, "settlements") && resource.data.direction == "out");
         allow write: if isAdmin(storeId);
       }
 
       match /granterFinanceCategories/{id} {
-        allow read: if canManageSales(storeId);
+        allow read: if canManageFinance(storeId);
         allow write: if isAdmin(storeId);
+      }
+
+      match /financeDailyCloses/{id} {
+        allow read, write: if canManageSales(storeId);
+      }
+
+      match /financeMatches/{id} {
+        allow read: if isAdmin(storeId)
+                    || (managerCan(storeId, "sales") && resource.data.kind == "salesDeposit")
+                    || (managerCan(storeId, "settlements") && resource.data.kind == "purchasePayment");
+        allow create: if isAdmin(storeId)
+                      || (managerCan(storeId, "sales") && request.resource.data.kind == "salesDeposit")
+                      || (managerCan(storeId, "settlements") && request.resource.data.kind == "purchasePayment");
+        allow update: if isAdmin(storeId)
+                      || (
+                        resource.data.kind == request.resource.data.kind
+                        && (
+                          (managerCan(storeId, "sales") && request.resource.data.kind == "salesDeposit")
+                          || (managerCan(storeId, "settlements") && request.resource.data.kind == "purchasePayment")
+                        )
+                      );
+        allow delete: if isAdmin(storeId)
+                      || (managerCan(storeId, "sales") && resource.data.kind == "salesDeposit")
+                      || (managerCan(storeId, "settlements") && resource.data.kind == "purchasePayment");
       }
 
       match /notices/{id} {
