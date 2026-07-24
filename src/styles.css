@@ -670,10 +670,42 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .smx-cell.empty { align-items: center; justify-content: center; }
 .smx-add { color: var(--text-muted); font-size: 16px; font-weight: 700; }
 .smx-chip {
-  display: block; padding: 2px 6px; border-radius: 6px;
+  position: relative;
+  display: flex; align-items: center; gap: 3px;
+  min-width: 0; padding: 2px 6px; border-radius: 6px;
   background: var(--green-100); color: var(--green-800);
   font-size: 11px; font-weight: 700; line-height: 1.45;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+}
+.smx-chip:active {
+  cursor: grabbing;
+}
+.smx-drag-grip {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+.smx-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.smx-order-target {
+  position: absolute;
+  z-index: 2;
+  top: -4px;
+  right: 1px;
+  left: 1px;
+  height: 3px;
+  border-radius: 3px;
+  background: transparent;
+  pointer-events: none;
+}
+.smx-order-target.active {
+  background: var(--green-700);
+  box-shadow: 0 0 0 1px var(--card);
 }
 .smx-chip.manual {
   background: var(--amber-100);

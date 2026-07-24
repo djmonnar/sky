@@ -6,7 +6,7 @@ import { TODAY, TODAY_DOW, DOW_KO, weekDates } from "../data";
 import type { Department, Employee, Shift, ShiftPeriod } from "../data/types";
 import {
   DEPARTMENT_LABEL, PERIOD_LABEL, PERIOD_TIME,
-  countSlots, shiftDateForDay, shiftsForDay,
+  countSlots, shiftDateForDay, shiftsForDay, sortShifts,
 } from "../lib/shifts";
 import { employmentLabel } from "../lib/payroll";
 
@@ -188,10 +188,10 @@ export default function ScheduleManage() {
     setTrashOver(false);
   };
 
-  const placeEmployeeInSlot = (employee: Employee, target: SelSlot, order: number) => {
+  const employeeShiftForSlot = (employee: Employee, target: SelSlot, order: number): Shift => {
     const date = shiftDateForDay(week, target.dayIndex);
     const time = PERIOD_TIME[target.period];
-    setShift({
+    return {
       id: shiftAssignmentId(date, target.period, target.department, employee.id),
       date,
       dayIndex: target.dayIndex,
@@ -204,58 +204,124 @@ export default function ScheduleManage() {
       roleLabel: employeeTag(employee),
       order,
       ...time,
+    };
+  };
+
+  const saveSlotOrder = (slotShifts: Shift[]) => {
+    slotShifts.forEach((shift, order) => {
+      setShift({ ...shift, order });
     });
   };
 
-  const dropOnSlot = (target: SelSlot) => {
+  const dropOnSlot = (target: SelSlot, beforeShiftId?: string) => {
     if (!dragPayload) return;
     const targetShifts = cellShifts(target);
-    let added = 0;
+    const targetDate = shiftDateForDay(week, target.dayIndex);
+    const insertAt = (items: Shift[], removedIds = new Set<string>()) => {
+      if (!beforeShiftId) return items.length;
+      const originalIndex = targetShifts.findIndex((shift) => shift.id === beforeShiftId);
+      if (originalIndex < 0) return items.length;
+      return targetShifts
+        .slice(0, originalIndex)
+        .filter((shift) => !removedIds.has(shift.id))
+        .length;
+    };
 
     if (dragPayload.type === "employees") {
+      const additions: Shift[] = [];
       dragPayload.ids.forEach((employeeId) => {
         const employee = employees.find((item) => item.id === employeeId);
         if (!employee) return;
         if (targetShifts.some((shift) => shift.employeeId === employee.id)) return;
-        placeEmployeeInSlot(employee, target, targetShifts.length + added);
-        added += 1;
+        additions.push(employeeShiftForSlot(employee, target, 0));
       });
-      showToast(added > 0 ? `${added}명 배치했습니다` : "이미 배치된 직원입니다");
+      if (additions.length > 0) {
+        const next = [...targetShifts];
+        next.splice(insertAt(next), 0, ...additions);
+        saveSlotOrder(next);
+      }
+      showToast(additions.length > 0 ? `${additions.length}명 배치했습니다` : "이미 배치된 직원입니다");
     } else {
       const moving = dragPayload.ids
         .map((id) => shifts.find((shift) => shift.id === id))
-        .filter((shift): shift is Shift => !!shift);
+        .filter((shift): shift is Shift => !!shift)
+        .sort(sortShifts);
+      const movingIds = new Set(moving.map((shift) => shift.id));
+      const occupied = targetShifts.filter((shift) => !movingIds.has(shift.id));
+      const accepted: Shift[] = [];
+
       moving.forEach((source) => {
         const manual = isManualShift(source);
-        const duplicate = targetShifts.some((targetShift) => {
-          if (dragPayload.ids.includes(targetShift.id)) return false;
+        const duplicate = [...occupied, ...accepted].some((targetShift) => {
           return manual
             ? normalizeSearch(targetShift.employeeName) === normalizeSearch(source.employeeName)
             : targetShift.employeeId === source.employeeId;
         });
         if (duplicate) return;
-        const date = shiftDateForDay(week, target.dayIndex);
+        accepted.push(source);
+      });
+
+      const acceptedIds = new Set(accepted.map((shift) => shift.id));
+      const targetBase = targetShifts.filter((shift) => !acceptedIds.has(shift.id));
+      const moved = accepted.map((source) => {
+        const manual = isManualShift(source);
         const time = PERIOD_TIME[target.period];
         const employeeId = manual ? manualEmployeeId(source.employeeName) : source.employeeId;
-        const id = shiftAssignmentId(date, target.period, target.department, employeeId);
-        if (id === source.id) return;
-        setShift({
+        return {
           ...source,
-          id,
-          date,
+          id: shiftAssignmentId(targetDate, target.period, target.department, employeeId),
+          date: targetDate,
           dayIndex: target.dayIndex,
           day: target.dayIndex,
           period: target.period,
           department: target.department,
           employeeId,
           empId: employeeId,
-          order: targetShifts.length + added,
+          order: 0,
           ...time,
-        });
-        deleteShift(source.id);
-        added += 1;
+        };
       });
-      showToast(added > 0 ? `${added}명 이동했습니다` : "이동할 수 있는 직원이 없습니다");
+
+      if (moved.length > 0) {
+        const next = [...targetBase];
+        next.splice(insertAt(next, acceptedIds), 0, ...moved);
+        saveSlotOrder(next);
+
+        accepted.forEach((source, index) => {
+          if (source.id !== moved[index].id) deleteShift(source.id);
+        });
+
+        const sourceSlots = new Map<string, Shift[]>();
+        accepted.forEach((source) => {
+          const isTargetSlot = source.date === targetDate
+            && source.period === target.period
+            && source.department === target.department;
+          if (isTargetSlot) return;
+          const key = `${source.date}_${source.period}_${source.department}`;
+          if (sourceSlots.has(key)) return;
+          const remaining = shiftsForDay(shifts, source.date, source.dayIndex)
+            .filter((shift) =>
+              shift.period === source.period
+              && shift.department === source.department
+              && !acceptedIds.has(shift.id)
+            );
+          sourceSlots.set(key, remaining);
+        });
+        sourceSlots.forEach(saveSlotOrder);
+      }
+
+      const reorderedOnly = moved.length > 0 && accepted.every((source) =>
+        source.date === targetDate
+        && source.period === target.period
+        && source.department === target.department
+      );
+      showToast(
+        moved.length === 0
+          ? "이동할 수 있는 직원이 없습니다"
+          : reorderedOnly
+            ? "직원 순서를 변경했습니다"
+            : `${moved.length}명 이동했습니다`
+      );
     }
 
     setSel(target);
@@ -616,6 +682,7 @@ export default function ScheduleManage() {
                                 onDragShiftStart={startShiftDrag}
                                 onDragEnd={endDrag}
                                 onDropSlot={dropOnSlot}
+                                onDropBeforeShift={(shiftId) => dropOnSlot(slot, shiftId)}
                               />
                             );
                           })}
@@ -924,6 +991,7 @@ function ScheduleSlotCell({
   onDragShiftStart,
   onDragEnd,
   onDropSlot,
+  onDropBeforeShift,
 }: {
   slot: SelSlot;
   shifts: Shift[];
@@ -934,7 +1002,10 @@ function ScheduleSlotCell({
   onDragShiftStart: (event: DragEvent, shiftId: string) => void;
   onDragEnd: () => void;
   onDropSlot: (slot: SelSlot) => void;
+  onDropBeforeShift: (shiftId: string) => void;
 }) {
+  const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
+
   return (
     <div
       className={`schedule-slot-cell ${selected ? "sel" : ""} ${shifts.length === 0 ? "empty" : ""}`}
@@ -967,9 +1038,23 @@ function ScheduleSlotCell({
               }}
               onDragStart={(event) => onDragShiftStart(event, shift.id)}
               onDragEnd={onDragEnd}
-              title="클릭해서 다중선택, 드래그해서 이동"
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setDropBeforeId(shift.id);
+              }}
+              onDragLeave={() => setDropBeforeId((current) => current === shift.id ? null : current)}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setDropBeforeId(null);
+                onDropBeforeShift(shift.id);
+              }}
+              title="클릭해서 다중선택, 이름 위에 놓아 순서 변경"
             >
-              {shift.employeeName}
+              <span className={`smx-order-target ${dropBeforeId === shift.id ? "active" : ""}`} aria-hidden="true" />
+              <span className="smx-drag-grip" aria-hidden="true">⠿</span>
+              <span className="smx-chip-name">{shift.employeeName}</span>
             </span>
           );
         })
