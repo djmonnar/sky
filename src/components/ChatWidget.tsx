@@ -44,58 +44,63 @@ function SalesReportCard({ payload }: { payload: SalesReportPayload }) {
   const range = payload.rangeStart === payload.rangeEnd
     ? payload.rangeStart
     : `${payload.rangeStart} ~ ${payload.rangeEnd}`;
+  const change = payload.previous?.changePercent ?? null;
+  const dailyRows = payload.daily.slice(0, 31);
 
   return (
     <div className="chat-report">
       <div className="chat-report-head">
-        📊 매출 보고서 <span className="muted small">{range}</span>
+        📊 POS 매출 <span className="muted small">{range}</span>
       </div>
       <div className="chat-report-stats">
         <div>
-          <span>순매출</span>
-          <strong>{money(payload.netAmount)}원</strong>
+          <span>합계</span>
+          <strong>{money(payload.total)}원</strong>
         </div>
         <div>
-          <span>주문</span>
-          <strong>{payload.orderCount}건</strong>
+          <span>일평균</span>
+          <strong>{money(payload.average)}원</strong>
         </div>
         <div>
-          <span>객단가</span>
-          <strong>{money(payload.averageOrderAmount)}원</strong>
+          <span>최고일</span>
+          <strong>{payload.best ? `${money(payload.best.amount)}원` : "—"}</strong>
         </div>
       </div>
 
-      {payload.paymentTotals.length > 0 && (
+      {change !== null && (
+        <div className={`chat-report-delta ${change >= 0 ? "up" : "down"}`}>
+          {change >= 0 ? "▲" : "▼"} {Math.abs(change).toFixed(1)}%
+          <span className="muted small">직전 {payload.elapsedDays}일 대비</span>
+        </div>
+      )}
+      <div className="muted small">
+        {payload.elapsedDays}일 중 {payload.dataDays}일 데이터
+        {payload.missingDays > 0 ? ` · 없는 날 ${payload.missingDays}일` : ""}
+        {payload.futureDays > 0 ? ` · 남은 날 ${payload.futureDays}일` : ""}
+      </div>
+
+      {dailyRows.length > 1 && (
         <div className="chat-report-section">
-          <div className="chat-report-label">결제수단</div>
-          {payload.paymentTotals.map((row) => (
-            <div className="chat-report-row" key={row.method}>
-              <span>{row.label}</span>
+          <div className="chat-report-label">일자별</div>
+          {dailyRows.map((row) => (
+            <div className="chat-report-row" key={row.businessDate}>
+              <span>{row.businessDate.slice(5)} ({row.dow})</span>
               <span>{money(row.amount)}원</span>
             </div>
           ))}
+          {payload.daily.length > dailyRows.length && (
+            <div className="muted small">외 {payload.daily.length - dailyRows.length}일</div>
+          )}
         </div>
       )}
 
-      {payload.daily.length > 1 && (
+      {payload.dataDays >= 7 && payload.weekdayAverages.length > 1 && (
         <div className="chat-report-section">
-          <div className="chat-report-label">일자별</div>
-          {payload.daily.map((row) => (
-            <div className="chat-report-row" key={row.businessDate}>
-              <span>{row.businessDate.slice(5)} ({row.orderCount}건)</span>
-              <span>{money(row.netAmount)}원</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {payload.topItems.length > 0 && (
-        <div className="chat-report-section">
-          <div className="chat-report-label">많이 나간 메뉴</div>
-          {payload.topItems.slice(0, 5).map((row) => (
-            <div className="chat-report-row" key={row.name}>
-              <span>{row.name} × {row.quantity}</span>
-              <span>{money(row.totalAmount)}원</span>
+          <div className="chat-report-label">요일별 평균</div>
+          {payload.weekdayAverages.map((row) => (
+            <div className="chat-report-row" key={row.dow}>
+              <span>{row.dow}요일 <span className="muted small">× {row.days}</span></span>
+              <span>{money(row.average)}원</span>
             </div>
           ))}
         </div>

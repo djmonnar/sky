@@ -5,6 +5,7 @@ const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { createGeminiChat } = require("./geminiChat");
+const { parseQuickReservation, normalizePhone } = require("./quickReservation");
 
 admin.initializeApp();
 
@@ -1066,6 +1067,10 @@ function classify(body) {
   ]);
   if (explicitActions.has(requestedAction)) return requestedAction;
 
+  // "9/5 18시 3명 박현제 45184312" 처럼 예약 정보만 적어도 알아듣는다
+  const quick = parseQuickReservation(utteranceOf(body));
+  if (quick.ok) return quick.cancel ? "reservation.quickCancel" : "reservation.quickCreate";
+
   const text = fullText(body).toLowerCase();
   if (/도움|메뉴|help|시작/.test(text)) return "help";
   if (/재고\s*(확인|입고|ocr|사진|촬영)/.test(text)) return "inventory.ocr.start";
@@ -1148,39 +1153,98 @@ async function handleReservationList(body) {
   return textResponse(`${date} 예약 ${docs.length}건\n${lines.join("\n")}`, ["예약 등록", "오늘 현황"]);
 }
 
-async function handleReservationCreate(body, chatUser) {
-  const fields = reservationCreateFields(body);
-  const time = parseTime(fields.period, fields.time);
+/**
+ * 예약 등록. `quick` 이 있으면 "9/5 18시 3명 박현제 45184312" 를 파싱한 결과다.
+ * 연락처는 없어도 된다 — 안 적으면 빈칸으로 둔다.
+ */
+async function handleReservationCreate(body, chatUser, quick = null) {
+  const fields = quick
+    ? {
+      dateInput: quick.dateInput,
+      name: quick.name,
+      phone: quick.phone,
+      period: "",
+      time: quick.time,
+      people: quick.people ? String(quick.people) : "",
+      seat: quick.seat,
+      request: "",
+    }
+    : reservationCreateFields(body);
+  const time = quick ? quick.time : parseTime(fields.period, fields.time);
   const missing = [];
   if (!fields.dateInput) missing.push("날짜");
   if (!fields.name) missing.push("예약자");
-  if (!fields.phone) missing.push("연락처");
-  if (!fields.period) missing.push("오전/오후");
+  if (!quick && !fields.period && !time) missing.push("오전/오후");
   if (!time) missing.push("시간");
   if (missing.length > 0) {
     return failResponse(
       `예약 등록에는 다음 항목이 필요합니다: ${missing.join(", ")}.\n` +
-      "예: 예약 등록 / 내일 / 홍길동 / 010-1234-5678 / 오후 / 7:30 / 4명 / 창가"
+      "예: 9/5 18시 3명 박현제 45184312\n" +
+      "예: 9월 5일 오후 6시 3명 박현제 (전화는 없어도 됩니다)"
     );
   }
   const people = Math.max(1, parseNumber(fields.people, 2));
+  const phone = normalizePhone(fields.phone) || String(fields.phone || "").trim();
   const id = Date.now();
   const reservation = {
     id,
     date: resolveDate(fields.dateInput),
     time,
     name: fields.name,
-    phone: fields.phone,
+    phone,
     people,
-    seat: fields.seat,
-    request: fields.request,
+    seat: fields.seat || "",
+    request: fields.request || "",
     status: normalizeStatus(paramOf(body, ["status", "상태"])) || (people >= 8 ? "단체" : "예약확정"),
     writer: chatUser.name,
     createdAt: nowStamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
   await storeDoc("reservations", String(id)).set(reservation, { merge: true });
-  return textResponse(`예약을 등록했습니다.\n번호: ${id}\n${reservation.date} ${reservation.time}\n${fields.name} ${people}명 ${reservation.seat || ""}`, ["오늘 예약", "오늘 현황"]);
+  return textResponse([
+    "예약을 등록했습니다.",
+    `번호: ${id}`,
+    `${reservation.date} ${reservation.time} · ${fields.name} ${people}명${reservation.seat ? ` · ${reservation.seat}` : ""}`,
+    `연락처: ${phone || "없음"}`,
+  ].join("\n"), ["오늘 예약", "오늘 현황"]);
+}
+
+/**
+ * "9/5 박현제 취소" — 날짜와 이름으로 찾아 상태를 취소로 바꾼다.
+ * 지우지 않는다: 예약 관리 화면에 취소로 남아 취소·노쇼 이력이 보인다.
+ */
+async function handleQuickCancel(quick, chatUser) {
+  const date = resolveDate(quick.dateInput);
+  const targetName = String(quick.name || "").replace(/\s+/g, "");
+  const docs = (await storeCol("reservations").where("date", "==", date).get()).docs
+    .map((doc) => ({ ref: doc.ref, data: doc.data() }))
+    .filter(({ data }) => String(data.name ?? "").replace(/\s+/g, "") === targetName)
+    .filter(({ data }) => data.status !== "취소");
+  let candidates = docs;
+  if (candidates.length > 1 && quick.time) {
+    candidates = candidates.filter(({ data }) => data.time === quick.time);
+  }
+  if (candidates.length === 0) {
+    return failResponse(`${date} ${quick.name} 예약을 찾지 못했습니다.\n예: 9/5 박현제 취소`);
+  }
+  if (candidates.length > 1) {
+    const lines = candidates.slice(0, 5).map(({ data }) =>
+      `${data.id}. ${data.time ?? ""} ${data.name ?? ""} ${data.people ?? ""}명 ${data.seat ?? ""}`.trim()
+    );
+    return failResponse(
+      `같은 이름 예약이 ${candidates.length}건 있습니다. 시간을 같이 적어주세요.\n예: 9/5 18시 박현제 취소\n${lines.join("\n")}`
+    );
+  }
+  const { ref, data } = candidates[0];
+  await ref.set({
+    status: "취소",
+    updatedBy: chatUser.name,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return textResponse(
+    `예약을 취소했습니다.\n${data.date ?? date} ${data.time ?? ""} · ${data.name ?? quick.name} ${data.people ?? ""}명`,
+    ["오늘 예약", "오늘 현황"]
+  );
 }
 
 async function handleReservationUpdate(body, mode = "update") {
@@ -2640,6 +2704,8 @@ async function routeAction(action, body, chatUser) {
     case "dashboard": return handleDashboard();
     case "reservation.list": return handleReservationList(body);
     case "reservation.create": return handleReservationCreate(body, chatUser);
+    case "reservation.quickCreate": return handleReservationCreate(body, chatUser, parseQuickReservation(utteranceOf(body)));
+    case "reservation.quickCancel": return handleQuickCancel(parseQuickReservation(utteranceOf(body)), chatUser);
     case "reservation.status":
     case "reservation.update": return handleReservationUpdate(body);
     case "reservation.delete": {
@@ -2678,6 +2744,8 @@ async function routeAction(action, body, chatUser) {
         "하늘땅 챗봇 메뉴",
         "오늘 현황",
         "오늘 예약 / 예약 등록 / 예약 수정 / 예약 삭제",
+        "예: 9/5 18시 3명 박현제 45184312 → 예약 등록 (전화는 없어도 됨)",
+        "예: 9/5 박현제 취소 → 예약 취소",
         "오늘 근무표 / 근무표 추가 / 근무표 삭제",
         "직원 목록 / 직원 등록 / 직원 수정 / 직원 삭제",
         "공지 / 공지 등록 / 공지 수정 / 공지 삭제",
@@ -3463,7 +3531,6 @@ const geminiChat = createGeminiChat({
   formatDate,
   resolveDate,
   normalizeStatus,
-  normalizePaymentMethod,
   parseTime,
   dayIndexOf,
   canManageOps,

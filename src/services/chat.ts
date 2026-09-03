@@ -27,20 +27,24 @@ export interface PendingAction {
   fields: PendingActionField[];
 }
 
+/** 네이버 플레이스플러스 POS 일 매출을 기간으로 묶은 것 — 하루에 금액 하나뿐이라 건수·메뉴는 없다 */
 export interface SalesReportPayload {
+  source: string;
   rangeStart: string;
   rangeEnd: string;
   dayCount: number;
-  orderCount: number;
-  canceledCount: number;
-  grossAmount: number;
-  discountAmount: number;
-  refundAmount: number;
-  netAmount: number;
-  averageOrderAmount: number;
-  paymentTotals: { method: string; label: string; amount: number }[];
-  daily: { businessDate: string; orderCount: number; netAmount: number }[];
-  topItems: { name: string; quantity: number; totalAmount: number }[];
+  /** 오늘까지 지난 일수 */
+  elapsedDays: number;
+  dataDays: number;
+  missingDays: number;
+  futureDays: number;
+  total: number;
+  average: number;
+  best: { date: string; amount: number } | null;
+  worst: { date: string; amount: number } | null;
+  previous: { start: string; end: string; total: number; dataDays: number; changePercent: number | null };
+  weekdayAverages: { dow: string; average: number; days: number }[];
+  daily: { businessDate: string; dow: string; amount: number; orderCount?: number }[];
 }
 
 export type ChatBlock = { type: "salesReport"; payload: SalesReportPayload };

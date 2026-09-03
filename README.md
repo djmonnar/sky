@@ -71,7 +71,7 @@ CLI로도 가능: `npx vercel env add VITE_FIREBASE_API_KEY production`
 ```
 예: 오늘 현황 알려줘
 예: 내일 저녁 7시 김하늘 4명 창가로 예약 등록해줘
-예: 이번 주 매출 정리해줘
+예: 이번 주 매출 정리해줘        ← 네이버 플레이스플러스 POS 일 매출 기준
 예: 오늘 근무표 보여줘
 예: 전달사항 등록해줘 — 주방 재료 입고 확인
 ```
@@ -210,6 +210,7 @@ functions/
 ```bash
 npm run test:pos              # POS 매출 집계 로직 (브라우저·Firebase 없이)
 cd functions && npm run test:chat   # Gemini 챗봇 도구 레이어
+cd functions && npm run test:kakao  # 카카오 빠른 예약 파서 (9/5 18시 3명 박현제 45184312)
 ```
 
 ## 역할
