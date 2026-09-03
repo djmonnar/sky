@@ -1029,6 +1029,15 @@ function shiftAssignmentId(date, period, department, employeeId) {
 }
 
 function classify(body) {
+  /*
+    "9/5 18시 3명 박현제 45184312" 처럼 예약 정보만 적어도 알아듣는다.
+    카카오의 자유 발화 블록이 action=dashboard 같은 고정값을 같이 넘겨도, 사람이 적은
+    말이 예약이면 예약이다 — 그래서 고정 action 검사보다 앞에 둔다. 날짜·이름에
+    시간/인원(또는 취소)까지 있어야만 예약으로 보므로 "오늘 현황" 같은 말은 안 잡힌다.
+  */
+  const quick = parseQuickReservation(utteranceOf(body));
+  if (quick.ok) return quick.cancel ? "reservation.quickCancel" : "reservation.quickCreate";
+
   const requestedAction = paramOf(body, ["action", "작업", "command", "명령"]).toLowerCase();
   const explicitActions = new Set([
     "dashboard",
@@ -1066,10 +1075,6 @@ function classify(body) {
     "help",
   ]);
   if (explicitActions.has(requestedAction)) return requestedAction;
-
-  // "9/5 18시 3명 박현제 45184312" 처럼 예약 정보만 적어도 알아듣는다
-  const quick = parseQuickReservation(utteranceOf(body));
-  if (quick.ok) return quick.cancel ? "reservation.quickCancel" : "reservation.quickCreate";
 
   const text = fullText(body).toLowerCase();
   if (/도움|메뉴|help|시작/.test(text)) return "help";
