@@ -33,20 +33,11 @@ const data = {
   workRecords: {
     w1: { empId: 1, date: TODAY, status: "제출", planStart: "10:20", planEnd: "15:00", breakMin: 30 },
   },
-  salesOrders: {
-    o1: {
-      businessDate: TODAY, status: "paid", totalAmount: 50000, discountAmount: 0,
-      paidAmount: 50000, refundAmount: 0,
-      paymentMethods: [{ method: "card", amount: 50000 }],
-      items: [{ name: "삼겹살", quantity: 2, totalAmount: 36000 }],
-    },
-    o2: {
-      businessDate: TODAY, status: "paid", totalAmount: 30000, discountAmount: 2000,
-      paidAmount: 28000, refundAmount: 0,
-      paymentMethods: [{ method: "현금", amount: 28000 }],
-      items: [{ name: "된장찌개", quantity: 3, totalAmount: 24000 }],
-    },
-    o3: { businessDate: TODAY, status: "canceled", totalAmount: 10000, discountAmount: 0, paidAmount: 0, refundAmount: 0 },
+  salesDailySummaries: {
+    "2026-09-03": { id: "2026-09-03", businessDate: "2026-09-03", netAmount: 4_289_200, syncedAt: "2026-09-04T00:28:00+09:00", source: "ownervista", sourceLabel: "NAVER-PLACEPLUS" },
+    "2026-09-02": { id: "2026-09-02", businessDate: "2026-09-02", netAmount: 4_784_000, orderCount: 41, syncedAt: "2026-09-04T00:28:00+09:00" },
+    "2026-09-01": { id: "2026-09-01", businessDate: "2026-09-01", netAmount: 3_868_000, syncedAt: "2026-09-04T00:28:00+09:00" },
+    "2026-08-31": { id: "2026-08-31", businessDate: "2026-08-31", netAmount: 2_795_000, syncedAt: "2026-09-01T00:28:00+09:00" },
   },
   notices: { "900": { id: 900, text: "단체 예약 세팅 확인", date: TODAY } },
   handovers: {},
@@ -128,7 +119,10 @@ const deps = {
     if (hour > 23 || minute > 59) return null;
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   },
-  dayIndexOf: () => 3,
+  dayIndexOf: (text) => {
+    const [y, m, d] = text.split("-").map(Number);
+    return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  },
   canManageOps: (user) => user.role === "admin" || user.role === "manager",
 };
 
@@ -225,21 +219,39 @@ async function check(label, fn) {
     assert.strictEqual(payload.shifts[0].employeeName, "김현지");
   });
 
-  await check("매출: 취소 주문 제외하고 순매출 집계", async () => {
-    stubGemini([{ calls: [{ name: "sales_report", args: { startDate: TODAY, endDate: TODAY } }] }, { text: "ok" }]);
-    const result = await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "오늘 매출" }] });
+  await check("매출: POS 일 매출을 기간 합계·평균·최고일·직전 기간과 함께 준다", async () => {
+    stubGemini([{ calls: [{ name: "sales_report", args: { startDate: "2026-09-01", endDate: "2026-09-03" } }] }, { text: "ok" }]);
+    const result = await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "이번 주 매출 보고서" }] });
     const toolTurn = requests[1].contents.find((entry) => entry.parts.some((part) => part.functionResponse));
     const payload = toolTurn.parts[0].functionResponse.response;
-    assert.strictEqual(payload.orderCount, 2, "유효 주문 2건");
-    assert.strictEqual(payload.canceledCount, 1, "취소 1건");
-    assert.strictEqual(payload.netAmount, 78000, "순매출 78,000원");
-    assert.strictEqual(payload.averageOrderAmount, 39000, "객단가 39,000원");
-    assert.deepStrictEqual(
-      payload.paymentTotals.map((row) => [row.method, row.amount]),
-      [["card", 50000], ["cash", 28000]],
-      "한글 '현금'도 cash로 정규화"
-    );
+    assert.strictEqual(payload.total, 12_941_200, "9/1~9/3 합계");
+    assert.strictEqual(payload.dataDays, 3);
+    assert.strictEqual(payload.elapsedDays, 3);
+    assert.strictEqual(payload.average, Math.round(12_941_200 / 3));
+    assert.deepStrictEqual(payload.best, { date: "2026-09-02", amount: 4_784_000 });
+    assert.deepStrictEqual(payload.worst, { date: "2026-09-01", amount: 3_868_000 });
+    assert.strictEqual(payload.previous.start, "2026-08-29", "직전은 같은 길이(3일)");
+    assert.strictEqual(payload.previous.end, "2026-08-31");
+    assert.strictEqual(payload.previous.total, 2_795_000);
+    assert.strictEqual(payload.previous.changePercent, 363);
+    assert.strictEqual(payload.daily.length, 3);
+    assert.strictEqual(payload.daily[0].dow, "화", "2026-09-01 은 화요일");
+    assert.strictEqual(payload.daily[1].orderCount, 41, "건수를 아는 날만 건수를 준다");
+    assert.strictEqual(payload.daily[0].orderCount, undefined);
+    assert.match(payload.source, /플레이스플러스/);
     assert.ok(result.blocks.some((block) => block.type === "salesReport"), "UI 카드 블록이 실려야 함");
+  });
+
+  await check("매출: 이번 달을 3일에 보면 지난 3일만 직전 3일과 비교한다", async () => {
+    stubGemini([{ calls: [{ name: "sales_report", args: { startDate: "2026-09-01", endDate: "2026-09-30" } }] }, { text: "ok" }]);
+    await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "이번 달 매출" }] });
+    const toolTurn = requests[1].contents.find((entry) => entry.parts.some((part) => part.functionResponse));
+    const payload = toolTurn.parts[0].functionResponse.response;
+    assert.strictEqual(payload.dayCount, 30);
+    assert.strictEqual(payload.elapsedDays, 3);
+    assert.strictEqual(payload.futureDays, 27);
+    assert.strictEqual(payload.missingDays, 0);
+    assert.strictEqual(payload.previous.start, "2026-08-29");
   });
 
   await check("쓰기: 필수 항목이 빠지면 확인 카드를 만들지 않음", async () => {
@@ -247,7 +259,20 @@ async function check(label, fn) {
     const result = await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "내일 홍길동 예약" }] });
     assert.strictEqual(result.pendingAction, undefined, "확인 카드가 뜨면 안 됨");
     const toolTurn = requests[1].contents.find((entry) => entry.parts.some((part) => part.functionResponse));
-    assert.match(toolTurn.parts[0].functionResponse.response.error, /연락처/);
+    assert.match(toolTurn.parts[0].functionResponse.response.error, /시간/);
+  });
+
+  await check("쓰기: 연락처를 안 적어도 확인 카드가 뜬다 (연락처 없음)", async () => {
+    writes.length = 0;
+    stubGemini([
+      { calls: [{ name: "create_reservation", args: { date: "내일", time: "18:00", name: "박현제", people: 3 } }] },
+      { text: "확인해주세요." },
+    ]);
+    const result = await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "내일 6시 박현제 3명" }] });
+    assert.ok(result.pendingAction, "확인 카드가 있어야 함");
+    assert.strictEqual(result.pendingAction.args.phone, "");
+    assert.ok(result.pendingAction.fields.some((field) => field.label === "연락처" && field.value === "없음"), "연락처: 없음");
+    assert.strictEqual(writes.length, 0, "확인 전에는 저장하지 않는다");
   });
 
   await check("쓰기: 확인 카드만 만들고 저장하지 않음", async () => {

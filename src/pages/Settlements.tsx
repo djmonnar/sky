@@ -19,14 +19,15 @@ type FinanceTab = "close" | "sales" | "pos" | "purchases" | "matching" | "profit
 type SettlementFilter = "all" | "unsettled" | "settled";
 
 const TABS: Array<{ id: FinanceTab; label: string; icon: string }> = [
-  { id: "close", label: "오늘 마감", icon: "✓" },
-  { id: "sales", label: "매출", icon: "💳" },
   /*
-    **POS 매출은 카드 매출과 다른 숫자다.** 「매출」 탭은 그랜터가 준 카드 승인·정산
-    이라 현금이 안 들어 있고, POS 매출에는 아직 정산 안 된 것이 들어 있다. 한 탭에
-    섞으면 어느 쪽이 「오늘 얼마 팔았나」인지 알 수 없다.
+    **POS 매출이 첫 탭이다.** 매출·매입에 들어와서 제일 먼저 봐야 할 숫자.
+    카드 매출과 다른 숫자다 — 「매출」 탭은 그랜터가 준 카드 승인·정산이라 현금이
+    안 들어 있고, POS 매출에는 아직 정산 안 된 것이 들어 있다. 한 탭에 섞으면
+    어느 쪽이 「오늘 얼마 팔았나」인지 알 수 없다.
   */
   { id: "pos", label: "POS 매출", icon: "🧾" },
+  { id: "close", label: "오늘 마감", icon: "✓" },
+  { id: "sales", label: "매출", icon: "💳" },
   { id: "purchases", label: "매입", icon: "🧾" },
   { id: "matching", label: "입출금 매칭", icon: "↔" },
   { id: "profit", label: "손익", icon: "📊" },
@@ -116,7 +117,7 @@ export default function Settlements() {
   } = useStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab") as FinanceTab | null;
-  const [activeTab, setActiveTab] = useState<FinanceTab>(TABS.some((tab) => tab.id === requestedTab) ? requestedTab! : "close");
+  const [activeTab, setActiveTab] = useState<FinanceTab>(TABS.some((tab) => tab.id === requestedTab) ? requestedTab! : "pos");
   const [date, setDate] = useState(TODAY_STR);
   const [month, setMonth] = useState(TODAY_STR.slice(0, 7));
   const [syncing, setSyncing] = useState(false);
@@ -169,7 +170,7 @@ export default function Settlements() {
 
   const openTab = (tab: FinanceTab) => {
     setActiveTab(tab);
-    setSearchParams(tab === "close" ? {} : { tab });
+    setSearchParams(tab === "pos" ? {} : { tab });
   };
 
   const activeOrders = useMemo(

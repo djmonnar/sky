@@ -19,14 +19,6 @@ const MAX_MESSAGE_LENGTH = 2000;
 const MAX_ROWS = 40;
 const MAX_REPORT_DAYS = 92;
 
-const PAYMENT_LABEL = {
-  card: "카드",
-  cash: "현금",
-  simplePay: "간편결제",
-  voucher: "상품권",
-  other: "기타",
-};
-
 const PERIOD_LABEL = { morning: "오전", afternoon: "오후" };
 const DEPARTMENT_LABEL = { hall: "홀", kitchen: "주방" };
 const DOW_LABEL = ["월", "화", "수", "목", "금", "토", "일"];
@@ -54,6 +46,19 @@ function daysBetween(startDate, endDate) {
   return Math.round((end - start) / 86_400_000) + 1;
 }
 
+function addDays(dateText, days) {
+  const [year, month, day] = dateText.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Firestore Timestamp 든 문자열이든 ISO 문자열로 */
+function isoOf(value) {
+  if (value && typeof value.toDate === "function") return value.toDate().toISOString();
+  return value ? String(value) : "";
+}
+
 function createGeminiChat(deps) {
   const {
     admin,
@@ -62,7 +67,6 @@ function createGeminiChat(deps) {
     formatDate,
     resolveDate,
     normalizeStatus,
-    normalizePaymentMethod,
     parseTime,
     dayIndexOf,
     canManageOps,
@@ -127,6 +131,11 @@ function createGeminiChat(deps) {
     };
   }
 
+  /**
+   * POS 매출 보고서 재료. 이 매장의 매출 정본은 네이버 플레이스플러스(오너비스타 수집)
+   * 하나이고, 하루에 순매출 숫자 하나만 온다 — 그래서 여기서 주는 것도 날짜별 금액과
+   * 그것을 묶은 합계·평균·최고일·직전 기간 비교다. 건수·결제수단·메뉴별은 없다.
+   */
   async function toolSalesReport(args) {
     const endDate = resolveDate(args.endDate || args.startDate || "오늘");
     const startDate = resolveDate(args.startDate || args.endDate || "오늘");
@@ -138,65 +147,85 @@ function createGeminiChat(deps) {
       return { error: `한 번에 조회할 수 있는 기간은 최대 ${MAX_REPORT_DAYS}일입니다. 기간을 나눠서 요청해주세요.` };
     }
 
-    const snap = await storeCol("salesOrders")
-      .where("businessDate", ">=", rangeStart)
-      .where("businessDate", "<=", rangeEnd)
-      .get();
-    const orders = snap.docs.map((doc) => doc.data());
-    const active = orders.filter((order) => order.status === "paid" || order.status === "partialRefund");
+    // 오늘까지 지난 날만 센다 — "이번 달"을 12일에 보면 12일치가 지난 것이다
+    const today = formatDate();
+    const elapsedEnd = rangeEnd < today ? rangeEnd : today;
+    const elapsedDays = elapsedEnd < rangeStart ? 0 : daysBetween(rangeStart, elapsedEnd);
+    const prevEnd = addDays(rangeStart, -1);
+    const prevStart = addDays(prevEnd, -(Math.max(1, elapsedDays) - 1));
 
-    const netAmount = active.reduce(
-      (sum, order) => sum + Math.max(0, Number(order.paidAmount || 0) - Number(order.refundAmount || 0)),
-      0
-    );
-    const paymentMap = new Map();
-    active.forEach((order) => {
-      (order.paymentMethods || []).forEach((payment) => {
-        const method = normalizePaymentMethod(payment.method);
-        paymentMap.set(method, (paymentMap.get(method) || 0) + (Number(payment.amount) || 0));
-      });
+    const readRows = async (start, end) => (await storeCol("salesDailySummaries")
+      .where("businessDate", ">=", start)
+      .where("businessDate", "<=", end)
+      .get()).docs
+      .map((doc) => doc.data())
+      .filter((row) => typeof row.businessDate === "string")
+      .sort((a, b) => a.businessDate.localeCompare(b.businessDate));
+
+    const rows = await readRows(rangeStart, rangeEnd);
+    const prevRows = elapsedDays > 0 ? await readRows(prevStart, prevEnd) : [];
+    const amountOf = (row) => Number(row.netAmount) || 0;
+    const sum = (list) => list.reduce((acc, row) => acc + amountOf(row), 0);
+
+    const total = sum(rows);
+    const prevTotal = sum(prevRows);
+    let best = null;
+    let worst = null;
+    rows.forEach((row) => {
+      const amount = amountOf(row);
+      if (!best || amount > best.amount) best = { date: row.businessDate, amount };
+      if (!worst || amount < worst.amount) worst = { date: row.businessDate, amount };
     });
 
-    const dailyMap = new Map();
-    active.forEach((order) => {
-      const key = order.businessDate;
-      const current = dailyMap.get(key) || { businessDate: key, orderCount: 0, netAmount: 0 };
-      current.orderCount += 1;
-      current.netAmount += Math.max(0, Number(order.paidAmount || 0) - Number(order.refundAmount || 0));
-      dailyMap.set(key, current);
+    const dowMap = new Map();
+    rows.forEach((row) => {
+      const dow = DOW_LABEL[dayIndexOf(row.businessDate)];
+      const current = dowMap.get(dow) || { dow, total: 0, days: 0 };
+      current.total += amountOf(row);
+      current.days += 1;
+      dowMap.set(dow, current);
     });
 
-    const itemMap = new Map();
-    active.forEach((order) => {
-      (order.items || []).forEach((item) => {
-        const name = String(item.name || "").trim();
-        if (!name) return;
-        const current = itemMap.get(name) || { name, quantity: 0, totalAmount: 0 };
-        current.quantity += Number(item.quantity) || 0;
-        current.totalAmount += Number(item.totalAmount) || 0;
-        itemMap.set(name, current);
-      });
-    });
+    const latestSyncedAt = rows.reduce((acc, row) => {
+      const text = isoOf(row.syncedAt);
+      return text > acc ? text : acc;
+    }, "");
 
     return {
+      source: "네이버 플레이스플러스 POS 매출 (오너비스타에서 매일 수집)",
       rangeStart,
       rangeEnd,
       dayCount: span,
-      orderCount: active.length,
-      canceledCount: orders.length - active.length,
-      grossAmount: orders.reduce((sum, order) => sum + (Number(order.totalAmount) || 0), 0),
-      discountAmount: orders.reduce((sum, order) => sum + (Number(order.discountAmount) || 0), 0),
-      refundAmount: orders.reduce((sum, order) => sum + (Number(order.refundAmount) || 0), 0),
-      netAmount,
-      averageOrderAmount: active.length ? Math.round(netAmount / active.length) : 0,
-      paymentTotals: [...paymentMap.entries()]
-        .map(([method, amount]) => ({ method, label: PAYMENT_LABEL[method] || method, amount }))
-        .sort((a, b) => b.amount - a.amount),
-      daily: [...dailyMap.values()].sort((a, b) => a.businessDate.localeCompare(b.businessDate)),
-      topItems: [...itemMap.values()].sort((a, b) => b.totalAmount - a.totalAmount).slice(0, 10),
-      dataNote: orders.length === 0
-        ? "해당 기간에 동기화된 매출 데이터가 없습니다. OK포스 동기화 여부를 확인하세요."
-        : undefined,
+      elapsedDays,
+      dataDays: rows.length,
+      missingDays: Math.max(0, elapsedDays - rows.length),
+      futureDays: span - elapsedDays,
+      total,
+      average: rows.length ? Math.round(total / rows.length) : 0,
+      best,
+      worst,
+      previous: {
+        start: prevStart,
+        end: prevEnd,
+        total: prevTotal,
+        dataDays: prevRows.length,
+        changePercent: prevTotal > 0 ? Math.round(((total - prevTotal) / prevTotal) * 1000) / 10 : null,
+      },
+      weekdayAverages: DOW_LABEL
+        .map((dow) => dowMap.get(dow))
+        .filter(Boolean)
+        .map((row) => ({ dow: row.dow, average: Math.round(row.total / row.days), days: row.days })),
+      daily: rows.map((row) => ({
+        businessDate: row.businessDate,
+        dow: DOW_LABEL[dayIndexOf(row.businessDate)],
+        amount: amountOf(row),
+        // 건수는 아는 날만 — 네이버는 보통 안 준다. 0 으로 적으면 사실로 읽힌다.
+        ...(typeof row.orderCount === "number" ? { orderCount: row.orderCount } : {}),
+      })),
+      latestSyncedAt,
+      dataNote: rows.length === 0
+        ? "해당 기간에 받아온 POS 매출이 없습니다. 매출·매입 화면의 「지금 동기화」를 눌러보라고 안내하세요."
+        : "카드 매출과 다른 숫자입니다(현금·계좌이체 포함, 아직 정산 안 된 것 포함). 건수·결제수단·메뉴별은 네이버가 주지 않아 없습니다.",
     };
   }
 
@@ -305,7 +334,6 @@ function createGeminiChat(deps) {
     const phone = String(args.phone || "").trim();
     if (!args.date) missing.push("날짜");
     if (!name) missing.push("예약자 이름");
-    if (!phone) missing.push("연락처");
     if (!args.time) missing.push("시간");
     if (missing.length > 0) {
       return { error: `예약 등록에는 다음 항목이 더 필요합니다: ${missing.join(", ")}. 사용자에게 물어보세요.` };
@@ -314,8 +342,9 @@ function createGeminiChat(deps) {
     const date = resolveDate(args.date);
     const time = parseTime(args.period || "", args.time);
     if (!time) return { error: "시간을 해석하지 못했습니다. '오후 7시 30분'이나 '19:30' 형태로 다시 확인해주세요." };
-    if (!/^\d[\d-]{7,}$/.test(phone.replace(/\s/g, ""))) {
-      return { error: "연락처 형식을 확인해주세요. 예: 010-1234-5678" };
+    // 연락처는 없어도 된다 — 적었을 때만 형식을 본다
+    if (phone && !/^\d[\d-]{7,}$/.test(phone.replace(/\s/g, ""))) {
+      return { error: "연락처 형식을 확인해주세요. 예: 010-1234-5678 (없으면 비워도 됩니다)" };
     }
 
     const people = Math.max(1, Number(args.people) || 2);
@@ -333,7 +362,7 @@ function createGeminiChat(deps) {
           { label: "날짜", value: `${date} (${DOW_LABEL[dayIndexOf(date)]})` },
           { label: "시간", value: time },
           { label: "예약자", value: name },
-          { label: "연락처", value: phone },
+          { label: "연락처", value: phone || "없음" },
           { label: "인원", value: `${people}명` },
           ...(seat ? [{ label: "좌석", value: seat }] : []),
           ...(request ? [{ label: "요청사항", value: request }] : []),
@@ -341,7 +370,7 @@ function createGeminiChat(deps) {
         ],
       },
       // 모델에는 마스킹된 번호만 되돌려줍니다.
-      modelSummary: `${date} ${time} ${name} ${people}명 (${maskPhone(phone)}) 확인 카드를 사용자에게 보여주었습니다.`,
+      modelSummary: `${date} ${time} ${name} ${people}명 (${phone ? maskPhone(phone) : "연락처 없음"}) 확인 카드를 사용자에게 보여주었습니다.`,
       actorName: actor.name,
     };
   }
@@ -353,7 +382,7 @@ function createGeminiChat(deps) {
       date: args.date,
       time: args.time,
       name: args.name,
-      phone: args.phone,
+      phone: String(args.phone || ""),
       people: Number(args.people) || 2,
       seat: args.seat || "",
       request: args.request || "",
@@ -538,7 +567,7 @@ function createGeminiChat(deps) {
       declaration: {
         name: "sales_report",
         description:
-          "기간별 매출을 집계한다. 총 매출, 순매출, 주문 수, 객단가, 결제수단별 금액, 일자별 매출, 많이 팔린 메뉴를 반환한다. 하루치만 필요하면 startDate와 endDate를 같게 준다.",
+          "POS 매출(네이버 플레이스플러스 일 매출)을 기간으로 집계한다. 기간 합계, 일평균, 최고·최저 매출일, 요일별 평균, 직전 같은 길이 기간 대비 증감률, 일자별 금액을 반환한다. 매출 보고서·매출 정리·매출 비교 요청은 이 도구를 쓴다. 건수·결제수단·메뉴별은 제공되지 않는다. 하루치만 필요하면 startDate와 endDate를 같게 준다.",
         parameters: {
           type: "OBJECT",
           properties: {
@@ -609,7 +638,7 @@ function createGeminiChat(deps) {
       declaration: {
         name: "create_reservation",
         description:
-          "새 예약을 등록한다. 곧바로 저장되지 않고 사용자 확인 카드로 표시된다. 날짜/시간/이름/연락처가 모두 있어야 하며, 없으면 먼저 사용자에게 물어봐야 한다.",
+          "새 예약을 등록한다. 곧바로 저장되지 않고 사용자 확인 카드로 표시된다. 날짜/시간/이름이 있어야 하며, 없으면 먼저 사용자에게 물어봐야 한다. 연락처는 없어도 된다 — 사용자가 안 말했으면 묻지 말고 비워 둔다.",
         parameters: {
           type: "OBJECT",
           properties: {
@@ -617,13 +646,13 @@ function createGeminiChat(deps) {
             time: { type: "STRING", description: "예약 시간. 24시간제 HH:MM 권장. 예: 19:30" },
             period: { type: "STRING", description: "12시간제로 말했을 때만 사용. '오전' 또는 '오후'." },
             name: { type: "STRING", description: "예약자 이름" },
-            phone: { type: "STRING", description: "연락처. 예: 010-1234-5678" },
+            phone: { type: "STRING", description: "연락처(선택). 예: 010-1234-5678. 010을 뺀 8자리(45184312)로 말해도 그대로 넘긴다." },
             people: { type: "NUMBER", description: "인원 수" },
             seat: { type: "STRING", description: "좌석/룸. 예: 창가, 룸1" },
             request: { type: "STRING", description: "요청사항" },
             status: { type: "STRING", description: "상태를 명시할 때만. 예: 예약확정, 예약대기, 단체" },
           },
-          required: ["date", "time", "name", "phone"],
+          required: ["date", "time", "name"],
         },
       },
     },
@@ -692,6 +721,7 @@ function createGeminiChat(deps) {
       "- 등록/수정 도구는 즉시 저장되지 않고 사용자 확인 카드로 표시됩니다. 도구를 부른 뒤에는 '확인 카드를 띄웠으니 확인해달라'는 취지로 짧게 안내하세요.",
       "- 등록에 필요한 항목이 빠졌으면 도구를 부르지 말고 먼저 사용자에게 되물으세요.",
       "- 금액은 원 단위로 천 단위 쉼표를 넣어 표기하세요. (예: 1,250,000원)",
+      "- 매출은 네이버 플레이스플러스 POS 일 매출입니다(sales_report). 보고서를 요청받으면 기간 합계 → 직전 기간 대비 증감 → 일평균 → 최고·최저일 → 요일 경향 순으로 짧게 정리하고, 건수·메뉴별은 없다고 분명히 말하세요. 데이터 없는 날과 아직 오지 않은 날은 구분해서 말하세요.",
       "- 전화번호는 개인정보 보호를 위해 가운데 자리가 가려진 채로 전달됩니다. 가려진 숫자를 임의로 채우지 마세요.",
       "- 목록이 길면 표 대신 핵심만 간추리고, 필요하면 더 볼지 물어보세요.",
       actor.role === "staff"
