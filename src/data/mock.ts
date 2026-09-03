@@ -1,6 +1,6 @@
 /* 목업 시드 데이터 - 실서비스 전환 시 이 파일만 제거하면 됨 */
 
-import { TODAY, TODAY_STR, fmtDate, weekDates } from "../lib/time";
+import { TODAY, TODAY_STR, dowIndex, fmtDate, weekDates } from "../lib/time";
 import type {
   Department,
   Employee,
@@ -11,6 +11,7 @@ import type {
   PurchaseOrder,
   Recipe,
   Reservation,
+  SalesDailySummary,
   SalesOrder,
   SalesSyncRun,
   Shift,
@@ -405,3 +406,34 @@ export const CHECKLIST_TEMPLATE = [
   "재료 소진 품목 매니저 보고",
   "마감 청소 (홀 바닥, 주방 정리, 분리수거)",
 ];
+
+/*
+  POS 일 매출 (데모용). 네이버 플레이스플러스처럼 날짜와 금액만 있다.
+  격주 월요일은 휴무라 그날은 행 자체가 없다 — 0원과 "없음"은 다르다.
+*/
+export const SEED_SALES_DAILY_SUMMARIES: SalesDailySummary[] = Array.from({ length: 75 }, (_, i): SalesDailySummary | null => {
+  const date = new Date(TODAY);
+  date.setDate(date.getDate() - i);
+  const key = fmtDate(date);
+  const dow = dowIndex(date);
+  if (dow === 0 && Math.floor(i / 7) % 2 === 1) return null;
+  const wave = (i * 7919) % 900_000;
+  const weekend = dow >= 4 ? 1.35 : 1;
+  const netAmount = Math.round(((2_600_000 + wave) * weekend) / 1000) * 1000;
+  return {
+    id: key,
+    businessDate: key,
+    orderCount: 0,
+    canceledCount: 0,
+    grossAmount: netAmount,
+    discountAmount: 0,
+    refundAmount: 0,
+    netAmount,
+    averageOrderAmount: 0,
+    paymentTotals: [],
+    syncedAt: `${TODAY_STR}T00:28:00+09:00`,
+    hasOrderCount: false,
+    source: "mock",
+    sourceLabel: "데모",
+  };
+}).filter((row): row is SalesDailySummary => row !== null);

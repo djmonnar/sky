@@ -195,12 +195,21 @@ src/
   store.tsx              전역 상태 — 데모/라이브 모드 분기, 구독 관리
   services/chat.ts       Gemini 챗봇 호출 (키 없이 토큰만 전송)
   components/ChatWidget  대시보드 플로팅 챗봇 UI + 확인 카드
-  pages/ components/     UI (디자인 시스템: 크림 배경 + 딥그린, 버튼형 시간 입력)
+  lib/posSales.ts        POS 일 매출 집계 (주·월 묶기, 기간 합계, 달력 격자) — 순수 함수
+  components/PosSalesBoard  POS 매출 화면: 달력 드래그 선택, 일/주/월, 기간 상세
+  pages/ components/     UI (디자인 시스템: 흰 바탕 + 검정 포인트, 상태색은 배지·추세에만)
 
 functions/
   index.js               카카오 스킬, 푸시, OK포스·그랜터 동기화, geminiChat 엔드포인트
   geminiChat.js          Gemini 도구 레이어 (조회 즉시 실행 / 쓰기는 확인 후 저장)
   scripts/               배포 없이 도는 점검 스크립트
+```
+
+## 점검 스크립트
+
+```bash
+npm run test:pos              # POS 매출 집계 로직 (브라우저·Firebase 없이)
+cd functions && npm run test:chat   # Gemini 챗봇 도구 레이어
 ```
 
 ## 역할
