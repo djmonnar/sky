@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useStore } from "../store";
 import PushNotificationBell from "./PushNotificationBell";
@@ -21,7 +21,7 @@ const STAFF_NAV: NavDef[] = [
   { to: "/reservations", icon: "📋", label: "오늘 예약", title: "오늘 예약", mobile: true },
   { to: "/schedule", icon: "🗓️", label: "근무표", title: "근무표", mobile: true },
   { to: "/worklog", icon: "✍️", label: "근무기록", title: "근무기록 작성", mobile: true },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true },
+  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: false },
 ];
 
 const ADMIN_NAV: NavDef[] = [
@@ -31,10 +31,10 @@ const ADMIN_NAV: NavDef[] = [
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원" },
   { to: "/payroll", icon: "🛠️", label: "관리자 모드", title: "관리자 모드", mobile: true, mobileLabel: "관리자" },
   { to: "/finance", icon: "📊", label: "매출·매입", title: "매출·매입 관리", mobile: true, mobileLabel: "재무" },
-  { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: true, mobileLabel: "거래처" },
-  { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: true, mobileLabel: "재고" },
-  { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: true, mobileLabel: "레시피" },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, mobileLabel: "공지" },
+  { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: false, mobileLabel: "거래처" },
+  { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: false, mobileLabel: "재고" },
+  { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: false, mobileLabel: "레시피" },
+  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: false, mobileLabel: "공지" },
   { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false },
 ];
 
@@ -44,10 +44,10 @@ const MANAGER_NAV: NavDef[] = [
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표", managerPermission: "scheduleManage" },
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원", managerPermission: "employees" },
   { to: "/finance", icon: "📊", label: "매출·매입", title: "매출·매입 관리", mobile: true, mobileLabel: "재무", managerPermissions: ["sales", "settlements"] },
-  { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: true, mobileLabel: "거래처", managerPermission: "vendors" },
-  { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: true, mobileLabel: "재고", managerPermission: "inventory" },
-  { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: true, mobileLabel: "레시피", managerPermission: "recipes" },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: true, managerPermission: "notices" },
+  { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: false, mobileLabel: "거래처", managerPermission: "vendors" },
+  { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: false, mobileLabel: "재고", managerPermission: "inventory" },
+  { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: false, mobileLabel: "레시피", managerPermission: "recipes" },
+  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: false, managerPermission: "notices" },
   { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false, managerPermission: "guide" },
 ];
 
@@ -57,6 +57,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     profile, authUser, logout, currentEmployee, managerPermissions,
   } = useStore();
   const loc = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const nav = role === "admin"
     ? ADMIN_NAV
     : role === "manager"
@@ -81,6 +82,24 @@ export default function Layout({ children }: { children: ReactNode }) {
   const handleLogout = () => {
     if (window.confirm("로그아웃 하시겠어요?")) void logout();
   };
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [loc.pathname, loc.search]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileMenuOpen]);
 
   return (
     <div className="shell">
@@ -140,6 +159,16 @@ export default function Layout({ children }: { children: ReactNode }) {
                 {userName[0]}
               </Link>
             )}
+            <button
+              type="button"
+              className="mobile-menu-trigger"
+              aria-label="전체 메뉴 열기"
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-main-menu"
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              <span aria-hidden="true">☰</span>
+            </button>
           </div>
         </header>
 
@@ -166,6 +195,64 @@ export default function Layout({ children }: { children: ReactNode }) {
 
         <main className="page">{children}</main>
       </div>
+
+      {mobileMenuOpen && (
+        <div className="mobile-menu-backdrop" role="presentation" onMouseDown={() => setMobileMenuOpen(false)}>
+          <aside
+            id="mobile-main-menu"
+            className="mobile-menu-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="전체 메뉴"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="mobile-menu-head">
+              <div>
+                <strong>전체 메뉴</strong>
+                <span>{userName} · {userRole}</span>
+              </div>
+              <button type="button" className="mobile-menu-close" aria-label="전체 메뉴 닫기" onClick={() => setMobileMenuOpen(false)}>
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+
+            <nav className="mobile-menu-nav" aria-label="모바일 전체 메뉴">
+              {nav.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) => `mobile-menu-item ${isActive ? "active" : ""}`}
+                  end={item.to === "/"}
+                >
+                  <span className="mobile-menu-icon" aria-hidden="true">{item.icon}</span>
+                  <span>{item.label}</span>
+                  <span className="mobile-menu-arrow" aria-hidden="true">›</span>
+                </NavLink>
+              ))}
+            </nav>
+
+            <div className="mobile-menu-foot">
+              {mode === "live" && (
+                <Link className="mobile-menu-secondary" to="/profile">
+                  <span aria-hidden="true">👤</span>
+                  내 정보 수정
+                </Link>
+              )}
+              {mode === "demo" ? (
+                <button type="button" className="mobile-menu-secondary" onClick={switchRole}>
+                  <span aria-hidden="true">🔄</span>
+                  {role === "admin" ? "실무자 화면으로" : "관리자 화면으로"}
+                </button>
+              ) : (
+                <button type="button" className="mobile-menu-secondary danger" onClick={handleLogout}>
+                  <span aria-hidden="true">🚪</span>
+                  로그아웃
+                </button>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
 
       {/* 모바일 하단 탭 */}
       <nav className="bottom-nav">

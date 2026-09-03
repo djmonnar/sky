@@ -308,20 +308,6 @@ export default function AdminDashboard() {
         </div>
 
         <div className="stack side-panel">
-          {/* 빠른 작업 */}
-          <Card title="빠른 작업" icon="⚡">
-            <div className="quick-actions">
-              {canAccess("reservations") && <Link to="/reservations" className="quick-action"><span className="qa-ic">📞</span>예약 등록</Link>}
-              {canAccess("scheduleManage") && <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표</Link>}
-              {canAccess("sales") && <Link to="/finance" className="quick-action"><span className="qa-ic">🧾</span>POS 매출</Link>}
-              {canAccess("employees") && <Link to="/employees" className="quick-action"><span className="qa-ic">👥</span>직원 관리</Link>}
-              {canAccess("settlements") && <Link to="/finance?tab=purchases" className="quick-action"><span className="qa-ic">🧾</span>매입·정산</Link>}
-              {canAccess("inventory") && <Link to="/inventory" className="quick-action"><span className="qa-ic">📦</span>재고</Link>}
-              {canAccess("vendors") && <Link to="/vendors" className="quick-action"><span className="qa-ic">🏢</span>거래처</Link>}
-              {canAccess("notices") && <Link to="/notices" className="quick-action"><span className="qa-ic">📢</span>공지</Link>}
-            </div>
-          </Card>
-
           {/* 근무기록 승인 대기: 있을 때만 */}
           {pendingRecords.length > 0 && (
             <Card title="근무기록 승인 대기" icon="🗂️" action={isAdmin ? <Link to="/payroll" className="card-link">승인하러 가기 ›</Link> : undefined}>
