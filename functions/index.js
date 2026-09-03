@@ -3503,7 +3503,7 @@ exports.geminiChat = onRequest(
       roleLabel: ROLE_LABEL[auth.role] ?? auth.role,
       employeeId: Number(auth.employeeId ?? 0),
     };
-    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+    const model = process.env.GEMINI_MODEL || geminiChat.DEFAULT_MODEL;
     const body = req.body && typeof req.body === "object" ? req.body : {};
 
     try {

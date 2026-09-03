@@ -10,7 +10,9 @@
  */
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_MODEL = "gemini-2.0-flash";
+// 모델 ID는 GEMINI_MODEL 환경변수로 덮어쓸 수 있습니다.
+// 이 모델이 은퇴하면 코드 수정 없이 환경변수만 바꿔 재배포하면 됩니다.
+const DEFAULT_MODEL = "gemini-3.5-flash";
 const MAX_TOOL_ROUNDS = 4;
 const MAX_HISTORY = 12;
 const MAX_MESSAGE_LENGTH = 2000;
@@ -719,7 +721,11 @@ function createGeminiChat(deps) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       const detail = String(json?.error?.message || "").slice(0, 300);
-      const error = new Error(detail || `Gemini 요청이 실패했습니다. (HTTP ${res.status})`);
+      // 모델이 은퇴하거나 ID를 잘못 적으면 404가 옵니다. 원인을 바로 알 수 있게 안내합니다.
+      const message = res.status === 404
+        ? `모델 '${model}' 을(를) 찾을 수 없습니다. GEMINI_MODEL 환경변수로 현재 사용 가능한 모델 ID를 지정해주세요. (${detail})`
+        : detail || `Gemini 요청이 실패했습니다. (HTTP ${res.status})`;
+      const error = new Error(message);
       error.status = res.status;
       throw error;
     }
@@ -754,6 +760,7 @@ function createGeminiChat(deps) {
       const parts = partsOf(response);
       const calls = parts.filter((part) => part.functionCall).map((part) => part.functionCall);
 
+
       if (calls.length === 0) {
         const text = parts.map((part) => part.text || "").join("").trim();
         const finishReason = response?.candidates?.[0]?.finishReason;
@@ -763,7 +770,9 @@ function createGeminiChat(deps) {
         return { reply: text || "답변을 만들지 못했습니다. 다시 한번 말씀해 주세요.", blocks };
       }
 
-      contents.push({ role: "model", parts: calls.map((call) => ({ functionCall: call })) });
+      // 모델이 보낸 파트를 그대로 되돌려줍니다. Gemini 3.x는 functionCall에 붙은
+      // thoughtSignature를 다음 요청에 원본 그대로 실어 보내지 않으면 400을 냅니다.
+      contents.push({ role: "model", parts });
 
       // Gemini는 functionCall 하나당 functionResponse 하나를 요구합니다.
       // 쓰기 도구를 만나도 즉시 반환하지 말고, 모든 호출에 응답을 채운 뒤 정리합니다.

@@ -86,8 +86,25 @@ firebase functions:secrets:set GEMINI_API_KEY
 firebase deploy --only functions:geminiChat
 ```
 
-모델은 기본값이 `gemini-2.0-flash`이며, 함수 환경변수 `GEMINI_MODEL`로 바꿀 수
-있습니다. (AI Studio에서 현재 사용 가능한 모델 ID를 확인한 뒤 지정하세요.)
+### 모델
+
+기본값은 **`gemini-3.5-flash`** 이고, `functions/.env`에 `GEMINI_MODEL`을 적으면 바꿀 수 있습니다.
+
+```bash
+echo "GEMINI_MODEL=gemini-3.5-flash-lite" >> functions/.env
+firebase deploy --only functions:geminiChat
+```
+
+- **모델 ID는 고정입니다.** Google이 새 모델을 내놔도 `gemini-3.5-flash`를 지정한 이상
+  그 모델이 계속 쓰입니다. 자동으로 갈아타지 않습니다.
+- 언젠가 이 모델이 **은퇴**하면 API가 404를 돌려줍니다. 그때는 코드를 고칠 필요 없이
+  `GEMINI_MODEL`만 새 ID로 바꿔 재배포하면 됩니다. 챗봇도 "모델을 찾을 수 없습니다,
+  GEMINI_MODEL을 지정해주세요"라고 원인을 그대로 알려줍니다.
+- Gemini 3.x는 함수 호출 시 응답에 실린 `thoughtSignature`를 다음 요청에 **그대로**
+  돌려줘야 합니다(안 그러면 400). 이 코드는 모델 응답 파트를 원본 그대로 히스토리에
+  넣어 이 요건을 지키며, `npm run test:chat`이 회귀를 막습니다.
+- 무료 등급은 대략 15 RPM / 1,500 RPD 수준이라 매장 한 곳 내부용으로는 충분합니다.
+  (정확한 한도는 Google AI Studio 대시보드에서 확인하세요.)
 
 ### 동작 방식
 

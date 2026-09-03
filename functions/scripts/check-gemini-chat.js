@@ -149,8 +149,10 @@ function stubGemini(turns) {
     const body = JSON.parse(options.body);
     requests.push(body);
     const turn = scripted.shift() ?? { text: "끝" };
+    // Gemini 3.x는 functionCall 파트에 thoughtSignature를 붙여 보내고,
+    // 다음 요청에 그대로 돌려주지 않으면 400을 냅니다. 스텁도 똑같이 붙입니다.
     const parts = turn.calls
-      ? turn.calls.map((call) => ({ functionCall: call }))
+      ? turn.calls.map((call, index) => ({ functionCall: call, thoughtSignature: `sig-${call.name}-${index}` }))
       : [{ text: turn.text }];
     return {
       ok: true,
@@ -327,6 +329,20 @@ async function check(label, fn) {
       respTurn.parts.length,
       "functionCall 개수와 functionResponse 개수가 같아야 Gemini가 400을 내지 않음"
     );
+  });
+
+  await check("프로토콜: thoughtSignature를 그대로 돌려줌 (Gemini 3.x 필수)", async () => {
+    stubGemini([
+      { calls: [{ name: "list_reservations", args: { date: "오늘" } }] },
+      { calls: [{ name: "get_today_overview", args: {} }] },
+      { text: "정리했습니다." },
+    ]);
+    await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "정리해줘" }] });
+    const last = requests[requests.length - 1];
+    const modelTurns = last.contents.filter((entry) => entry.role === "model");
+    assert.strictEqual(modelTurns.length, 2, "도구 호출 턴 2개가 히스토리에 남아야 함");
+    assert.strictEqual(modelTurns[0].parts[0].thoughtSignature, "sig-list_reservations-0");
+    assert.strictEqual(modelTurns[1].parts[0].thoughtSignature, "sig-get_today_overview-0");
   });
 
   await check("프로토콜: 도구 호출이 끝없이 반복되면 중단됨", async () => {
