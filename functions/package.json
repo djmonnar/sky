@@ -6,8 +6,9 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js",
+    "lint": "node --check index.js && node --check geminiChat.js",
     "test:ocr": "node scripts/check-inventory-ocr.js",
+    "test:chat": "node scripts/check-gemini-chat.js",
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions"
   },
