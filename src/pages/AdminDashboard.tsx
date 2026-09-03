@@ -230,12 +230,12 @@ export default function AdminDashboard() {
           </Card>
 
           {canAccess("sales") && (
-            <Card title="OK포스 매출 동기화" icon="💳" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
+            <Card title="매출 동기화" icon="💳" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
               <div className="alert-item info">
                 <span>🔄</span>
                 <div>
                   마지막 동기화 {latestSalesSync?.finishedAt || latestSalesSync?.startedAt || "없음"}
-                  <div className="desc">{latestSalesSync?.message || "OK포스 표준 API 연결 대기 중"}</div>
+                  <div className="desc">{latestSalesSync?.message || "네이버 플레이스플러스 매출을 오너비스타에서 받아 옵니다"}</div>
                 </div>
               </div>
             </Card>

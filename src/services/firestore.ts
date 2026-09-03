@@ -21,7 +21,7 @@ import {
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
-  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, GranterSyncRun, SalesPayment,
+  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, GranterSyncRun, SalesPayment,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
@@ -452,6 +452,44 @@ export function subscribeSalesSyncRuns(cb: (v: SalesSyncRun[]) => void, onError:
       message: d.message,
     }),
     (items) => cb(items.sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 20)),
+    onError
+  );
+}
+
+/**
+ * 하루치 매출 합계.
+ *
+ * **주문에서 계산하지 않고 저장된 것을 그대로 읽는다.** OK포스가 살아 있을 때는
+ * 주문을 다 받아 화면에서 합쳤지만, 지금 매출 정본인 네이버 플레이스플러스는
+ * 일 합계만 준다 — 합칠 주문이 없다.
+ */
+export function subscribeSalesDailySummaries(
+  cb: (v: SalesDailySummary[]) => void,
+  onError: ErrCb,
+): Unsub {
+  return subscribe(
+    "salesDailySummaries",
+    (d, id) => ({
+      id,
+      businessDate: String(d.businessDate ?? id),
+      orderCount: Number(d.orderCount ?? 0),
+      canceledCount: Number(d.canceledCount ?? 0),
+      grossAmount: Number(d.grossAmount ?? 0),
+      discountAmount: Number(d.discountAmount ?? 0),
+      refundAmount: Number(d.refundAmount ?? 0),
+      netAmount: Number(d.netAmount ?? 0),
+      averageOrderAmount: Number(d.averageOrderAmount ?? 0),
+      paymentTotals: Array.isArray(d.paymentTotals) ? (d.paymentTotals as SalesPayment[]) : [],
+      syncedAt: asDisplayDate(d.syncedAt) || undefined,
+      /*
+        **건수를 모르는 날이 있다.** 네이버는 주문 건수를 안 준다. 0 으로 읽으면
+        화면이 «0건»이라 적고 사람은 그것을 사실로 믿는다 — 안 적힌 것과 0 은 다르다.
+      */
+      hasOrderCount: typeof d.orderCount === "number",
+      source: typeof d.source === "string" ? d.source : null,
+      sourceLabel: typeof d.sourceLabel === "string" ? d.sourceLabel : null,
+    }),
+    (items) => cb(items.sort((a, b) => b.businessDate.localeCompare(a.businessDate)).slice(0, 120)),
     onError
   );
 }
@@ -1031,6 +1069,33 @@ export async function fsSyncOkposSales(): Promise<{ ok: boolean; message: string
   if (!res.ok) {
     throw new Error(json.message || "매출 동기화 요청에 실패했습니다.");
   }
+  return {
+    ok: !!json.ok,
+    message: String(json.message ?? "매출 동기화 요청이 완료되었습니다."),
+    runId: json.runId,
+  };
+}
+
+/**
+ * 오너비스타에서 하루치 매출을 받아 온다.
+ *
+ * OK포스 연동이 끊긴 뒤 이 매장의 매출 정본은 **네이버 플레이스플러스**이고,
+ * 그것을 오너비스타가 받아 우리에게 내준다. 주문 단위는 안 온다 — 네이버가 일
+ * 합계만 주기 때문이다.
+ */
+export async function fsSyncOwnervistaSales(): Promise<{ ok: boolean; message: string; runId?: string }> {
+  const user = requireAuth().currentUser;
+  if (!user) throw new Error("로그인이 필요합니다.");
+  const token = await user.getIdToken();
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const url = `https://asia-northeast3-${projectId}.cloudfunctions.net/syncOwnervistaSales`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ mode: "manual" }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || "매출 동기화 요청에 실패했습니다.");
   return {
     ok: !!json.ok,
     message: String(json.message ?? "매출 동기화 요청이 완료되었습니다."),

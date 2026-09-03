@@ -40,13 +40,19 @@ function granterStatusTone(status?: string): string {
 
 export default function Sales() {
   const {
-    salesOrders, salesSyncRuns, granterSyncRuns,
+    salesOrders, salesSyncRuns, salesDailySummaries, granterSyncRuns,
     granterCardSales, granterAccountTransactions, granterFinanceCategories,
-    syncOkposSales, syncGranterFinance, classifyGranterFinanceItems,
+    syncSales, syncGranterFinance, classifyGranterFinanceItems,
     upsertGranterFinanceCategory, deleteGranterFinanceCategory,
     mode, role, showToast,
   } = useStore();
   const [date, setDate] = useState(TODAY_STR);
+  /*
+    **POS 매출과 카드·계좌는 다른 숫자다.** 카드 승인액에는 현금이 안 들어가고,
+    POS 매출에는 아직 정산 안 된 것도 들어간다. 한 화면에 섞어 두면 어느 쪽이
+    «오늘 얼마 팔았나»인지 알 수 없다 — 그래서 탭으로 가른다.
+  */
+  const [tab, setTab] = useState<"pos" | "finance">("pos");
   const [syncing, setSyncing] = useState(false);
   const [granterSyncing, setGranterSyncing] = useState(false);
   const orders = useMemo(() => ordersForDate(salesOrders, date), [salesOrders, date]);
@@ -60,7 +66,7 @@ export default function Sales() {
   const runSync = async () => {
     setSyncing(true);
     try {
-      await syncOkposSales();
+      await syncSales();
     } catch (e) {
       showToast((e as Error).message || "매출 동기화에 실패했습니다");
     } finally {
@@ -79,17 +85,56 @@ export default function Sales() {
     }
   };
 
+  /*
+    **오늘(선택일) 합계는 저장된 것을 그대로 쓴다.** 주문에서 계산하지 않는다 —
+    지금 매출 정본인 네이버 플레이스플러스는 일 합계만 주고 주문을 안 준다.
+  */
+  const daily = salesDailySummaries.find((row) => row.businessDate === date) ?? null;
+  /** 주문이 하나도 없으면 원장·시간대별·메뉴별은 그릴 것이 없다. */
+  const hasOrders = orders.length > 0;
+
   return (
     <>
+      <div className="finance-tabs" role="tablist" aria-label="매출 보기">
+        <button className={tab === "pos" ? "on" : ""} onClick={() => setTab("pos")}>
+          <span>🧾</span>POS 매출
+        </button>
+        <button className={tab === "finance" ? "on" : ""} onClick={() => setTab("finance")}>
+          <span>💳</span>카드·계좌
+        </button>
+      </div>
+
+      {tab === "pos" ? (
+      <>
       <div className="grid grid-4">
-        <StatCard label="선택일 매출" value={money(summary.netAmount)} unit="원" trend={`${summary.orderCount}건`} trendUp icon="💳" />
-        <StatCard label="객단가" value={money(summary.averageOrderAmount)} unit="원" trend="결제완료 기준" trendUp icon="🧾" tone="blue" />
-        <StatCard label="취소/환불" value={money(summary.refundAmount)} unit="원" trend={`${summary.canceledCount}건`} trendUp={false} icon="↩️" tone="amber" />
-        <StatCard label="할인" value={money(summary.discountAmount)} unit="원" trend="POS 원장 기준" trendUp={false} icon="🏷️" />
+        {/*
+          **주문이 있으면 주문에서, 없으면 저장된 합계에서 읽는다.**
+
+          네이버 플레이스플러스는 일 합계만 준다. 그런데 화면은 원래 주문을 다 받아
+          스스로 합치게 만들어져 있어서, 주문이 없으면 **0원**을 그렸다 — 매출이 든
+          날에도 그랬다.
+        */}
+        <StatCard
+          label="선택일 매출"
+          value={money(hasOrders ? summary.netAmount : daily?.netAmount ?? 0)}
+          unit="원"
+          /*
+            **모르는 건수를 «0건»이라 적지 않는다.** 네이버는 건수를 안 준다.
+            0 이라고 쓰면 사람은 그것을 사실로 믿는다.
+          */
+          trend={hasOrders
+            ? `${summary.orderCount}건`
+            : daily?.hasOrderCount ? `${daily.orderCount}건` : "건수 없음"}
+          trendUp
+          icon="💳"
+        />
+        <StatCard label="객단가" value={money(hasOrders ? summary.averageOrderAmount : 0)} unit="원" trend={hasOrders ? "결제완료 기준" : "주문 자료 없음"} trendUp icon="🧾" tone="blue" />
+        <StatCard label="취소/환불" value={money(hasOrders ? summary.refundAmount : 0)} unit="원" trend={hasOrders ? `${summary.canceledCount}건` : "주문 자료 없음"} trendUp={false} icon="↩️" tone="amber" />
+        <StatCard label="할인" value={money(hasOrders ? summary.discountAmount : 0)} unit="원" trend={hasOrders ? "POS 원장 기준" : "주문 자료 없음"} trendUp={false} icon="🏷️" />
       </div>
 
       <Card
-        title="OK포스 매출 동기화"
+        title="매출 동기화"
         icon="🔄"
         action={<button className="btn btn-primary btn-sm" disabled={syncing} onClick={runSync}>{syncing ? "동기화 중..." : "지금 동기화"}</button>}
       >
@@ -105,54 +150,15 @@ export default function Sales() {
               {latestRun && <Badge tone={latestRun.status === "success" ? "green" : latestRun.status === "config_required" ? "amber" : "red"}>{latestRun.status}</Badge>}
             </div>
             <div className="muted small">
-              {latestRun?.message ?? (mode === "demo" ? "데모 모드에서는 샘플 매출을 보여줍니다." : "OK포스 API 설정 후 자동 수집됩니다.")}
+              {latestRun?.message ?? (mode === "demo" ? "데모 모드에서는 샘플 매출을 보여줍니다." : "네이버 플레이스플러스 매출을 오너비스타에서 매일 받아 옵니다.")}
             </div>
           </div>
         </div>
       </Card>
 
-      <Card
-        title="그랜터 카드·계좌 연동"
-        icon="🏦"
-        action={
-          <button className="btn btn-primary btn-sm" disabled={granterSyncing} onClick={() => void runGranterSync()}>
-            {granterSyncing ? "동기화 중..." : "카드·계좌 동기화"}
-          </button>
-        }
-      >
-        <div className="integration-status-grid">
-          <div className="integration-status-card">
-            <span className="muted small">현재 상태</span>
-            <Badge tone={granterStatusTone(latestGranterRun?.status)}>{granterStatusLabel(latestGranterRun?.status)}</Badge>
-            <strong>{latestGranterRun?.message ?? "그랜터 카드·계좌 API 연결 대기 중입니다."}</strong>
-          </div>
-          <div className="integration-status-card">
-            <span className="muted small">최근 동기화</span>
-            <strong>{latestGranterRun?.finishedAt || latestGranterRun?.startedAt || "아직 없음"}</strong>
-            <span className="muted small">
-              카드 신규 {latestGranterRun?.cardImportedCount ?? 0}건 · 갱신 {latestGranterRun?.cardUpdatedCount ?? 0}건
-              <br />
-              계좌 신규 {latestGranterRun?.accountImportedCount ?? 0}건 · 갱신 {latestGranterRun?.accountUpdatedCount ?? 0}건
-            </span>
-          </div>
-          <div className="integration-status-card">
-            <span className="muted small">연동 목표</span>
-            <strong>카드 승인·정산과 계좌 입출금만 수집</strong>
-            <span className="muted small">세금계산서·급여·발주 데이터는 가져오지 않습니다.</span>
-          </div>
-        </div>
-      </Card>
 
-      <GranterFinanceBoard
-        role={role}
-        cardItems={granterCardSales}
-        accountItems={granterAccountTransactions}
-        categories={granterFinanceCategories}
-        classifyItems={classifyGranterFinanceItems}
-        upsertCategory={upsertGranterFinanceCategory}
-        deleteCategory={deleteGranterFinanceCategory}
-      />
-
+      {/* 주문이 없으면 원장·시간대별·메뉴별은 그릴 것이 없다. 빈 표는 없는 것보다 나쁘다. */}
+      {hasOrders ? (
       <div className="grid grid-main-side">
         <div className="stack">
           <Card title="주문 원장" icon="📑">
@@ -220,6 +226,54 @@ export default function Sales() {
           </Card>
         </div>
       </div>
+      ) : null}
+
+      </>
+      ) : (
+      <>
+      <Card
+        title="그랜터 카드·계좌 연동"
+        icon="🏦"
+        action={
+          <button className="btn btn-primary btn-sm" disabled={granterSyncing} onClick={() => void runGranterSync()}>
+            {granterSyncing ? "동기화 중..." : "카드·계좌 동기화"}
+          </button>
+        }
+      >
+        <div className="integration-status-grid">
+          <div className="integration-status-card">
+            <span className="muted small">현재 상태</span>
+            <Badge tone={granterStatusTone(latestGranterRun?.status)}>{granterStatusLabel(latestGranterRun?.status)}</Badge>
+            <strong>{latestGranterRun?.message ?? "그랜터 카드·계좌 API 연결 대기 중입니다."}</strong>
+          </div>
+          <div className="integration-status-card">
+            <span className="muted small">최근 동기화</span>
+            <strong>{latestGranterRun?.finishedAt || latestGranterRun?.startedAt || "아직 없음"}</strong>
+            <span className="muted small">
+              카드 신규 {latestGranterRun?.cardImportedCount ?? 0}건 · 갱신 {latestGranterRun?.cardUpdatedCount ?? 0}건
+              <br />
+              계좌 신규 {latestGranterRun?.accountImportedCount ?? 0}건 · 갱신 {latestGranterRun?.accountUpdatedCount ?? 0}건
+            </span>
+          </div>
+          <div className="integration-status-card">
+            <span className="muted small">연동 목표</span>
+            <strong>카드 승인·정산과 계좌 입출금만 수집</strong>
+            <span className="muted small">세금계산서·급여·발주 데이터는 가져오지 않습니다.</span>
+          </div>
+        </div>
+      </Card>
+      <GranterFinanceBoard
+        role={role}
+        cardItems={granterCardSales}
+        accountItems={granterAccountTransactions}
+        categories={granterFinanceCategories}
+        classifyItems={classifyGranterFinanceItems}
+        upsertCategory={upsertGranterFinanceCategory}
+        deleteCategory={deleteGranterFinanceCategory}
+      />
+
+      </>
+      )}
     </>
   );
 }

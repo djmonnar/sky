@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
-  Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, GranterSyncRun,
+  Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, GranterSyncRun,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch,
   OwnerSchedule, ManagerPermissions, ManagerPermissionKey,
@@ -37,7 +37,7 @@ import {
   fsUpsertInventoryCategory, fsDeleteInventoryCategory,
   fsUpsertInventoryItem, fsDeleteInventoryItem,
   fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
-  subscribeSalesOrders, subscribeSalesSyncRuns, fsSyncOkposSales,
+  subscribeSalesOrders, subscribeSalesSyncRuns, subscribeSalesDailySummaries, fsSyncOwnervistaSales,
   subscribeGranterSyncRuns, subscribeGranterCardSales, subscribeGranterAccountTransactions,
   subscribeGranterFinanceCategories, fsSyncGranterFinance,
   fsClassifyGranterFinanceItems, fsUpsertGranterFinanceCategory, fsDeleteGranterFinanceCategory,
@@ -152,7 +152,8 @@ interface Store {
   deleteRecipe: (id: number) => void;
   salesOrders: SalesOrder[];
   salesSyncRuns: SalesSyncRun[];
-  syncOkposSales: () => Promise<void>;
+  salesDailySummaries: SalesDailySummary[];
+  syncSales: () => Promise<void>;
   granterSyncRuns: GranterSyncRun[];
   granterCardSales: GranterFinanceItem[];
   granterAccountTransactions: GranterFinanceItem[];
@@ -212,6 +213,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [salesSyncRuns, setSalesSyncRuns] = useState<SalesSyncRun[]>([]);
+  const [salesDailySummaries, setSalesDailySummaries] = useState<SalesDailySummary[]>([]);
   const [granterSyncRuns, setGranterSyncRuns] = useState<GranterSyncRun[]>([]);
   const [granterCardSales, setGranterCardSales] = useState<GranterFinanceItem[]>([]);
   const [granterAccountTransactions, setGranterAccountTransactions] = useState<GranterFinanceItem[]>([]);
@@ -439,6 +441,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? [
             subscribeSalesOrders(setSalesOrders, onErr),
             subscribeSalesSyncRuns(setSalesSyncRuns, onErr),
+            subscribeSalesDailySummaries(setSalesDailySummaries, onErr),
           ]
         : []),
       ...(canCardFinanceData
@@ -928,9 +931,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setRecipes((prev) => prev.filter((r) => r.id !== id));
   }, [fail]);
 
-  const syncOkposSales = useCallback(async () => {
+  const syncSales = useCallback(async () => {
     if (APP_MODE === "live") {
-      const result = await fsSyncOkposSales();
+      const result = await fsSyncOwnervistaSales();
       showToast(result.message);
       return;
     }
@@ -1321,7 +1324,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       inventoryItems, upsertInventoryItem, deleteInventoryItem,
       purchaseOrders, upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
       recipes, upsertRecipe, deleteRecipe,
-      salesOrders, salesSyncRuns, syncOkposSales,
+      salesOrders, salesSyncRuns, salesDailySummaries, syncSales,
       granterSyncRuns, granterCardSales, granterAccountTransactions, granterFinanceCategories,
       financeDailyCloses, financeMatches,
       syncGranterFinance, classifyGranterFinanceItems,
@@ -1348,7 +1351,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      upsertInventoryItem, deleteInventoryItem,
      upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
      upsertRecipe, deleteRecipe,
-     syncOkposSales, syncGranterFinance, classifyGranterFinanceItems,
+     salesDailySummaries, syncSales, syncGranterFinance, classifyGranterFinanceItems,
      upsertGranterFinanceCategory, deleteGranterFinanceCategory,
      upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch,
      punchIn, punchOut, showToast]

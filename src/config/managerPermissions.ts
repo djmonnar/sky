@@ -46,7 +46,7 @@ export const MANAGER_PERMISSION_OPTIONS: ManagerPermissionOption[] = [
   {
     key: "sales",
     label: "매출 관리",
-    description: "OK포스 매출 요약과 동기화 내역 확인",
+    description: "매출 요약과 동기화 내역 확인",
   },
   {
     key: "vendors",
