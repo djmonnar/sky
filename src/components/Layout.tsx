@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useStore } from "../store";
 import PushNotificationBell from "./PushNotificationBell";
+import ChatWidget from "./ChatWidget";
 import type { ManagerPermissionKey } from "../data/types";
 
 interface NavDef {
@@ -180,6 +181,8 @@ export default function Layout({ children }: { children: ReactNode }) {
           </NavLink>
         ))}
       </nav>
+
+      <ChatWidget />
 
       {toast && <div className="toast">✓ {toast}</div>}
     </div>

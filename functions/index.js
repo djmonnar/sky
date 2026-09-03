@@ -4,6 +4,7 @@ const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
+const { createGeminiChat } = require("./geminiChat");
 
 admin.initializeApp();
 
@@ -17,6 +18,7 @@ const STORE_ID = "haneulttang";
 const STORE_PATH = `stores/${STORE_ID}`;
 const TZ = "Asia/Seoul";
 const granterApiKey = defineSecret("GRANTER_API_KEY");
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
 let visionClient = null;
 
 const ROLE_LABEL = {
@@ -3450,5 +3452,82 @@ exports.syncOkposSalesScheduled = onSchedule(
   async () => {
     if (!hasOkposConfig()) return;
     await syncOkposSalesCore("scheduled", "scheduler");
+  }
+);
+
+const geminiChat = createGeminiChat({
+  admin,
+  storeCol,
+  storeDoc,
+  formatDate,
+  resolveDate,
+  normalizeStatus,
+  normalizePaymentMethod,
+  parseTime,
+  dayIndexOf,
+  canManageOps,
+});
+
+exports.geminiChat = onRequest(
+  { timeoutSeconds: 120, memory: "512MiB", secrets: [geminiApiKey] },
+  async (req, res) => {
+    setCors(res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, message: "POST 요청만 사용할 수 있습니다." });
+      return;
+    }
+
+    const auth = await profileFromRequest(req);
+    if (!auth.ok) {
+      res.status(403).json({ ok: false, message: auth.message });
+      return;
+    }
+
+    const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY || "";
+    if (!apiKey) {
+      res.status(503).json({
+        ok: false,
+        message: "Gemini API 키가 설정되지 않았습니다. GEMINI_API_KEY 시크릿을 등록해주세요.",
+      });
+      return;
+    }
+
+    const actor = {
+      uid: auth.uid,
+      name: auth.name,
+      role: auth.role,
+      roleLabel: ROLE_LABEL[auth.role] ?? auth.role,
+      employeeId: Number(auth.employeeId ?? 0),
+    };
+    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+
+    try {
+      if (body.confirm) {
+        const result = await geminiChat.commitAction(body.confirm, actor);
+        res.status(result.ok ? 200 : 400).json({ ok: result.ok, reply: result.reply });
+        return;
+      }
+
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      if (messages.length === 0) {
+        res.status(400).json({ ok: false, message: "보낼 메시지가 없습니다." });
+        return;
+      }
+
+      const result = await geminiChat.runConversation({ apiKey, model, actor, messages });
+      res.status(200).json({ ok: true, ...result });
+    } catch (error) {
+      console.error("GEMINI_CHAT_FAILED", error);
+      const status = error.status === 429 ? 429 : 502;
+      const message = error.status === 429
+        ? "Gemini 무료 사용량 한도에 걸렸습니다. 잠시 후 다시 시도해주세요."
+        : `챗봇 응답을 받지 못했습니다. ${error.message || ""}`.trim();
+      res.status(status).json({ ok: false, message });
+    }
   }
 );
