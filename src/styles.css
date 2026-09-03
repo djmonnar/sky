@@ -3577,17 +3577,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 }
 
 @media (max-width: 720px) {
-  /* 하단 탭바(bottom-nav)를 확실히 비켜서 띄웁니다. */
   .chat-fab { bottom: calc(120px + env(safe-area-inset-bottom)); right: 14px; }
-  /* 패널이 열리면 헤더의 ✕로 닫으므로 좁은 화면에서는 FAB를 숨깁니다. */
   .chat-fab.is-open { display: none; }
   .chat-panel {
-    right: 10px;
-    left: 10px;
-    width: auto;
-    max-width: none;
+    right: 12px;
+    left: auto;
+    width: calc(100% - 24px);
+    max-width: 420px;
     bottom: calc(96px + env(safe-area-inset-bottom));
-    height: min(600px, calc(100vh - 168px));
+    height: min(520px, 58vh);
+    height: min(520px, 58dvh);
+    max-height: calc(100dvh - 156px - env(safe-area-inset-bottom));
+    border-radius: 16px;
   }
 }
 
