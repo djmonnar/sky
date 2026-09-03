@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
-import { Card, StatCard, StatusBadge, Badge } from "../components/ui";
-import { dowIndex, fmtDate, minutes } from "../data";
+import { Card, StatusBadge, Badge } from "../components/ui";
+import { DOW_KO, dowIndex, fmtDate, minutes } from "../data";
 import { seedFirestore, resetFirestore } from "../dev/seedFirestore";
 import { isMonthlyEmployee } from "../lib/payroll";
-import { latestSyncRun, money, ordersForDate, salesSummary } from "../lib/sales";
+import { latestSyncRun } from "../lib/sales";
 import { planTimesForShifts, shiftsForDay, slotSummary } from "../lib/shifts";
 import type { ManagerPermissionKey, WorkRecord } from "../data/types";
 
@@ -13,7 +13,9 @@ function nowHHMM(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-function attendanceBadgeFor(workerRecords: WorkRecord[], plan: { start: string; end: string }, currentMinute: number): { label: string; tone: string } {
+type AttendanceLabel = "출근전" | "근무중" | "기록필요" | "기록제출" | "퇴근완료";
+
+function attendanceBadgeFor(workerRecords: WorkRecord[], plan: { start: string; end: string }, currentMinute: number): { label: AttendanceLabel; tone: string } {
   const activeRecords = workerRecords.filter((record) => record.status !== "미작성");
   const doneRecord = activeRecords.find((record) =>
     record.status === "승인완료" || record.status === "승인대기" || record.status === "제출"
@@ -31,9 +33,46 @@ function attendanceBadgeFor(workerRecords: WorkRecord[], plan: { start: string; 
   return { label: "기록필요", tone: "amber" };
 }
 
+/** "2026-09-03" → "9/3 (수)" */
+function shortDate(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  const dow = (new Date(y, m - 1, d).getDay() + 6) % 7;
+  return `${m}/${d} (${DOW_KO[dow]})`;
+}
+
+function won(value: number): string {
+  return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+function syncedAt(iso?: string): string {
+  return iso ? iso.slice(5, 16).replace("T", " ") : "아직 없음";
+}
+
+function greetingFor(hour: number): string {
+  if (hour < 11) return "좋은 아침이에요";
+  if (hour < 17) return "좋은 오후예요";
+  return "오늘도 수고 많으셨어요";
+}
+
+/** 눌러서 들어갈 수 있으면 링크, 아니면 그냥 타일 */
+function KpiTile({ to, tone, label, value, unit, sub }: {
+  to?: string; tone?: string; label: string; value: ReactNode; unit?: string; sub: string;
+}) {
+  const body = (
+    <>
+      <span className="dash-kpi-label">{label}</span>
+      <strong>{value}{unit && <em>{unit}</em>}</strong>
+      <small>{sub}</small>
+    </>
+  );
+  const className = `dash-kpi ${tone ?? ""}`;
+  return to ? <Link to={to} className={className}>{body}</Link> : <div className={className}>{body}</div>;
+}
+
 export default function AdminDashboard() {
   const {
-    reservations, shifts, records, employees, salesOrders, salesSyncRuns, granterSyncRuns, mode, loading, showToast, role, managerPermissions,
+    reservations, shifts, records, employees, salesDailySummaries, salesSyncRuns, granterSyncRuns,
+    mode, loading, showToast, role, managerPermissions, profile,
   } = useStore();
   const [seeding, setSeeding] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -71,29 +110,73 @@ export default function AdminDashboard() {
     }
   };
 
+  /* ---- 오늘 ---- */
   const todayReservations = reservations.filter((r) => r.date === todayStr);
-  const activeResv = todayReservations.filter((r) => r.status !== "취소" && r.status !== "노쇼");
+  const activeResv = todayReservations
+    .filter((r) => r.status !== "취소" && r.status !== "노쇼")
+    .sort((a, b) => a.time.localeCompare(b.time));
+  const guestCount = activeResv.reduce((sum, r) => sum + (Number(r.people) || 0), 0);
+  const warnResv = todayReservations.filter((r) => r.status === "확인전화필요");
+  const groupResv = todayReservations.filter((r) => r.status === "단체");
+
   const todayShifts = shiftsForDay(shifts, todayStr, todayDow);
   const todayWorkers = Array.from(new Set(todayShifts.map((s) => s.employeeId)))
-    .map((employeeId) => ({
-      employeeId,
-      shifts: todayShifts.filter((s) => s.employeeId === employeeId),
-    }));
+    .map((employeeId) => {
+      const workerShifts = todayShifts.filter((s) => s.employeeId === employeeId);
+      const emp = employees.find((e) => e.id === employeeId);
+      const plan = planTimesForShifts(workerShifts);
+      return {
+        employeeId,
+        name: emp?.name ?? workerShifts[0]?.employeeName ?? "직접 입력",
+        meta: `${slotSummary(workerShifts)}${emp ? "" : " · 직접 입력"} · ${plan.start}–${plan.end}`,
+        attendance: attendanceBadgeFor(
+          records.filter((record) => record.empId === employeeId && record.date === todayStr),
+          plan,
+          currentMinute,
+        ),
+      };
+    });
+  // 손이 가야 하는 사람(기록필요)부터, 그다음 근무중 → 출근전 → 제출 → 퇴근 순
+  const ATTENDANCE_ORDER: AttendanceLabel[] = ["기록필요", "근무중", "출근전", "기록제출", "퇴근완료"];
+  todayWorkers.sort((a, b) => ATTENDANCE_ORDER.indexOf(a.attendance.label) - ATTENDANCE_ORDER.indexOf(b.attendance.label));
+  const attendanceCounts = todayWorkers.reduce<Record<AttendanceLabel, number>>((acc, worker) => {
+    acc[worker.attendance.label] += 1;
+    return acc;
+  }, { 출근전: 0, 근무중: 0, 기록필요: 0, 기록제출: 0, 퇴근완료: 0 });
+
   const pendingRecords = records.filter((r) => {
     if (!(r.status === "승인대기" || r.status === "제출")) return false;
     const emp = employees.find((e) => e.id === r.empId);
     return !emp || !isMonthlyEmployee(emp);
   });
-  const warnResv = todayReservations.filter((r) => r.status === "확인전화필요");
-  const groupResv = todayReservations.filter((r) => r.status === "단체");
-  const todaySales = ordersForDate(salesOrders, todayStr);
-  const todaySalesSummary = salesSummary(todaySales);
+
+  /* ---- POS 매출: 네이버 플레이스플러스 일 합계. 오늘 것은 내일 새벽에 오므로 "가장 최근 날"을 보여준다 ---- */
+  const posLatest = useMemo(
+    () => [...salesDailySummaries]
+      .filter((row) => row.businessDate <= todayStr)
+      .sort((a, b) => b.businessDate.localeCompare(a.businessDate))[0] ?? null,
+    [salesDailySummaries, todayStr],
+  );
+  const monthKey = todayStr.slice(0, 7);
+  const posMonthRows = salesDailySummaries.filter((row) => row.businessDate.startsWith(monthKey));
+  const posMonthTotal = posMonthRows.reduce((sum, row) => sum + row.netAmount, 0);
   const latestSalesSync = latestSyncRun(salesSyncRuns);
   const latestGranterSync = granterSyncRuns[0];
 
+  const userName = mode === "live"
+    ? (profile?.name ?? "관리자")
+    : (role === "admin" ? "김지현" : "매니저");
+  const todoCount = pendingRecords.length + warnResv.length;
+
   return (
     <>
-      <p className="greeting hide-desktop">정하늘 관리자님, 오늘도 파이팅! 💪</p>
+      {/* ── 오늘 ── */}
+      <div className="dash-head">
+        <div>
+          <div className="dash-date">{now.getMonth() + 1}월 {now.getDate()}일 {DOW_KO[todayDow]}요일</div>
+          <div className="dash-greet">{greetingFor(now.getHours())}, {userName}님</div>
+        </div>
+      </div>
 
       {/* 라이브 모드 + 빈 DB: 초기 seed 안내 */}
       {isAdmin && mode === "live" && !loading && employees.length === 0 && (
@@ -108,168 +191,180 @@ export default function AdminDashboard() {
         </Card>
       )}
 
-      {/* 라이브 모드: 슬롯 모델 데이터 재설정 (관리자 도구) */}
-      {isAdmin && mode === "live" && !loading && employees.length > 0 && (
-        <details className="reset-tool">
-          <summary>🛠️ 관리자 데이터 도구</summary>
-          <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
-            <button className="btn btn-outline btn-sm" disabled={seeding} onClick={runReset}>
-              {seeding ? "처리 중..." : "♻️ 슬롯 모델 샘플로 재설정"}
-            </button>
-            <span className="muted small">기존 근무표가 옛 형식이거나 비어 있을 때 사용</span>
-          </div>
-        </details>
-      )}
-
-      {/* KPI */}
-      <div className="grid grid-4">
-        <StatCard label="오늘 예약" value={activeResv.length} unit="건" trend="오늘 기준" trendUp icon="📋" />
-        {canAccess("sales") && <StatCard label="오늘 매출" value={money(todaySalesSummary.netAmount)} unit="원" trend={`${todaySalesSummary.orderCount}건 · 객단가 ${money(todaySalesSummary.averageOrderAmount)}원`} trendUp icon="💳" tone="blue" />}
-        <StatCard label="오늘 근무 직원" value={todayWorkers.length} unit="명" trend="슬롯 배치 기준" trendUp icon="👥" tone="blue" />
-        <StatCard label="미확인 근무기록" value={pendingRecords.length} unit="건" trend="승인 대기 중" trendUp={false} icon="🗂️" tone="amber" />
+      {/* ── 핵심 숫자 ── */}
+      <div className="dash-kpis">
+        <KpiTile
+          to={canAccess("reservations") ? "/reservations" : undefined}
+          label="오늘 예약"
+          value={activeResv.length}
+          unit="건"
+          sub={activeResv.length ? `${guestCount}명${groupResv.length ? ` · 단체 ${groupResv.length}건` : ""}` : "예약 없음"}
+        />
+        <KpiTile
+          to={canAccess("scheduleManage") ? "/schedule-manage" : undefined}
+          label="오늘 근무"
+          value={todayWorkers.length}
+          unit="명"
+          sub={todayWorkers.length
+            ? `근무중 ${attendanceCounts.근무중} · 출근전 ${attendanceCounts.출근전}`
+            : "배치 없음"}
+        />
+        {canAccess("sales") && (
+          <KpiTile
+            to="/finance"
+            label={posLatest ? `POS 매출 · ${shortDate(posLatest.businessDate)}` : "POS 매출"}
+            value={posLatest ? Math.round(posLatest.netAmount).toLocaleString("ko-KR") : "—"}
+            unit={posLatest ? "원" : undefined}
+            sub={!posLatest
+              ? "아직 받은 매출 없음"
+              : posMonthRows.length
+                ? `이번 달 ${won(posMonthTotal)} · ${posMonthRows.length}일치`
+                : "이번 달 아직 없음"}
+          />
+        )}
+        <KpiTile
+          to={isAdmin ? "/payroll" : undefined}
+          tone={todoCount > 0 ? "warn" : ""}
+          label="확인할 일"
+          value={todoCount}
+          unit="건"
+          sub={todoCount
+            ? [pendingRecords.length ? `근무기록 ${pendingRecords.length}` : "", warnResv.length ? `확인전화 ${warnResv.length}` : ""].filter(Boolean).join(" · ")
+            : "밀린 일 없음"}
+        />
       </div>
+
+      {/* ── 알림: 있을 때만 ── */}
+      {(groupResv.length > 0 || warnResv.length > 0) && (
+        <div className="dash-alerts">
+          {groupResv.map((r) => (
+            <Link to="/reservations" className="dash-alert warn" key={r.id}>
+              <span>👥</span>
+              <span>{r.time} 단체 {r.people}명 · {r.name}<span className="desc"> · {r.seat || "좌석 미정"} · 사전 세팅</span></span>
+            </Link>
+          ))}
+          {warnResv.map((r) => (
+            <Link to="/reservations" className="dash-alert danger" key={r.id}>
+              <span>📞</span>
+              <span>{r.time} {r.name} 확인전화 필요<span className="desc"> · {r.phone || "연락처 없음"}</span></span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-main-side">
         <div className="stack">
-          {/* 오늘 예약 현황 */}
+          {/* 오늘 예약 */}
           <Card
-            title="오늘 예약 현황"
+            title="오늘 예약"
             icon="📋"
-            action={canAccess("reservations") ? <Link to="/reservations" className="card-link">전체 예약 보기 ›</Link> : undefined}
+            action={canAccess("reservations") ? <Link to="/reservations" className="card-link">전체 보기 ›</Link> : undefined}
           >
             {activeResv.length > 0 ? (
-              activeResv.slice(0, 6).map((r) => (
+              activeResv.slice(0, 8).map((r) => (
                 <div className="list-row" key={r.id}>
                   <span className="list-time">{r.time}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="bold">{r.name} <span className="muted small">· {r.people}명 · {r.seat}</span></div>
-                    {r.request && <div className="muted small">{r.request}</div>}
+                    <div className="bold dash-ellipsis">{r.name} <span className="muted small">· {r.people}명{r.seat ? ` · ${r.seat}` : ""}</span></div>
+                    {r.request && <div className="muted small dash-ellipsis">{r.request}</div>}
                   </div>
                   <StatusBadge status={r.status} />
                 </div>
               ))
             ) : (
-              <div className="empty-state">오늘 표시할 예약이 없습니다.</div>
+              <div className="empty-state">오늘 예약이 없습니다.</div>
             )}
+            {activeResv.length > 8 && <div className="muted small" style={{ marginTop: 8 }}>외 {activeResv.length - 8}건</div>}
           </Card>
 
           {/* 직원 출근 현황 */}
           <Card title="직원 출근 현황" icon="👥" action={canAccess("scheduleManage") ? <Link to="/schedule-manage" className="card-link">근무표 ›</Link> : undefined}>
-            <div className="grid grid-3" style={{ gap: 10 }}>
-              {todayWorkers.map(({ employeeId, shifts: workerShifts }) => {
-                const emp = employees.find((e) => e.id === employeeId);
-                const displayName = emp?.name ?? workerShifts[0]?.employeeName ?? "직접 입력";
-                const roleText = emp ? slotSummary(workerShifts) : `${slotSummary(workerShifts)} · 직접 입력`;
-                const plan = planTimesForShifts(workerShifts);
-                const attendance = attendanceBadgeFor(
-                  records.filter((record) => record.empId === employeeId && record.date === todayStr),
-                  plan,
-                  currentMinute
-                );
-                return (
-                  <div key={employeeId} className="row" style={{
-                    background: "var(--card-alt)", borderRadius: 11, padding: "10px 12px",
-                  }}>
-                    <span className="avatar">{displayName[0]}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="bold small">{displayName}</div>
-                      <div className="muted small">{roleText} · {plan.start}–{plan.end}</div>
+            {todayWorkers.length > 0 ? (
+              <>
+                <div className="attend-summary">
+                  {attendanceCounts.근무중 > 0 && <span className="attend-chip on">근무중<b>{attendanceCounts.근무중}</b></span>}
+                  {attendanceCounts.출근전 > 0 && <span className="attend-chip">출근전<b>{attendanceCounts.출근전}</b></span>}
+                  {attendanceCounts.기록필요 > 0 && <span className="attend-chip need">기록필요<b>{attendanceCounts.기록필요}</b></span>}
+                  {attendanceCounts.기록제출 > 0 && <span className="attend-chip need">기록제출<b>{attendanceCounts.기록제출}</b></span>}
+                  {attendanceCounts.퇴근완료 > 0 && <span className="attend-chip">퇴근완료<b>{attendanceCounts.퇴근완료}</b></span>}
+                </div>
+                <div className="attend-list">
+                  {todayWorkers.map((worker) => (
+                    <div key={worker.employeeId} className="attend-row">
+                      <span className="avatar">{worker.name[0]}</span>
+                      <div className="attend-body">
+                        <div className="attend-name">{worker.name}</div>
+                        <div className="attend-meta">{worker.meta}</div>
+                      </div>
+                      <Badge tone={worker.attendance.tone}>{worker.attendance.label}</Badge>
                     </div>
-                    <Badge tone={attendance.tone}>{attendance.label}</Badge>
-                  </div>
-                );
-              })}
-            </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">오늘 배치된 근무가 없습니다.</div>
+            )}
           </Card>
         </div>
 
         <div className="stack side-panel">
-          {/* 중요 알림 */}
-          <Card title="예약·근무 중요 알림" icon="🔔">
-            {groupResv.map((r) => (
-              <div className="alert-item warn" key={r.id}>
-                <span>👥</span>
-                <div>
-                  {r.time} 단체예약 {r.people}명 ({r.name})
-                  <div className="desc">{r.seat} · 사전 세팅 필요</div>
-                </div>
-              </div>
-            ))}
-            {warnResv.map((r) => (
-              <div className="alert-item danger" key={r.id}>
-                <span>📞</span>
-                <div>
-                  {r.time} {r.name} 확인전화 필요
-                  <div className="desc">{r.phone}</div>
-                </div>
-              </div>
-            ))}
-            <div className="alert-item info">
-              <span>🗂️</span>
-              <div>
-                미승인 근무기록 {pendingRecords.length}건
-                <div className="desc">급여 마감 전 승인이 필요합니다</div>
-              </div>
-            </div>
-          </Card>
-
           {/* 빠른 작업 */}
           <Card title="빠른 작업" icon="⚡">
             <div className="quick-actions">
               {canAccess("reservations") && <Link to="/reservations" className="quick-action"><span className="qa-ic">📞</span>예약 등록</Link>}
-              {canAccess("scheduleManage") && <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표 작성</Link>}
+              {canAccess("scheduleManage") && <Link to="/schedule-manage" className="quick-action"><span className="qa-ic">🗓️</span>근무표</Link>}
+              {canAccess("sales") && <Link to="/finance" className="quick-action"><span className="qa-ic">🧾</span>POS 매출</Link>}
               {canAccess("employees") && <Link to="/employees" className="quick-action"><span className="qa-ic">👥</span>직원 관리</Link>}
-              {canAccess("sales") && <Link to="/sales" className="quick-action"><span className="qa-ic">💳</span>매출 확인</Link>}
+              {canAccess("settlements") && <Link to="/finance?tab=purchases" className="quick-action"><span className="qa-ic">🧾</span>매입·정산</Link>}
+              {canAccess("inventory") && <Link to="/inventory" className="quick-action"><span className="qa-ic">📦</span>재고</Link>}
               {canAccess("vendors") && <Link to="/vendors" className="quick-action"><span className="qa-ic">🏢</span>거래처</Link>}
-              {canAccess("inventory") && <Link to="/inventory" className="quick-action"><span className="qa-ic">📦</span>재고 관리</Link>}
-              {canAccess("settlements") && <Link to="/settlements" className="quick-action"><span className="qa-ic">🧾</span>정산 관리</Link>}
-              {canAccess("recipes") && <Link to="/recipes" className="quick-action"><span className="qa-ic">🥘</span>레시피 원가</Link>}
-              {canAccess("notices") && <Link to="/notices" className="quick-action"><span className="qa-ic">📢</span>공지 등록</Link>}
-              {canAccess("guide") && <Link to="/guide" className="quick-action"><span className="qa-ic">📖</span>사용 가이드</Link>}
+              {canAccess("notices") && <Link to="/notices" className="quick-action"><span className="qa-ic">📢</span>공지</Link>}
             </div>
           </Card>
 
-          {canAccess("sales") && (
-            <Card title="매출 동기화" icon="💳" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
-              <div className="alert-item info">
-                <span>🔄</span>
-                <div>
-                  마지막 동기화 {latestSalesSync?.finishedAt || latestSalesSync?.startedAt || "없음"}
-                  <div className="desc">{latestSalesSync?.message || "네이버 플레이스플러스 매출을 오너비스타에서 받아 옵니다"}</div>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* 승인 대기 */}
-          {canAccess("sales") && (
-            <Card title="그랜터 카드·계좌" icon="🏦" action={<Link to="/sales" className="card-link">매출 관리 ›</Link>}>
-              <div className="alert-item info">
-                <span>🔎</span>
-                <div>
-                  최근 확인: {latestGranterSync?.finishedAt || latestGranterSync?.startedAt || "아직 없음"}
-                  <div className="desc">{latestGranterSync?.message || "카드 승인·정산 및 계좌 입출금 API 연결 대기 중"}</div>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          <Card title="근무기록 승인 대기" icon="🗂️">
-            {pendingRecords.slice(0, 4).map((r) => {
-              const emp = employees.find((e) => e.id === r.empId);
-              if (!emp) return null;
-              return (
-                <div className="list-row" key={r.id}>
-                  <span className="avatar">{emp.name[0]}</span>
-                  <div style={{ flex: 1 }}>
-                    <div className="bold small">{emp.name} <span className="muted">· {r.date.slice(5).replace("-", "/")}</span></div>
-                    <div className="muted small num">{r.actualStart}–{r.actualEnd}{r.note ? ` · ${r.note}` : ""}</div>
+          {/* 근무기록 승인 대기: 있을 때만 */}
+          {pendingRecords.length > 0 && (
+            <Card title="근무기록 승인 대기" icon="🗂️" action={isAdmin ? <Link to="/payroll" className="card-link">승인하러 가기 ›</Link> : undefined}>
+              {pendingRecords.slice(0, 4).map((r) => {
+                const emp = employees.find((e) => e.id === r.empId);
+                if (!emp) return null;
+                return (
+                  <div className="list-row" key={r.id}>
+                    <span className="avatar">{emp.name[0]}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="bold small">{emp.name} <span className="muted">· {r.date.slice(5).replace("-", "/")}</span></div>
+                      <div className="muted small num dash-ellipsis">{r.actualStart}–{r.actualEnd}{r.note ? ` · ${r.note}` : ""}</div>
+                    </div>
+                    <Badge tone="amber">대기</Badge>
                   </div>
-                  <Badge tone="amber">대기</Badge>
-                </div>
-              );
-            })}
-          </Card>
+                );
+              })}
+              {pendingRecords.length > 4 && <div className="muted small" style={{ marginTop: 8 }}>외 {pendingRecords.length - 4}건</div>}
+            </Card>
+          )}
+
+          {/* 데이터 연결 상태: 작게 */}
+          {canAccess("sales") && (
+            <Card title="데이터 연결" icon="🔄" action={<Link to="/finance" className="card-link">매출·매입 ›</Link>}>
+              <div className="dash-sync">
+                <span>POS 매출 <b>{syncedAt(latestSalesSync?.finishedAt || latestSalesSync?.startedAt)}</b>{latestSalesSync?.status && latestSalesSync.status !== "success" ? <Badge tone="amber">{latestSalesSync.status}</Badge> : null}</span>
+                <span>카드·계좌 <b>{syncedAt(latestGranterSync?.finishedAt || latestGranterSync?.startedAt)}</b></span>
+              </div>
+            </Card>
+          )}
+
+          {/* 관리자 데이터 도구 (라이브) */}
+          {isAdmin && mode === "live" && !loading && employees.length > 0 && (
+            <details className="reset-tool">
+              <summary>🛠️ 관리자 데이터 도구</summary>
+              <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+                <button className="btn btn-outline btn-sm" disabled={seeding} onClick={runReset}>
+                  {seeding ? "처리 중..." : "♻️ 슬롯 모델 샘플로 재설정"}
+                </button>
+                <span className="muted small">기존 근무표가 옛 형식이거나 비어 있을 때 사용</span>
+              </div>
+            </details>
+          )}
         </div>
       </div>
     </>

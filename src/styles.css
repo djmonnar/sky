@@ -3661,3 +3661,71 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .pos-col-label { font-size: 10px; }
   .pos-col-count, .pos-col-sync { display: none; }
 }
+
+/* ============================================================
+   관리자 대시보드 — 모바일 우선
+   ============================================================ */
+.dash-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.dash-date { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; }
+.dash-greet { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+.dash-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.dash-kpi {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  padding: 14px 16px; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  color: inherit; text-decoration: none; transition: border-color 0.12s;
+}
+a.dash-kpi:hover { border-color: var(--ink-400); }
+.dash-kpi-label { font-size: 12px; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-kpi strong { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; overflow-wrap: anywhere; }
+.dash-kpi strong em { font-style: normal; font-size: 13px; font-weight: 600; color: var(--text-sub); margin-left: 2px; }
+.dash-kpi small { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-kpi.warn strong { color: var(--amber-tx); }
+
+.dash-alerts { display: flex; flex-wrap: wrap; gap: 8px; }
+.dash-alert {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 9px 12px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  text-decoration: none; color: inherit; background: var(--card); border: 1px solid var(--border);
+}
+.dash-alert.warn { background: var(--amber-bg); color: var(--amber-tx); border-color: transparent; }
+.dash-alert.danger { background: var(--red-bg); color: var(--red-tx); border-color: transparent; }
+.dash-alert .desc { font-weight: 500; opacity: 0.8; }
+.dash-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 출근 현황: 요약 칩 + 한 줄 행 */
+.attend-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.attend-chip { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--card-alt); color: var(--text-sub); }
+.attend-chip b { margin-left: 4px; }
+.attend-chip.on { background: var(--good-bg); color: var(--good-tx); }
+.attend-chip.need { background: var(--amber-bg); color: var(--amber-tx); }
+.attend-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.attend-row {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  padding: 9px 11px; border-radius: 11px; background: var(--card-alt); min-width: 0;
+}
+.attend-row .avatar { width: 30px; height: 30px; }
+.attend-body { min-width: 0; }
+.attend-name { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.attend-meta { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.dash-sync { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--text-sub); }
+.dash-sync span { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dash-sync b { color: var(--text); font-weight: 600; }
+
+@media (max-width: 920px) {
+  .dash-kpis { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .dash-date { font-size: 18px; }
+  .dash-kpis { gap: 8px; }
+  .dash-kpi { padding: 12px 13px; border-radius: 12px; }
+  .dash-kpi strong { font-size: 20px; }
+  .dash-alerts { flex-direction: column; }
+  .dash-alert { width: 100%; }
+  .attend-list { grid-template-columns: 1fr; gap: 6px; }
+  .quick-actions { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .quick-action { padding: 10px 4px; font-size: 11.5px; gap: 4px; border-radius: 10px; }
+  .quick-action .qa-ic { font-size: 18px; }
+}
