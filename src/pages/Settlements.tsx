@@ -14,12 +14,18 @@ import type {
 } from "../data/types";
 import { TODAY_STR } from "../lib/time";
 
-type FinanceTab = "close" | "sales" | "purchases" | "matching" | "profit";
+type FinanceTab = "close" | "sales" | "pos" | "purchases" | "matching" | "profit";
 type SettlementFilter = "all" | "unsettled" | "settled";
 
 const TABS: Array<{ id: FinanceTab; label: string; icon: string }> = [
   { id: "close", label: "오늘 마감", icon: "✓" },
   { id: "sales", label: "매출", icon: "💳" },
+  /*
+    **POS 매출은 카드 매출과 다른 숫자다.** 「매출」 탭은 그랜터가 준 카드 승인·정산
+    이라 현금이 안 들어 있고, POS 매출에는 아직 정산 안 된 것이 들어 있다. 한 탭에
+    섞으면 어느 쪽이 「오늘 얼마 팔았나」인지 알 수 없다.
+  */
+  { id: "pos", label: "POS 매출", icon: "🧾" },
   { id: "purchases", label: "매입", icon: "🧾" },
   { id: "matching", label: "입출금 매칭", icon: "↔" },
   { id: "profit", label: "손익", icon: "📊" },
@@ -101,6 +107,7 @@ export default function Settlements() {
   const {
     role, profile, authUser, managerPermissions, vendors, purchaseOrders, payroll,
     granterCardSales, granterAccountTransactions, granterFinanceCategories,
+    salesDailySummaries, syncSales,
     financeDailyCloses, financeMatches,
     upsertPurchaseOrder, syncGranterFinance, classifyGranterFinanceItems,
     upsertGranterFinanceCategory, deleteGranterFinanceCategory,
@@ -128,7 +135,8 @@ export default function Settlements() {
   const visibleTabs = useMemo(() => TABS.filter((tab) => {
     if (tab.id === "close" || tab.id === "sales") return canViewSales;
     if (tab.id === "purchases") return canViewPurchases;
-    if (tab.id === "profit") return role === "admin";
+    // POS 매출과 손익은 관리자만 본다.
+    if (tab.id === "pos" || tab.id === "profit") return role === "admin";
     return canViewSales || canViewPurchases;
   }), [canViewPurchases, canViewSales, role]);
 
@@ -143,6 +151,38 @@ export default function Settlements() {
     if (!canViewPurchases && matchKind === "purchasePayment") setMatchKind("salesDeposit");
     if (!canViewSales && matchKind === "salesDeposit") setMatchKind("purchasePayment");
   }, [canViewPurchases, canViewSales, matchKind]);
+
+  const [posSyncing, setPosSyncing] = useState(false);
+  /*
+    **POS 매출은 저장된 일 합계를 그대로 읽는다.** 주문에서 합치지 않는다 —
+    네이버 플레이스플러스는 일 합계만 주고 주문을 안 준다.
+  */
+  const posRows = useMemo(
+    () => [...salesDailySummaries].sort((a, b) => b.businessDate.localeCompare(a.businessDate)).slice(0, 60),
+    [salesDailySummaries],
+  );
+  const posToday = useMemo(
+    () => salesDailySummaries.find((row) => row.businessDate === date) ?? null,
+    [salesDailySummaries, date],
+  );
+  const posMonthRows = useMemo(
+    () => salesDailySummaries.filter((row) => row.businessDate.startsWith(month)),
+    [salesDailySummaries, month],
+  );
+  const posMonthTotal = posMonthRows.reduce((sum, row) => sum + row.netAmount, 0);
+  const posMonthDays = posMonthRows.length;
+  const posLatest = posRows[0] ?? null;
+
+  const runPosSync = async () => {
+    setPosSyncing(true);
+    try {
+      await syncSales();
+    } catch (error) {
+      showToast((error as Error).message || "POS 매출 동기화에 실패했습니다");
+    } finally {
+      setPosSyncing(false);
+    }
+  };
 
   const openTab = (tab: FinanceTab) => {
     setActiveTab(tab);
@@ -437,6 +477,72 @@ export default function Settlements() {
           upsertCategory={upsertGranterFinanceCategory}
           deleteCategory={deleteGranterFinanceCategory}
         />
+      )}
+
+      {activeTab === "pos" && (
+        <>
+          <div className="grid grid-4">
+            <StatCard
+              label="선택일 POS 매출"
+              value={money.format(posToday?.netAmount ?? 0)}
+              unit="원"
+              /*
+                **모르는 건수를 「0건」이라 적지 않는다.** 네이버 플레이스플러스는
+                순매출 숫자 하나만 준다 — 0 이라 쓰면 사람은 그것을 사실로 믿는다.
+              */
+              trend={posToday?.hasOrderCount ? `${posToday.orderCount}건` : "건수 없음"}
+              trendUp
+              icon="🧾"
+            />
+            <StatCard label="이번 달 POS 매출" value={money.format(posMonthTotal)} unit="원" trend={`${posMonthDays}일치`} trendUp icon="📅" tone="blue" />
+            <StatCard label="최근 받은 때" value={posLatest?.syncedAt ? posLatest.syncedAt.slice(5, 16) : "아직 없음"} unit="" trend={posLatest?.sourceLabel ?? "오너비스타"} trendUp icon="🔄" tone="amber" />
+          </div>
+
+          <Card
+            title="POS 매출"
+            icon="🧾"
+            action={
+              <button className="btn btn-primary btn-sm" disabled={posSyncing} onClick={() => void runPosSync()}>
+                {posSyncing ? "동기화 중..." : "지금 동기화"}
+              </button>
+            }
+          >
+            <div className="finance-guide">
+              <div>
+                <strong>네이버 플레이스플러스 매출을 오너비스타에서 매일 받아 옵니다</strong>
+                <span className="muted small">
+                  카드 매출과 다른 숫자입니다 — 현금·계좌이체가 모두 들어 있고, 아직 정산 안 된 것도 들어 있습니다.
+                </span>
+              </div>
+              <div>
+                <strong>날짜와 금액만 옵니다</strong>
+                <span className="muted small">
+                  주문 건수·시간대별·메뉴별은 네이버가 주지 않아 받아올 수 없습니다.
+                </span>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table className="table settlement-table">
+                <thead>
+                  <tr><th>영업일</th><th className="num">매출</th><th className="num">건수</th><th>받은 때</th></tr>
+                </thead>
+                <tbody>
+                  {posRows.map((row) => (
+                    <tr key={row.businessDate}>
+                      <td>{row.businessDate}</td>
+                      <td className="num">{money.format(row.netAmount)}원</td>
+                      <td className="num">{row.hasOrderCount ? `${row.orderCount}건` : "—"}</td>
+                      <td className="muted small">{row.syncedAt ? row.syncedAt.slice(5, 16) : "—"}</td>
+                    </tr>
+                  ))}
+                  {posRows.length === 0 && (
+                    <tr><td colSpan={4} className="muted">아직 받아온 매출이 없습니다. 「지금 동기화」를 눌러 주세요.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
       )}
 
       {activeTab === "purchases" && (
