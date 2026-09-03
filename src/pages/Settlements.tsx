@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Badge, Card, StatCard } from "../components/ui";
 import GranterFinanceBoard from "../components/GranterFinanceBoard";
+import PosSalesBoard from "../components/PosSalesBoard";
 import type {
   FinanceDailyClose,
   FinanceMatch,
@@ -153,25 +154,7 @@ export default function Settlements() {
   }, [canViewPurchases, canViewSales, matchKind]);
 
   const [posSyncing, setPosSyncing] = useState(false);
-  /*
-    **POS 매출은 저장된 일 합계를 그대로 읽는다.** 주문에서 합치지 않는다 —
-    네이버 플레이스플러스는 일 합계만 주고 주문을 안 준다.
-  */
-  const posRows = useMemo(
-    () => [...salesDailySummaries].sort((a, b) => b.businessDate.localeCompare(a.businessDate)).slice(0, 60),
-    [salesDailySummaries],
-  );
-  const posToday = useMemo(
-    () => salesDailySummaries.find((row) => row.businessDate === date) ?? null,
-    [salesDailySummaries, date],
-  );
-  const posMonthRows = useMemo(
-    () => salesDailySummaries.filter((row) => row.businessDate.startsWith(month)),
-    [salesDailySummaries, month],
-  );
-  const posMonthTotal = posMonthRows.reduce((sum, row) => sum + row.netAmount, 0);
-  const posMonthDays = posMonthRows.length;
-  const posLatest = posRows[0] ?? null;
+  // POS 매출은 저장된 일 합계를 그대로 읽는다 — 집계·달력은 PosSalesBoard 가 맡는다.
 
   const runPosSync = async () => {
     setPosSyncing(true);
@@ -401,11 +384,9 @@ export default function Settlements() {
 
   return (
     <div className="stack finance-page">
+      {/* 제목은 상단바가 이미 보여준다 — 여기서 한 번 더 적으면 모바일에서 한 화면을 잡아먹는다 */}
       <div className="finance-page-head">
-        <div>
-          <h2>매출·매입 관리</h2>
-          <p className="muted">카드 매출, 계좌 거래, 발주와 결제를 한곳에서 확인합니다.</p>
-        </div>
+        <p className="muted">카드 매출, 계좌 거래, 발주와 결제를 한곳에서 확인합니다.</p>
         {role === "admin" && <button className="btn btn-outline" disabled={syncing} onClick={() => void runSync()}>{syncing ? "동기화 중..." : "↻ 카드·계좌 동기화"}</button>}
       </div>
 
@@ -480,69 +461,11 @@ export default function Settlements() {
       )}
 
       {activeTab === "pos" && (
-        <>
-          <div className="grid grid-4">
-            <StatCard
-              label="선택일 POS 매출"
-              value={money.format(posToday?.netAmount ?? 0)}
-              unit="원"
-              /*
-                **모르는 건수를 「0건」이라 적지 않는다.** 네이버 플레이스플러스는
-                순매출 숫자 하나만 준다 — 0 이라 쓰면 사람은 그것을 사실로 믿는다.
-              */
-              trend={posToday?.hasOrderCount ? `${posToday.orderCount}건` : "건수 없음"}
-              trendUp
-              icon="🧾"
-            />
-            <StatCard label="이번 달 POS 매출" value={money.format(posMonthTotal)} unit="원" trend={`${posMonthDays}일치`} trendUp icon="📅" tone="blue" />
-            <StatCard label="최근 받은 때" value={posLatest?.syncedAt ? posLatest.syncedAt.slice(5, 16) : "아직 없음"} unit="" trend={posLatest?.sourceLabel ?? "오너비스타"} trendUp icon="🔄" tone="amber" />
-          </div>
-
-          <Card
-            title="POS 매출"
-            icon="🧾"
-            action={
-              <button className="btn btn-primary btn-sm" disabled={posSyncing} onClick={() => void runPosSync()}>
-                {posSyncing ? "동기화 중..." : "지금 동기화"}
-              </button>
-            }
-          >
-            <div className="finance-guide">
-              <div>
-                <strong>네이버 플레이스플러스 매출을 오너비스타에서 매일 받아 옵니다</strong>
-                <span className="muted small">
-                  카드 매출과 다른 숫자입니다 — 현금·계좌이체가 모두 들어 있고, 아직 정산 안 된 것도 들어 있습니다.
-                </span>
-              </div>
-              <div>
-                <strong>날짜와 금액만 옵니다</strong>
-                <span className="muted small">
-                  주문 건수·시간대별·메뉴별은 네이버가 주지 않아 받아올 수 없습니다.
-                </span>
-              </div>
-            </div>
-            <div className="table-wrap">
-              <table className="table settlement-table">
-                <thead>
-                  <tr><th>영업일</th><th className="num">매출</th><th className="num">건수</th><th>받은 때</th></tr>
-                </thead>
-                <tbody>
-                  {posRows.map((row) => (
-                    <tr key={row.businessDate}>
-                      <td>{row.businessDate}</td>
-                      <td className="num">{money.format(row.netAmount)}원</td>
-                      <td className="num">{row.hasOrderCount ? `${row.orderCount}건` : "—"}</td>
-                      <td className="muted small">{row.syncedAt ? row.syncedAt.slice(5, 16) : "—"}</td>
-                    </tr>
-                  ))}
-                  {posRows.length === 0 && (
-                    <tr><td colSpan={4} className="muted">아직 받아온 매출이 없습니다. 「지금 동기화」를 눌러 주세요.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </>
+        <PosSalesBoard
+          summaries={salesDailySummaries}
+          syncing={posSyncing}
+          onSync={() => void runPosSync()}
+        />
       )}
 
       {activeTab === "purchases" && (

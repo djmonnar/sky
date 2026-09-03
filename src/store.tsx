@@ -244,7 +244,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "demo") return;
     (async () => {
-      const [emp, resv, sh, rec, pay, not, hand, ven, invCats, inv, orders, recipeList, sales, syncRuns] = await Promise.all([
+      const [emp, resv, sh, rec, pay, not, hand, ven, invCats, inv, orders, recipeList, sales, syncRuns, dailySummaries] = await Promise.all([
         repository.listEmployees(),
         repository.listReservations(),
         repository.listShifts(),
@@ -259,6 +259,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         repository.listRecipes(),
         repository.listSalesOrders(),
         repository.listSalesSyncRuns(),
+        repository.listSalesDailySummaries(),
       ]);
       setEmployees(emp);
       setReservations(resv);
@@ -274,6 +275,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRecipes(recipeList);
       setSalesOrders(sales);
       setSalesSyncRuns(syncRuns);
+      setSalesDailySummaries(dailySummaries);
       setLoading(false);
     })();
   }, []);

@@ -10,13 +10,13 @@
 import {
   Employee, InventoryCategoryItem, InventoryItem, Recipe, Reservation, Shift, WorkRecord, PayrollRow, Notice, Vendor,
   PurchaseOrder,
-  SalesOrder, SalesSyncRun,
+  SalesOrder, SalesSyncRun, SalesDailySummary,
 } from "./types";
 import {
   EMPLOYEES, SEED_RESERVATIONS, SEED_SHIFTS, SEED_RECORDS,
   SEED_PAYROLL, SEED_NOTICES, SEED_HANDOVERS, SEED_VENDORS, SEED_RECIPES,
   SEED_INVENTORY_CATEGORIES, SEED_INVENTORY_ITEMS, SEED_PURCHASE_ORDERS,
-  SEED_SALES_ORDERS, SEED_SALES_SYNC_RUNS,
+  SEED_SALES_ORDERS, SEED_SALES_SYNC_RUNS, SEED_SALES_DAILY_SUMMARIES,
 } from "./mock";
 
 export interface Repository {
@@ -69,6 +69,7 @@ export interface Repository {
 
   listSalesOrders(): Promise<SalesOrder[]>;
   listSalesSyncRuns(): Promise<SalesSyncRun[]>;
+  listSalesDailySummaries(): Promise<SalesDailySummary[]>;
 }
 
 /** 인메모리 목업 구현 — 새로고침 시 초기화됨 */
@@ -88,6 +89,7 @@ export function createMockRepository(): Repository {
     recipes: structuredClone(SEED_RECIPES),
     salesOrders: structuredClone(SEED_SALES_ORDERS),
     salesSyncRuns: structuredClone(SEED_SALES_SYNC_RUNS),
+    salesDailySummaries: structuredClone(SEED_SALES_DAILY_SUMMARIES),
   };
 
   return {
@@ -216,6 +218,7 @@ export function createMockRepository(): Repository {
 
     async listSalesOrders() { return [...db.salesOrders]; },
     async listSalesSyncRuns() { return [...db.salesSyncRuns]; },
+    async listSalesDailySummaries() { return [...db.salesDailySummaries]; },
   };
 }
 
