@@ -19,6 +19,7 @@ const STORE_PATH = `stores/${STORE_ID}`;
 const TZ = "Asia/Seoul";
 const granterApiKey = defineSecret("GRANTER_API_KEY");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
+const ownervistaFeedToken = defineSecret("OWNERVISTA_FEED_TOKEN");
 let visionClient = null;
 
 const ROLE_LABEL = {
@@ -3529,5 +3530,200 @@ exports.geminiChat = onRequest(
         : `챗봇 응답을 받지 못했습니다. ${error.message || ""}`.trim();
       res.status(status).json({ ok: false, message });
     }
+  }
+);
+
+/* ── 오너비스타 일 매출 받아오기 ────────────────────────────────────────── */
+
+/**
+ * 오너비스타가 내주는 하루치 매출을 받아 `salesDailySummaries` 에 쌓는다.
+ *
+ * **왜 필요한가.** OK포스 연동이 끊긴 동안 매출 화면이 통째로 비어 있다.
+ * 오너비스타는 네이버 플레이스플러스로 같은 매장 매출을 이미 받고 있어서,
+ * 그것을 읽어 오면 적어도 «그날 얼마 팔았는지»는 안다.
+ *
+ * **주문 단위가 아니다.** 네이버는 순매출 숫자 하나만 준다 — 주문·메뉴·시간대가
+ * 없다. 그래서 `salesOrders` 는 안 건드리고 일 합계만 채운다. 시간대별·메뉴별
+ * 화면은 OK포스가 살아나야 다시 그려진다.
+ */
+const OWNERVISTA_FEED_BASE = "https://ownervista.co.kr/api/partners/pos-sales";
+/** 한 번에 받아올 일수. 늦게 들어온 매출이 있어도 이만큼 되짚어 덮는다. */
+const OWNERVISTA_FEED_DAYS = 14;
+
+function ownervistaFeedConfigured() {
+  return Boolean(process.env.OWNERVISTA_FEED_TOKEN);
+}
+
+function kstDateString(date) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(date);
+}
+
+function shiftDateString(dateString, days) {
+  const parsed = new Date(`${dateString}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+async function fetchOwnervistaDailySales(since, until) {
+  const token = process.env.OWNERVISTA_FEED_TOKEN;
+  if (!token) {
+    return { status: "config_required", message: "오너비스타 매출 주소가 설정되지 않았습니다." };
+  }
+  const url = `${OWNERVISTA_FEED_BASE}/${encodeURIComponent(token)}`
+    + `?since=${since}&until=${until}`;
+  const response = await fetch(url, { headers: { accept: "application/json" } });
+  if (response.status === 404) {
+    /*
+      주소가 죽었다. 오너비스타에서 «새 주소 만들기»를 누르면 옛 토큰이 그 자리에서
+      죽는다 — 그때 여기 시크릿도 같이 갈아 끼워야 한다.
+    */
+    return {
+      status: "config_required",
+      message: "오너비스타 매출 주소가 만료됐습니다. 새 주소를 받아 시크릿을 갱신해 주세요.",
+    };
+  }
+  if (!response.ok) {
+    throw new Error(`오너비스타 매출을 받지 못했습니다 (HTTP ${response.status}).`);
+  }
+  const body = await response.json();
+  if (!body || body.ok !== true || !Array.isArray(body.days)) {
+    throw new Error("오너비스타 매출 응답을 읽지 못했습니다.");
+  }
+  return { status: "ok", body };
+}
+
+/**
+ * 받아온 하루치를 `salesDailySummaries` 에 쓴다.
+ *
+ * **모르는 값을 0 으로 적지 않는다.** 네이버는 주문 건수를 안 줘서 `orderCount` 가
+ * `null` 로 온다. 0 으로 적으면 화면은 «0건에 124만원»이라는 말이 안 되는 표를
+ * 그리고 그것을 사실로 믿는다. 모르는 칸은 아예 안 쓴다.
+ */
+async function syncOwnervistaSalesCore(mode = "scheduled", requestedBy = "system") {
+  const now = new Date();
+  const until = kstDateString(now);
+  const since = shiftDateString(until, -(OWNERVISTA_FEED_DAYS - 1));
+  const runId = `${Date.now()}-ov-${mode}`;
+  const runRef = storeDoc("salesSyncRuns", runId);
+  await runRef.set({
+    id: runId,
+    startedAt: admin.firestore.FieldValue.serverTimestamp(),
+    status: "skipped",
+    importedCount: 0,
+    updatedCount: 0,
+    rangeStart: since,
+    rangeEnd: until,
+    requestedBy,
+    mode,
+    source: "ownervista",
+  });
+
+  try {
+    const result = await fetchOwnervistaDailySales(since, until);
+    if (result.status === "config_required") {
+      await runRef.set({
+        status: "config_required",
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        message: result.message,
+      }, { merge: true });
+      return { ok: false, runId, message: result.message };
+    }
+
+    const { body } = result;
+    let written = 0;
+    /*
+      **OK포스를 비켜 주지 않는다.** 한때 «OK포스가 채운 날은 건너뛴다»를 넣었다가
+      뺐다. OK포스 연동은 되살리지 않기로 했고(2026-09-03), 그러면 예전에 받아 둔
+      주문이 남은 날은 **네이버 매출이 영영 안 채워진다** — 지키려던 것이 오히려
+      구멍이 된다. 지금 이 매장의 매출 정본은 네이버 플레이스플러스 하나다.
+    */
+    for (const day of body.days) {
+      const businessDate = typeof day.businessDate === "string" ? day.businessDate : null;
+      if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) continue;
+      const netAmount = Math.max(0, Math.round(Number(day.netAmount || 0)));
+      await storeDoc("salesDailySummaries", businessDate).set({
+        id: businessDate,
+        businessDate,
+        netAmount,
+        grossAmount: netAmount,
+        /*
+          **모르는 것은 안 적는다.** 건수·할인·환불·결제수단은 네이버가 주지 않는다.
+          0 으로 적으면 화면이 그것을 사실로 그린다.
+        */
+        ...(typeof day.orderCount === "number" ? { orderCount: day.orderCount } : {}),
+        source: "ownervista",
+        sourceLabel: typeof body.sourceLabel === "string" ? body.sourceLabel : "오너비스타",
+        syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      written += 1;
+    }
+
+    /*
+      **어디까지가 확정인지 같이 남긴다.** 오늘 것은 장사가 안 끝났고 오너비스타
+      수집도 아직이라 모자라다. 그것을 «매출 급감»으로 읽으면 안 된다.
+    */
+    const through = typeof body.dataThroughDate === "string" ? body.dataThroughDate : null;
+    const message = `${written}일치를 받았습니다${through ? ` (${through}까지 확정)` : ""}.`;
+    await runRef.set({
+      status: "success",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      importedCount: written,
+      updatedCount: 0,
+      dataThroughDate: through,
+      message,
+    }, { merge: true });
+    return { ok: true, runId, message };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "오너비스타 매출 동기화에 실패했습니다.";
+    await runRef.set({
+      status: "failed",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      message,
+    }, { merge: true });
+    return { ok: false, runId, message };
+  }
+}
+
+exports.syncOwnervistaSales = onRequest(
+  { timeoutSeconds: 60, memory: "256MiB", secrets: [ownervistaFeedToken] },
+  async (req, res) => {
+    setCors(res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, message: "POST 요청만 사용할 수 있습니다." });
+      return;
+    }
+    const auth = await adminFromRequest(req);
+    if (!auth.ok) {
+      res.status(403).json({ ok: false, message: auth.message });
+      return;
+    }
+    const result = await syncOwnervistaSalesCore("manual", auth.uid || auth.email || "admin");
+    res.status(result.ok ? 200 : 409).json(result);
+  }
+);
+
+/**
+ * 하루 한 번. **새벽에 돈다** — 전날 장사가 끝나고 오너비스타 수집도 끝난 뒤다.
+ *
+ * OK포스처럼 10분마다 돌 이유가 없다. 우리가 받는 것은 하루 합계라 하루에 한 번
+ * 바뀌고, 자주 부르면 남의 서버를 이유 없이 두드리는 것이다.
+ */
+exports.syncOwnervistaSalesScheduled = onSchedule(
+  {
+    schedule: "5 6 * * *",
+    timeZone: TZ,
+    timeoutSeconds: 120,
+    memory: "256MiB",
+    secrets: [ownervistaFeedToken],
+  },
+  async () => {
+    if (!ownervistaFeedConfigured()) return;
+    await syncOwnervistaSalesCore("scheduled", "scheduler");
   }
 );

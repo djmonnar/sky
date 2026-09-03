@@ -343,6 +343,17 @@ export interface SalesDailySummary {
   averageOrderAmount: number;
   paymentTotals: SalesPayment[];
   syncedAt?: string;
+  /**
+   * 주문 건수를 **아는 날인가.**
+   *
+   * 네이버 플레이스플러스는 순매출 숫자 하나만 준다 — 건수가 없다. `orderCount` 를
+   * 0 으로 읽고 화면에 «0건»이라 적으면 사람은 그것을 사실로 믿는다. 안 적힌 것과
+   * 0 은 다르다.
+   */
+  hasOrderCount?: boolean;
+  /** 어디서 온 숫자인가. `ownervista` 면 오너비스타가 넣어 준 것이다. */
+  source?: string | null;
+  sourceLabel?: string | null;
 }
 
 export interface SalesSyncRun {
