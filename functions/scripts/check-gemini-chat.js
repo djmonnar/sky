@@ -41,6 +41,16 @@ const data = {
   },
   notices: { "900": { id: 900, text: "단체 예약 세팅 확인", date: TODAY } },
   handovers: {},
+  salesMenuReports: {
+    latest: {
+      id: "latest", startDate: "2026-08-05", endDate: "2026-09-03", overallSales: 41_180_000,
+      menus: [
+        { menuId: "m-2", menuName: "점심불고기", categoryName: "하늘땅", sales: 3_120_000, sharePercent: 7.6 },
+        { menuId: "m-1", menuName: "돼지갈비", categoryName: "하늘땅", sales: 26_554_400, sharePercent: 64.5 },
+      ],
+      source: "ownervista",
+    },
+  },
 };
 
 const writes = [];
@@ -240,6 +250,12 @@ async function check(label, fn) {
     assert.strictEqual(payload.daily[0].orderCount, undefined);
     assert.match(payload.source, /플레이스플러스/);
     assert.ok(result.blocks.some((block) => block.type === "salesReport"), "UI 카드 블록이 실려야 함");
+    // 메뉴 비중은 기간 합계 한 장 — 물어본 기간과 다르므로 자기 기간을 같이 실어야 한다.
+    assert.strictEqual(payload.menuShare.startDate, "2026-08-05");
+    assert.strictEqual(payload.menuShare.endDate, "2026-09-03");
+    assert.deepStrictEqual(payload.menuShare.menus.map((menu) => menu.menuName), ["돼지갈비", "점심불고기"], "많이 판 순");
+    assert.strictEqual(payload.menuShare.menus[0].sharePercent, 64.5, "비중은 네이버 값 그대로");
+    assert.strictEqual(payload.menuShare.unlistedSales, 41_180_000 - 26_554_400 - 3_120_000, "메뉴로 안 잡힌 매출");
   });
 
   await check("매출: 이번 달을 3일에 보면 지난 3일만 직전 3일과 비교한다", async () => {

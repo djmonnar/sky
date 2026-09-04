@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
-  Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, GranterSyncRun,
+  Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, SalesMenuReport, GranterSyncRun,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch,
   OwnerSchedule, ManagerPermissions, ManagerPermissionKey,
@@ -37,7 +37,7 @@ import {
   fsUpsertInventoryCategory, fsDeleteInventoryCategory,
   fsUpsertInventoryItem, fsDeleteInventoryItem,
   fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
-  subscribeSalesOrders, subscribeSalesSyncRuns, subscribeSalesDailySummaries, fsSyncOwnervistaSales,
+  subscribeSalesOrders, subscribeSalesSyncRuns, subscribeSalesDailySummaries, subscribeSalesMenuReport, fsSyncOwnervistaSales,
   subscribeGranterSyncRuns, subscribeGranterCardSales, subscribeGranterAccountTransactions,
   subscribeGranterFinanceCategories, fsSyncGranterFinance,
   fsClassifyGranterFinanceItems, fsUpsertGranterFinanceCategory, fsDeleteGranterFinanceCategory,
@@ -153,6 +153,8 @@ interface Store {
   salesOrders: SalesOrder[];
   salesSyncRuns: SalesSyncRun[];
   salesDailySummaries: SalesDailySummary[];
+  /** 매출 내 메뉴 비중 최신본. 아직 못 받았으면 null. */
+  salesMenuReport: SalesMenuReport | null;
   syncSales: () => Promise<void>;
   granterSyncRuns: GranterSyncRun[];
   granterCardSales: GranterFinanceItem[];
@@ -214,6 +216,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [salesSyncRuns, setSalesSyncRuns] = useState<SalesSyncRun[]>([]);
   const [salesDailySummaries, setSalesDailySummaries] = useState<SalesDailySummary[]>([]);
+  const [salesMenuReport, setSalesMenuReport] = useState<SalesMenuReport | null>(null);
   const [granterSyncRuns, setGranterSyncRuns] = useState<GranterSyncRun[]>([]);
   const [granterCardSales, setGranterCardSales] = useState<GranterFinanceItem[]>([]);
   const [granterAccountTransactions, setGranterAccountTransactions] = useState<GranterFinanceItem[]>([]);
@@ -244,7 +247,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (APP_MODE !== "demo") return;
     (async () => {
-      const [emp, resv, sh, rec, pay, not, hand, ven, invCats, inv, orders, recipeList, sales, syncRuns, dailySummaries] = await Promise.all([
+      const [emp, resv, sh, rec, pay, not, hand, ven, invCats, inv, orders, recipeList, sales, syncRuns, dailySummaries, menuReport] = await Promise.all([
         repository.listEmployees(),
         repository.listReservations(),
         repository.listShifts(),
@@ -260,6 +263,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         repository.listSalesOrders(),
         repository.listSalesSyncRuns(),
         repository.listSalesDailySummaries(),
+        repository.getSalesMenuReport(),
       ]);
       setEmployees(emp);
       setReservations(resv);
@@ -276,6 +280,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSalesOrders(sales);
       setSalesSyncRuns(syncRuns);
       setSalesDailySummaries(dailySummaries);
+      setSalesMenuReport(menuReport);
       setLoading(false);
     })();
   }, []);
@@ -444,6 +449,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribeSalesOrders(setSalesOrders, onErr),
             subscribeSalesSyncRuns(setSalesSyncRuns, onErr),
             subscribeSalesDailySummaries(setSalesDailySummaries, onErr),
+            subscribeSalesMenuReport(setSalesMenuReport, onErr),
           ]
         : []),
       ...(canCardFinanceData
@@ -1326,7 +1332,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       inventoryItems, upsertInventoryItem, deleteInventoryItem,
       purchaseOrders, upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
       recipes, upsertRecipe, deleteRecipe,
-      salesOrders, salesSyncRuns, salesDailySummaries, syncSales,
+      salesOrders, salesSyncRuns, salesDailySummaries, salesMenuReport, syncSales,
       granterSyncRuns, granterCardSales, granterAccountTransactions, granterFinanceCategories,
       financeDailyCloses, financeMatches,
       syncGranterFinance, classifyGranterFinanceItems,
@@ -1353,7 +1359,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      upsertInventoryItem, deleteInventoryItem,
      upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
      upsertRecipe, deleteRecipe,
-     salesDailySummaries, syncSales, syncGranterFinance, classifyGranterFinanceItems,
+     salesDailySummaries, salesMenuReport, syncSales, syncGranterFinance, classifyGranterFinanceItems,
      upsertGranterFinanceCategory, deleteGranterFinanceCategory,
      upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch,
      punchIn, punchOut, showToast]

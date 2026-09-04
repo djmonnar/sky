@@ -21,7 +21,7 @@ import {
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
-  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, GranterSyncRun, SalesPayment,
+  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, SalesMenuReport, SalesMenuShare, GranterSyncRun, SalesPayment,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
@@ -491,6 +491,65 @@ export function subscribeSalesDailySummaries(
     }),
     (items) => cb(items.sort((a, b) => b.businessDate.localeCompare(a.businessDate)).slice(0, 120)),
     onError
+  );
+}
+
+function menuShareOf(raw: unknown): SalesMenuShare | null {
+  const d = raw as Record<string, unknown> | null;
+  if (!d || typeof d.menuName !== "string" || !d.menuName.trim()) return null;
+  const sales = Number(d.sales);
+  if (!Number.isFinite(sales) || sales <= 0) return null;
+  const share = Number(d.sharePercent);
+  return {
+    menuId: typeof d.menuId === "string" && d.menuId ? d.menuId : d.menuName,
+    menuName: d.menuName,
+    categoryName: typeof d.categoryName === "string" && d.categoryName ? d.categoryName : null,
+    sales: Math.round(sales),
+    sharePercent: Number.isFinite(share) ? Math.min(100, Math.max(0, share)) : 0,
+  };
+}
+
+/**
+ * 매출 내 메뉴 비중 최신본.
+ *
+ * **한 장짜리 문서다.** 기간 합계라 날짜별로 쌓지 않는다. 없으면 `null` —
+ * 아직 한 번도 못 받았거나 오너비스타가 옛 버전인 것인데, 화면은 그 둘을
+ * 구분하지 않고 칸을 안 그린다.
+ */
+export function subscribeSalesMenuReport(
+  cb: (v: SalesMenuReport | null) => void,
+  onError: ErrCb,
+): Unsub {
+  const ref = doc(requireDb(), "stores", STORE_ID, "salesMenuReports", "latest");
+  return onSnapshot(
+    ref,
+    (snap) => {
+      const d = snap.data();
+      if (!snap.exists() || !d) {
+        cb(null);
+        return;
+      }
+      const menus = (Array.isArray(d.menus) ? d.menus : [])
+        .map(menuShareOf)
+        .filter((row): row is SalesMenuShare => row !== null)
+        .sort((a, b) => b.sales - a.sales);
+      if (menus.length === 0) {
+        cb(null);
+        return;
+      }
+      cb({
+        id: snap.id,
+        startDate: String(d.startDate ?? ""),
+        endDate: String(d.endDate ?? ""),
+        overallSales: Math.max(0, Number(d.overallSales ?? 0) || 0),
+        menus,
+        collectedAt: asDisplayDate(d.collectedAt) || (typeof d.collectedAt === "string" ? d.collectedAt : undefined),
+        syncedAt: asDisplayDate(d.syncedAt) || undefined,
+        source: typeof d.source === "string" ? d.source : null,
+        sourceLabel: typeof d.sourceLabel === "string" ? d.sourceLabel : null,
+      });
+    },
+    (e) => onError(new Error(`salesMenuReports: ${e.message}`)),
   );
 }
 

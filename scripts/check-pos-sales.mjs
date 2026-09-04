@@ -185,5 +185,33 @@ check("라벨: 하루·한 달·임의 범위", () => {
   assert.equal(pos.monthTitle("2026-09"), "2026년 9월");
 });
 
+check("메뉴 비중: 많이 판 순, 위 N개, 메뉴로 안 잡힌 매출, 1위 집중", () => {
+  const report = {
+    id: "latest", startDate: "2026-08-05", endDate: "2026-09-03", overallSales: 41_180_000,
+    menus: [
+      { menuId: "m-2", menuName: "점심불고기", categoryName: "하늘땅", sales: 3_120_000, sharePercent: 7.6 },
+      { menuId: "m-1", menuName: "돼지갈비", categoryName: "하늘땅", sales: 26_554_400, sharePercent: 64.5 },
+      { menuId: "m-3", menuName: "냉면", categoryName: null, sales: 1_870_000, sharePercent: 4.5 },
+      { menuId: "m-4", menuName: "안 팔린 것", categoryName: null, sales: 0, sharePercent: 0 },
+    ],
+  };
+  const summary = pos.menuShareSummary(report, 2);
+  assert.deepEqual(summary.top.map((menu) => menu.menuName), ["돼지갈비", "점심불고기"]);
+  assert.equal(summary.hiddenCount, 1, "0원짜리는 세지 않는다");
+  assert.equal(summary.listedTotal, 31_544_400);
+  assert.equal(summary.unlistedTotal, 41_180_000 - 31_544_400, "메뉴로 안 잡힌 매출은 전체에서 뺀 나머지");
+  assert.equal(summary.concentrated, true, "1위가 절반 넘음");
+  // 비중은 네이버 값 그대로다 — 메뉴 합계로 다시 나누면 64.5 가 84 로 부푼다.
+  assert.equal(summary.top[0].sharePercent, 64.5);
+  assert.equal(pos.menuShareSummary({ ...report, overallSales: 0 }).unlistedTotal, 0, "음수로 내려가지 않는다");
+});
+
+check("메뉴 비중: 끝 날짜가 오래됐으면 며칠 지났는지", () => {
+  const report = { id: "latest", startDate: "2026-08-05", endDate: "2026-09-02", overallSales: 0, menus: [] };
+  assert.equal(pos.menuReportStaleDays(report, "2026-09-03"), 0, "어제까지 것은 최신이다");
+  assert.equal(pos.menuReportStaleDays(report, "2026-09-10"), 7);
+  assert.equal(pos.menuReportStaleDays({ ...report, endDate: "" }, "2026-09-10"), 0, "날짜가 없으면 따지지 않는다");
+});
+
 console.log(results.join("\n"));
 console.log(process.exitCode ? "\n실패한 검사가 있습니다." : "\n모든 검사를 통과했습니다.");

@@ -12,6 +12,7 @@ import type {
   Recipe,
   Reservation,
   SalesDailySummary,
+  SalesMenuReport,
   SalesOrder,
   SalesSyncRun,
   Shift,
@@ -437,3 +438,36 @@ export const SEED_SALES_DAILY_SUMMARIES: SalesDailySummary[] = Array.from({ leng
     sourceLabel: "데모",
   };
 }).filter((row): row is SalesDailySummary => row !== null);
+
+/*
+  매출 내 메뉴 비중 (데모용). 네이버 스마트플레이스가 주는 모양 그대로 —
+  기간 합계 하나에 메뉴별 금액과 비중. 비중 합이 100 이 안 되는 것이 정상이다.
+  메뉴로 안 잡힌 매출이 있어서다.
+*/
+export const SEED_SALES_MENU_REPORT: SalesMenuReport = (() => {
+  const end = new Date(TODAY);
+  end.setDate(end.getDate() - 1);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 29);
+  const menus = [
+    { menuId: "m-1", menuName: "돼지갈비", categoryName: "하늘땅", sales: 26_554_400, sharePercent: 64.5 },
+    { menuId: "m-2", menuName: "점심불고기", categoryName: "하늘땅", sales: 3_120_000, sharePercent: 7.6 },
+    { menuId: "m-3", menuName: "된장찌개", categoryName: "하늘땅", sales: 2_240_000, sharePercent: 5.4 },
+    { menuId: "m-4", menuName: "냉면", categoryName: "하늘땅", sales: 1_870_000, sharePercent: 4.5 },
+    { menuId: "m-5", menuName: "공기밥", categoryName: "하늘땅", sales: 1_120_000, sharePercent: 2.7 },
+    { menuId: "m-6", menuName: "소주", categoryName: "주류", sales: 980_000, sharePercent: 2.4 },
+    { menuId: "m-7", menuName: "맥주", categoryName: "주류", sales: 760_000, sharePercent: 1.8 },
+    { menuId: "m-8", menuName: "음료", categoryName: "음료", sales: 410_000, sharePercent: 1.0 },
+  ];
+  return {
+    id: "latest",
+    startDate: fmtDate(start),
+    endDate: fmtDate(end),
+    overallSales: 41_180_000,
+    menus,
+    collectedAt: `${TODAY_STR} 00:12`,
+    syncedAt: `${TODAY_STR} 00:28`,
+    source: "mock",
+    sourceLabel: "데모",
+  };
+})();

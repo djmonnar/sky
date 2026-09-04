@@ -109,7 +109,7 @@ export default function Settlements() {
   const {
     role, profile, authUser, managerPermissions, vendors, purchaseOrders, payroll,
     granterCardSales, granterAccountTransactions, granterFinanceCategories,
-    salesDailySummaries, syncSales,
+    salesDailySummaries, salesMenuReport, syncSales,
     financeDailyCloses, financeMatches,
     upsertPurchaseOrder, syncGranterFinance, classifyGranterFinanceItems,
     upsertGranterFinanceCategory, deleteGranterFinanceCategory,
@@ -464,6 +464,7 @@ export default function Settlements() {
       {activeTab === "pos" && (
         <PosSalesBoard
           summaries={salesDailySummaries}
+          menuReport={salesMenuReport}
           syncing={posSyncing}
           onSync={() => void runPosSync()}
         />

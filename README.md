@@ -72,6 +72,7 @@ CLI로도 가능: `npx vercel env add VITE_FIREBASE_API_KEY production`
 예: 오늘 현황 알려줘
 예: 내일 저녁 7시 김하늘 4명 창가로 예약 등록해줘
 예: 이번 주 매출 정리해줘        ← 네이버 플레이스플러스 POS 일 매출 기준
+예: 요즘 뭐가 제일 잘 팔려?       ← 매출 내 메뉴 비중 (오너비스타가 넘겨 준 기간 합계)
 예: 오늘 근무표 보여줘
 예: 전달사항 등록해줘 — 주방 재료 입고 확인
 ```
@@ -163,7 +164,13 @@ stores/{storeId}                      # 기본 storeId: haneulttang
   ├─ attendanceLogs/{auto}            # empId, date, type(in|out), time — 수정 불가
   ├─ payroll/{empId}                  # month, hours, base, extra, deduct, status...
   ├─ notices/{id}                     # text, date, pinned
-  └─ handovers/{auto}                 # text, date, createdBy
+  ├─ handovers/{auto}                 # text, date, createdBy
+  ├─ salesDailySummaries/{YYYY-MM-DD} # 네이버 플레이스플러스 일 매출 (오너비스타 피드)
+  │                                   # netAmount, orderCount(아는 날만), source, syncedAt
+  ├─ salesMenuReports/latest          # 매출 내 메뉴 비중 (기간 합계 한 장)
+  │                                   # startDate, endDate, overallSales,
+  │                                   # menus[{menuId, menuName, categoryName, sales, sharePercent}]
+  └─ salesSyncRuns/{id}               # 오너비스타 동기화 기록
 
 users/{uid}                           # name, role, storeId, employeeId, active
 ```

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import type { SalesDailySummary } from "../data/types";
+import type { SalesDailySummary, SalesMenuReport } from "../data/types";
 import { TODAY_STR } from "../lib/time";
 import {
   PRESETS,
@@ -16,6 +16,8 @@ import {
   indexByDate,
   intensityLevel,
   matchPreset,
+  menuReportStaleDays,
+  menuShareSummary,
   monthKey,
   monthTitle,
   monthlyBuckets,
@@ -29,6 +31,8 @@ import {
 
 interface Props {
   summaries: SalesDailySummary[];
+  /** 매출 내 메뉴 비중 최신본. 아직 못 받았으면 null — 칸을 안 그린다. */
+  menuReport: SalesMenuReport | null;
   syncing: boolean;
   onSync: () => void;
 }
@@ -133,7 +137,72 @@ function BucketChart({
   );
 }
 
-export default function PosSalesBoard({ summaries, syncing, onSync }: Props) {
+/**
+ * 무엇이 팔렸나. 매출 카드가 «얼마 팔았나»를 말한다면 이 칸은 그 안을 연다 —
+ * 돼지갈비가 64.5% 면 그 메뉴 하나가 매장을 먹여 살리는 것이고, 그건 재료 발주에도
+ * 광고에도 다른 결정을 만든다.
+ *
+ * **기간 합계다.** 위의 달력에서 고른 기간과 무관하다 — 네이버가 날짜별 메뉴 매출을
+ * 안 준다. 그래서 카드가 자기 기간을 스스로 밝힌다.
+ */
+function MenuShareCard({ report, today }: { report: SalesMenuReport; today: string }) {
+  const summary = useMemo(() => menuShareSummary(report, 10), [report]);
+  const staleDays = menuReportStaleDays(report, today);
+  const period = report.startDate && report.endDate
+    ? rangeLabel({ start: report.startDate, end: report.endDate })
+    : "기간 미상";
+
+  return (
+    <div className="card pos-menu-card">
+      <div className="card-head">
+        <div className="card-title">매출 내 메뉴 비중</div>
+        <span className="muted small">
+          {period}
+          {report.syncedAt ? ` · ${syncedLabel(report.syncedAt)} 받음` : ""}
+        </span>
+      </div>
+      <ol className="pos-menu-list">
+        {summary.top.map((menu, i) => (
+          <li key={menu.menuId} className="pos-menu-row">
+            <span className="pos-menu-name">
+              <em className="pos-menu-rank">{i + 1}</em>
+              <span title={menu.menuName}>{menu.menuName}</span>
+              {menu.categoryName && <small className="pos-menu-cat">{menu.categoryName}</small>}
+            </span>
+            <span className="pos-menu-share">{menu.sharePercent.toFixed(1)}%</span>
+            {/* 막대는 비중을 눈으로 보게 한다 — 1위가 절반을 넘는지가 한눈에 보여야 한다 */}
+            <span className="pos-menu-bar" aria-hidden="true">
+              <i style={{ "--w": `${Math.min(100, Math.max(0, menu.sharePercent))}%` } as CSSProperties} />
+            </span>
+            <span className="pos-menu-won">{fullWon(menu.sales)}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="pos-menu-foot muted small">
+        {summary.concentrated && (
+          <p>1위 메뉴가 매출의 절반을 넘습니다. 그 메뉴 하나가 매장을 먹여 살리고 있습니다.</p>
+        )}
+        {summary.hiddenCount > 0 && (
+          <p>위 {summary.top.length}개만 보여 드립니다 (전체 {summary.top.length + summary.hiddenCount}개).</p>
+        )}
+        {/* 합이 안 맞는 이유를 먼저 말한다. 안 적으면 사장님이 직접 더해 보고 «왜 다르지»를 겪는다 */}
+        {summary.unlistedTotal > 0 && (
+          <p>
+            메뉴로 안 잡힌 매출이 {fullWon(summary.unlistedTotal)} 있습니다. 전체 순매출은 {fullWon(report.overallSales)}입니다.
+            비중은 네이버가 준 값 그대로라 합이 100%가 아닙니다.
+          </p>
+        )}
+        {staleDays > 3 && (
+          <p className="pos-menu-stale">
+            {staleDays}일 전 기간까지의 것입니다. 오너비스타 쪽 수집이 멈췄거나 옛 버전일 수 있습니다.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function PosSalesBoard({ summaries, menuReport, syncing, onSync }: Props) {
   const today = TODAY_STR;
   const [view, setView] = useState<PosView>("day");
   const [range, setRange] = useState<DateRange>({ start: today, end: today });
@@ -418,6 +487,9 @@ export default function PosSalesBoard({ summaries, syncing, onSync }: Props) {
         </div>
       )}
 
+      {/* ── 무엇이 팔렸나 — 오너비스타가 메뉴 비중을 넘겨 준 뒤에만 ── */}
+      {menuReport && <MenuShareCard report={menuReport} today={today} />}
+
       {/* ── 선택 기간 상세 — 표로도 모든 값에 닿는다 ── */}
       <div className="card pos-detail-card">
         <div className="card-head">
@@ -464,7 +536,7 @@ export default function PosSalesBoard({ summaries, syncing, onSync }: Props) {
 
       <p className="pos-note muted small">
         네이버 플레이스플러스 매출을 오너비스타에서 매일 받아 옵니다. 카드 매출과 다른 숫자입니다 — 현금·계좌이체가 모두 들어 있고,
-        아직 정산 안 된 것도 들어 있습니다. 날짜와 금액만 오고, 건수·시간대별·메뉴별은 네이버가 주지 않습니다.
+        아직 정산 안 된 것도 들어 있습니다. 날짜별로는 금액과 결제 건수가 오고, 메뉴 비중은 기간 합계로만 옵니다. 시간대별은 네이버가 주지 않습니다.
       </p>
 
       <Tooltip tip={tip} />

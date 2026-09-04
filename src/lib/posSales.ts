@@ -6,7 +6,7 @@
    모든 날짜는 "YYYY-MM-DD" 문자열, 주는 월요일 시작.
    ============================================================ */
 
-import type { SalesDailySummary } from "../data/types";
+import type { SalesDailySummary, SalesMenuReport, SalesMenuShare } from "../data/types";
 
 export type PosView = "day" | "week" | "month";
 
@@ -320,4 +320,46 @@ export function rangeLabel(range: DateRange): string {
 export function monthTitle(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
   return `${y}년 ${m}월`;
+}
+
+/* ---------- 매출 내 메뉴 비중 ---------- */
+
+export interface MenuShareSummary {
+  /** 많이 판 순서로 위 `limit` 개 */
+  top: SalesMenuShare[];
+  /** 위에 못 올라온 메뉴 수 */
+  hiddenCount: number;
+  /** 메뉴로 잡힌 매출 합계 */
+  listedTotal: number;
+  /**
+   * 메뉴로 안 잡힌 매출. 네이버의 전체 매출에는 메뉴로 안 잡히는 것이 섞여 있어서
+   * 메뉴 합계와 전체가 다르다 — 이 차이를 숨기면 «합이 안 맞네»가 된다.
+   */
+  unlistedTotal: number;
+  /** 1위 메뉴가 절반을 넘는가 — 그 메뉴 하나가 매장을 먹여 살린다는 뜻 */
+  concentrated: boolean;
+}
+
+export function menuShareSummary(report: SalesMenuReport, limit = 10): MenuShareSummary {
+  const sorted = [...report.menus].filter((menu) => menu.sales > 0).sort((a, b) => b.sales - a.sales);
+  const top = sorted.slice(0, Math.max(0, limit));
+  const listedTotal = sorted.reduce((sum, menu) => sum + menu.sales, 0);
+  return {
+    top,
+    hiddenCount: Math.max(0, sorted.length - top.length),
+    listedTotal,
+    unlistedTotal: Math.max(0, report.overallSales - listedTotal),
+    concentrated: (top[0]?.sharePercent ?? 0) > 50,
+  };
+}
+
+/**
+ * 메뉴 비중이 오래됐는가 — 끝 날짜가 오늘보다 `staleAfterDays` 넘게 지났으면.
+ * 오너비스타가 새 버전이 아니거나 메뉴 조회만 실패하면 옛 것이 그대로 남는다.
+ * 그때 화면이 «오래됐다»고 말해야 어제 것으로 오늘을 판단하지 않는다.
+ */
+export function menuReportStaleDays(report: SalesMenuReport, today: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(report.endDate)) return 0;
+  // 어제까지의 것이 가장 새 것이다 — 오늘 것은 장사가 안 끝나서 아직 없다.
+  return Math.max(0, daysBetween(report.endDate, today) - 2);
 }
