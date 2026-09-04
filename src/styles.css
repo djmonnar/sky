@@ -2249,6 +2249,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   min-width: 88px;
   font-variant-numeric: tabular-nums;
 }
+/* 수량·단가가 빈 줄은 테두리로 알린다 — 원가가 덜 된 것이다 */
+.recipe-ingredient-row.incomplete { border-color: var(--amber-tx, #b78a3d); }
+.recipe-ingredient-note { grid-column: 1 / -1; line-height: 1.5; }
 
 /* ============ Inventory OCR ============ */
 .inventory-category-manager {

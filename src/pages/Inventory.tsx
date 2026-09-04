@@ -4,6 +4,7 @@ import { recognize } from "tesseract.js";
 import { useStore } from "../store";
 import { Badge, Card, StatCard } from "../components/ui";
 import type { InventoryCategoryItem, InventoryItem, StorageType, Vendor } from "../data/types";
+import { UNITS, UNIT_LABELS, normalizeUnit } from "../data/units";
 
 const STORAGE_TYPES: StorageType[] = ["냉장", "냉동", "실온", "기타"];
 const CATEGORY_COLORS = ["#d96b4c", "#5f8f4e", "#4d89a6", "#b78a3d", "#6d7eb8", "#81776a"];
@@ -88,8 +89,8 @@ function parseOcrRows(text: string): OcrDraftRow[] {
     if (!/(kg|㎏|돈|갈비|목살|거세|우진|품목)/i.test(line)) return;
     if (/품목|합계|거래명세|사업자|공급|전화|주소|비고/i.test(line)) return;
 
-    const unitMatch = line.match(/\b(kg|㎏|개|박스|box|BOX)\b/i);
-    const unit = unitMatch ? (unitMatch[1].toLowerCase() === "box" ? "박스" : unitMatch[1].replace("㎏", "kg")) : "kg";
+    const unitMatch = line.match(/\b(kg|㎏|g|ml|l|ea|개|박스|box|BOX)\b/i);
+    const unit = unitMatch ? normalizeUnit(unitMatch[1]) : "kg";
     const unitIndex = unitMatch?.index ?? -1;
     if (unitIndex <= 0) return;
 
@@ -365,7 +366,7 @@ export default function Inventory() {
             name: row.name.trim(),
             category: activeCategory === "전체" ? "육류" : activeCategory,
             storageType: row.storageType,
-            unit: row.unit.trim() || "kg",
+            unit: normalizeUnit(row.unit),
             currentQty: Number(row.qty) || 0,
             minQty: 0,
             defaultOrderQty: Number(row.qty) || 0,
@@ -568,7 +569,9 @@ export default function Inventory() {
                         </select>
                       </td>
                       <td>
-                        <input className="input" value={row.unit} onChange={(event) => updateOcrRow(row.key, "unit", event.target.value)} />
+                        <select className="select" value={normalizeUnit(row.unit)} onChange={(event) => updateOcrRow(row.key, "unit", event.target.value)}>
+                          {UNITS.map((unit) => <option key={unit} value={unit}>{UNIT_LABELS[unit]}</option>)}
+                        </select>
                       </td>
                       <td>
                         <input className="input" type="number" value={row.qty} onChange={(event) => updateOcrRow(row.key, "qty", Number(event.target.value))} />

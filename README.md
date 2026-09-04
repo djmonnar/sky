@@ -165,6 +165,8 @@ stores/{storeId}                      # 기본 storeId: haneulttang
   ├─ payroll/{empId}                  # month, hours, base, extra, deduct, status...
   ├─ notices/{id}                     # text, date, pinned
   ├─ handovers/{auto}                 # text, date, createdBy
+  ├─ recipes/{id}                     # name, category, kind(menu|side), servings, salePrice,
+  │                                   # ingredients[{name, quantity, unit(g|kg|ml|L|박스|ea), unitCost, note?}]
   ├─ salesDailySummaries/{YYYY-MM-DD} # 네이버 플레이스플러스 일 매출 (오너비스타 피드)
   │                                   # netAmount, orderCount(아는 날만), source, syncedAt
   ├─ salesMenuReports/latest          # 매출 내 메뉴 비중 (기간 합계 한 장)
@@ -176,6 +178,16 @@ users/{uid}                           # name, role, storeId, employeeId, active
 ```
 
 모든 문서에 `createdAt`/`updatedAt`(serverTimestamp)이 기록됩니다.
+
+### 레시피 원가
+
+- **단위는 여섯 개 중에서 고른다**: g · kg · ml · L · 박스 · ea. 레시피 재료와 재고 품목이 같은 표를 쓴다(`src/data/units.ts`).
+  단위를 바꾸면 수량과 단가가 같이 환산돼 재료비는 그대로다(0.6kg × 12,000원 = 600g × 12원).
+- **판매 메뉴와 기본 상차림을 가른다**. 김반찬·겉절이·쌈장은 판매가가 없으니 원가만 본다.
+  원가율(재료비 ÷ 판매가)은 판매가가 있는 메뉴에서만 나온다. 인건비·운영비 배분은 없다.
+- **엑셀에서 옮기기**: `python3 scripts/import-recipes-xlsx.py 원가재고관리.xlsx` 가 `src/data/seed/haneulttang-recipes.json` 을 만들고
+  (데모 모드 샘플로도 쓰인다), `GOOGLE_APPLICATION_CREDENTIALS=… node scripts/upload-recipes.mjs` 가 Firestore 에 넣는다.
+  이미 있는 이름은 건드리지 않는다. 숫자로 못 옮긴 수량은 재료의 `note` 에 원문을 남긴다.
 
 ## 보안 규칙 요약 ([firestore.rules](firestore.rules))
 

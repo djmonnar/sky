@@ -1,6 +1,7 @@
 /* 목업 시드 데이터 - 실서비스 전환 시 이 파일만 제거하면 됨 */
 
 import { TODAY, TODAY_STR, dowIndex, fmtDate, weekDates } from "../lib/time";
+import HANEULTTANG_RECIPES from "./seed/haneulttang-recipes.json";
 import type {
   Department,
   Employee,
@@ -225,24 +226,11 @@ export const SEED_INVENTORY_CATEGORIES: InventoryCategoryItem[] = [
   { id: "other", name: "기타", color: "#8f887b", sortOrder: 99 },
 ];
 
-export const SEED_RECIPES: Recipe[] = [
-  {
-    id: 1,
-    name: "샘플 김치찌개",
-    category: "찌개",
-    servings: 4,
-    salePrice: 32000,
-    laborCost: 3000,
-    overheadCost: 2000,
-    memo: "원가계산 예시 레시피",
-    active: true,
-    ingredients: [
-      { id: "pork", name: "돼지고기", quantity: 0.6, unit: "kg", unitCost: 12000, vendorId: 2 },
-      { id: "kimchi", name: "김치", quantity: 1, unit: "kg", unitCost: 4500, vendorId: 1 },
-      { id: "tofu", name: "두부", quantity: 2, unit: "모", unitCost: 1200, vendorId: 1 },
-    ],
-  },
-];
+/*
+  레시피 데모 데이터 = 하늘땅 원가재고관리 엑셀에서 옮긴 것.
+  scripts/import-recipes-xlsx.py 가 만든 JSON 을 그대로 쓴다.
+*/
+export const SEED_RECIPES: Recipe[] = HANEULTTANG_RECIPES as Recipe[];
 
 export const SEED_INVENTORY_ITEMS: InventoryItem[] = [
   {

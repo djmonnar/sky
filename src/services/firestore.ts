@@ -21,7 +21,7 @@ import {
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   Department, Reservation, Employee, Shift, ShiftPeriod, WorkRecord, PayrollRow, Notice, Role,
-  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, SalesMenuReport, SalesMenuShare, GranterSyncRun, SalesPayment,
+  Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, RecipeIngredient, SalesOrder, SalesSyncRun, SalesDailySummary, SalesMenuReport, SalesMenuShare, GranterSyncRun, SalesPayment,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
@@ -30,6 +30,7 @@ import type {
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
 import { normalizeManagerPermissions } from "../config/managerPermissions";
+import { normalizeUnit } from "../data/units";
 
 function col(name: string) {
   return collection(requireDb(), "stores", STORE_ID, name);
@@ -293,7 +294,7 @@ export function subscribeInventoryItems(cb: (v: InventoryItem[]) => void, onErro
       name: String(d.name ?? ""),
       category: d.category ?? "식재료",
       storageType: d.storageType ?? "실온",
-      unit: String(d.unit ?? ""),
+      unit: normalizeUnit(d.unit),
       currentQty: Number(d.currentQty ?? 0),
       minQty: Number(d.minQty ?? 0),
       defaultOrderQty: Number(d.defaultOrderQty ?? 0),
@@ -377,10 +378,15 @@ export function subscribeRecipes(cb: (v: Recipe[]) => void, onError: ErrCb): Uns
       id: Number(d.id ?? id),
       name: d.name ?? "",
       category: d.category ?? "",
+      // 옛 문서에는 kind 가 없다 — 판매가가 있으면 판매 메뉴, 없으면 기본 상차림으로 본다.
+      kind: d.kind === "side" || d.kind === "menu" ? d.kind : (Number(d.salePrice ?? 0) > 0 ? "menu" : "side"),
       servings: Number(d.servings ?? 1),
-      ingredients: Array.isArray(d.ingredients) ? d.ingredients : [],
-      laborCost: Number(d.laborCost ?? 0),
-      overheadCost: Number(d.overheadCost ?? 0),
+      ingredients: Array.isArray(d.ingredients)
+        ? (d.ingredients as RecipeIngredient[]).map((ingredient) => ({
+          ...ingredient,
+          unit: normalizeUnit(ingredient.unit),
+        }))
+        : [],
       salePrice: Number(d.salePrice ?? 0),
       active: d.active ?? true,
     }),
