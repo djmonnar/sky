@@ -278,19 +278,33 @@ export interface RecipeIngredient {
   id: string;
   name: string;
   quantity: number;
+  /** g · kg · ml · L · 박스 · ea 중 하나 (src/data/units.ts). */
   unit: string;
+  /** 위 단위 1개당 원가(원). kg 이면 kg 당, g 이면 g 당. */
   unitCost: number;
   vendorId?: number;
+  /** 엑셀에서 그대로 옮긴 수량 메모 등, 숫자로 못 옮긴 것. */
+  note?: string;
 }
+
+/**
+ * 판매 메뉴인가, 기본 상차림인가.
+ *
+ * 돼지갈비처럼 판매가가 있는 것만 원가율이 나온다. 김반찬·겉절이·쌈장 같은
+ * 기본 상차림은 판매가가 없다 — 원가만 본다. 둘을 한 표에 섞으면 상차림
+ * 원가율이 0% 로 찍혀 «마진 100%» 로 읽힌다.
+ */
+export type RecipeKind = "menu" | "side";
 
 export interface Recipe {
   id: number;
   name: string;
   category: string;
+  kind: RecipeKind;
+  /** 이 재료 분량으로 몇 인분(제공 회수)이 나오는가. */
   servings: number;
   ingredients: RecipeIngredient[];
-  laborCost: number;
-  overheadCost: number;
+  /** 판매가(원). 기본 상차림은 0. */
   salePrice: number;
   memo?: string;
   active?: boolean;

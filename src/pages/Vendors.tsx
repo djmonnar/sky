@@ -10,6 +10,7 @@ import type {
   StorageType,
   Vendor,
 } from "../data/types";
+import { UNITS, UNIT_LABELS, normalizeUnit } from "../data/units";
 
 const STORAGE_TYPES: StorageType[] = ["냉장", "냉동", "실온", "기타"];
 
@@ -47,7 +48,7 @@ const EMPTY_ITEM: InventoryItem = {
   name: "",
   category: "식재료",
   storageType: "냉장",
-  unit: "개",
+  unit: "kg",
   currentQty: 0,
   minQty: 0,
   defaultOrderQty: 0,
@@ -612,7 +613,9 @@ export default function Vendors() {
                 </div>
                 <div>
                   <label className="field-label">단위</label>
-                  <input className="input" value={itemDraft.unit} onChange={(e) => updateItemDraft("unit", e.target.value)} placeholder="kg, 박스, 병" />
+                  <select className="select" value={normalizeUnit(itemDraft.unit)} onChange={(e) => updateItemDraft("unit", e.target.value)}>
+                    {UNITS.map((unit) => <option key={unit} value={unit}>{UNIT_LABELS[unit]}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="grid grid-4" style={{ gap: 10, marginTop: 10 }}>

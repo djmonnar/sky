@@ -12,6 +12,7 @@ import {
 import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR } from "./lib/time";
 import { repository } from "./data/repository";
+import { normalizeUnit } from "./data/units";
 import { firebaseConfigured, STORE_ID } from "./lib/firebase";
 import { adminProfileForEmail, isAdminEmail } from "./config/admins";
 import {
@@ -905,15 +906,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       name: recipe.name.trim(),
       category: recipe.category.trim(),
       servings: Math.max(1, Number(recipe.servings) || 1),
-      ingredients: recipe.ingredients.map((ingredient) => ({
-        ...ingredient,
-        name: ingredient.name.trim(),
-        quantity: Number(ingredient.quantity) || 0,
-        unitCost: Number(ingredient.unitCost) || 0,
-      })),
-      laborCost: Number(recipe.laborCost) || 0,
-      overheadCost: Number(recipe.overheadCost) || 0,
-      salePrice: Number(recipe.salePrice) || 0,
+      kind: recipe.kind === "side" ? "side" : "menu",
+      // Firestore 는 undefined 칸을 거부한다 — 빈 메모·거래처는 아예 안 싣는다
+      ingredients: recipe.ingredients.map((ingredient) => {
+        const { note, vendorId, ...rest } = ingredient;
+        return {
+          ...rest,
+          name: ingredient.name.trim(),
+          unit: normalizeUnit(ingredient.unit),
+          quantity: Number(ingredient.quantity) || 0,
+          unitCost: Number(ingredient.unitCost) || 0,
+          ...(vendorId ? { vendorId } : {}),
+          ...(note?.trim() ? { note: note.trim() } : {}),
+        };
+      }),
+      // 기본 상차림은 판매가가 없다. 남아 있으면 원가율이 엉뚱하게 나온다.
+      salePrice: recipe.kind === "side" ? 0 : Number(recipe.salePrice) || 0,
       active: recipe.active ?? true,
     };
     if (APP_MODE === "live") {

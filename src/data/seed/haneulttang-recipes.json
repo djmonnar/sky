@@ -1,0 +1,1206 @@
+[
+  {
+    "id": 1,
+    "name": "돼지갈비",
+    "category": "구이",
+    "kind": "menu",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r1-1",
+        "name": "한돈목심",
+        "quantity": 3.75,
+        "unit": "kg",
+        "unitCost": 16500.0,
+        "note": "엑셀 사용량 3.75kg"
+      },
+      {
+        "id": "r1-2",
+        "name": "한돈갈비",
+        "quantity": 3.75,
+        "unit": "kg",
+        "unitCost": 8500.0,
+        "note": "엑셀 사용량 3.75kg"
+      },
+      {
+        "id": "r1-3",
+        "name": "콜라",
+        "quantity": 0.47,
+        "unit": "L",
+        "unitCost": 19200.0,
+        "note": "엑셀 사용량 0.47L"
+      },
+      {
+        "id": "r1-4",
+        "name": "탄산수",
+        "quantity": 0.08,
+        "unit": "L",
+        "unitCost": 11333.33,
+        "note": "엑셀 사용량 0.08L"
+      },
+      {
+        "id": "r1-5",
+        "name": "참기름",
+        "quantity": 0.1,
+        "unit": "L",
+        "unitCost": 18333.33,
+        "note": "엑셀 사용량 0.1L"
+      },
+      {
+        "id": "r1-6",
+        "name": "계백갈비소스",
+        "quantity": 3.5,
+        "unit": "kg",
+        "unitCost": 6600.0,
+        "note": "엑셀 사용량 3.5kg"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 판매가·기준 인분을 채워 주세요.",
+    "active": true
+  },
+  {
+    "id": 2,
+    "name": "소갈비",
+    "category": "구이",
+    "kind": "menu",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r2-1",
+        "name": "우갈비",
+        "quantity": 0.7,
+        "unit": "kg",
+        "unitCost": 24500.0,
+        "note": "엑셀 사용량 0.7kg"
+      },
+      {
+        "id": "r2-2",
+        "name": "진갈비",
+        "quantity": 0.3,
+        "unit": "kg",
+        "unitCost": 54000.0,
+        "note": "엑셀 사용량 0.3kg"
+      },
+      {
+        "id": "r2-3",
+        "name": "탄산수",
+        "quantity": 0.85,
+        "unit": "L",
+        "unitCost": 11333.33,
+        "note": "엑셀 사용량 0.85L"
+      },
+      {
+        "id": "r2-4",
+        "name": "참기름",
+        "quantity": 0.1,
+        "unit": "L",
+        "unitCost": 18333.33,
+        "note": "엑셀 사용량 0.1L"
+      },
+      {
+        "id": "r2-5",
+        "name": "계백갈비소스",
+        "quantity": 3.5,
+        "unit": "kg",
+        "unitCost": 6600.0,
+        "note": "엑셀 사용량 3.5kg"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 판매가·기준 인분을 채워 주세요.",
+    "active": true
+  },
+  {
+    "id": 3,
+    "name": "불고기",
+    "category": "구이",
+    "kind": "menu",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r3-1",
+        "name": "한우목심",
+        "quantity": 1.1,
+        "unit": "kg",
+        "unitCost": 29000.0,
+        "note": "엑셀 사용량 1.1kg"
+      },
+      {
+        "id": "r3-2",
+        "name": "소갈비살소스",
+        "quantity": 0.1,
+        "unit": "kg",
+        "unitCost": 3950.0,
+        "note": "엑셀 사용량 0.1kg"
+      },
+      {
+        "id": "r3-3",
+        "name": "참기름",
+        "quantity": 0.01,
+        "unit": "L",
+        "unitCost": 18333.33,
+        "note": "엑셀 사용량 0.01L"
+      },
+      {
+        "id": "r3-4",
+        "name": "계백갈비소스",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 6600.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r3-5",
+        "name": "대흥 불간장",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 1933.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 판매가·기준 인분을 채워 주세요. 수량·단가 확인 필요: 계백갈비소스, 대흥 불간장",
+    "active": true
+  },
+  {
+    "id": 4,
+    "name": "불고기 육수",
+    "category": "육수·소스",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r4-1",
+        "name": "영화 당면",
+        "quantity": 0.05,
+        "unit": "kg",
+        "unitCost": 4038.46,
+        "note": "엑셀 사용량 0.05kg"
+      },
+      {
+        "id": "r4-2",
+        "name": "새송이버섯",
+        "quantity": 0.056,
+        "unit": "kg",
+        "unitCost": 3000.0,
+        "note": "엑셀 사용량 0.056kg"
+      },
+      {
+        "id": "r4-3",
+        "name": "팽이버섯",
+        "quantity": 0.072,
+        "unit": "kg",
+        "unitCost": 2549.02,
+        "note": "엑셀 사용량 0.072kg"
+      },
+      {
+        "id": "r4-4",
+        "name": "대파",
+        "quantity": 0.024,
+        "unit": "kg",
+        "unitCost": 9500.0,
+        "note": "엑셀 사용량 0.024kg"
+      },
+      {
+        "id": "r4-5",
+        "name": "청경채",
+        "quantity": 0.034,
+        "unit": "kg",
+        "unitCost": 4500.0,
+        "note": "엑셀 사용량 0.034kg"
+      },
+      {
+        "id": "r4-6",
+        "name": "농협 쌀",
+        "quantity": 0.17,
+        "unit": "kg",
+        "unitCost": 2940.0,
+        "note": "엑셀 사용량 0.17kg"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김",
+    "active": true
+  },
+  {
+    "id": 5,
+    "name": "된장찌개",
+    "category": "식사",
+    "kind": "menu",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r5-1",
+        "name": "멸치",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 10000.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r5-2",
+        "name": "무",
+        "quantity": 0.2274,
+        "unit": "kg",
+        "unitCost": 1000.0,
+        "note": "엑셀 1회 제공 원가 된장육수 1회당 227.4"
+      },
+      {
+        "id": "r5-3",
+        "name": "파뿌리",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 950.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r5-4",
+        "name": "다시마",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 14650.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r5-5",
+        "name": "미원",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 11900.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r5-6",
+        "name": "해찬들 된장",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 2714.29,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r5-7",
+        "name": "다시다",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 19166.67,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r5-8",
+        "name": "원수 절단 꽃게",
+        "quantity": 0.4986,
+        "unit": "kg",
+        "unitCost": 7555.56,
+        "note": "엑셀 사용량 498.6g"
+      },
+      {
+        "id": "r5-9",
+        "name": "쥬키니",
+        "quantity": 0.145,
+        "unit": "kg",
+        "unitCost": 2200.0,
+        "note": "엑셀 사용량 145g"
+      },
+      {
+        "id": "r5-10",
+        "name": "양파",
+        "quantity": 0.2,
+        "unit": "kg",
+        "unitCost": 1150.0,
+        "note": "엑셀 사용량 200g"
+      },
+      {
+        "id": "r5-11",
+        "name": "두부",
+        "quantity": 0.022,
+        "unit": "kg",
+        "unitCost": 2000.0,
+        "note": "엑셀 사용량 22g"
+      },
+      {
+        "id": "r5-12",
+        "name": "청양고추",
+        "quantity": 0.0561,
+        "unit": "kg",
+        "unitCost": 5100.0,
+        "note": "엑셀 사용량 56.1g"
+      },
+      {
+        "id": "r5-13",
+        "name": "고춧가루",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 26666.67,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 판매가·기준 인분을 채워 주세요. 수량·단가 확인 필요: 고춧가루, 다시다, 다시마, 멸치, 미원, 파뿌리, 해찬들 된장",
+    "active": true
+  },
+  {
+    "id": 6,
+    "name": "냉모밀",
+    "category": "면",
+    "kind": "menu",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r6-1",
+        "name": "모밀면",
+        "quantity": 1.0,
+        "unit": "ea",
+        "unitCost": 800.0,
+        "note": "엑셀 1회 제공 원가 1회800"
+      },
+      {
+        "id": "r6-2",
+        "name": "쯔유간장",
+        "quantity": 0.0633,
+        "unit": "L",
+        "unitCost": 9720.0,
+        "note": "엑셀 1회 제공 원가 1회615.15"
+      },
+      {
+        "id": "r6-3",
+        "name": "무",
+        "quantity": 0.02,
+        "unit": "kg",
+        "unitCost": 1000.0,
+        "note": "엑셀 1회 제공 원가 1회 20"
+      },
+      {
+        "id": "r6-4",
+        "name": "쪽파",
+        "quantity": 0.01,
+        "unit": "kg",
+        "unitCost": 16000.0,
+        "note": "엑셀 1회 제공 원가 1회 160"
+      },
+      {
+        "id": "r6-5",
+        "name": "김",
+        "quantity": 0.0011,
+        "unit": "kg",
+        "unitCost": 60000.0,
+        "note": "엑셀 1회 제공 원가 1회 67.5"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 판매가·기준 인분을 채워 주세요.",
+    "active": true
+  },
+  {
+    "id": 7,
+    "name": "비빔모밀",
+    "category": "면",
+    "kind": "menu",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r7-1",
+        "name": "모밀면",
+        "quantity": 1.0,
+        "unit": "ea",
+        "unitCost": 800.0,
+        "note": "엑셀 1회 제공 원가 1회 800"
+      },
+      {
+        "id": "r7-2",
+        "name": "냉면육수",
+        "quantity": 0.08,
+        "unit": "L",
+        "unitCost": 1714.29,
+        "note": "엑셀 1회 제공 원가 1회137.12"
+      },
+      {
+        "id": "r7-3",
+        "name": "비빔양념장",
+        "quantity": 0.1,
+        "unit": "kg",
+        "unitCost": 8666.67,
+        "note": "엑셀 1회 제공 원가 1회 866.7"
+      },
+      {
+        "id": "r7-4",
+        "name": "보해매실액기스",
+        "quantity": 0.01,
+        "unit": "L",
+        "unitCost": 7125.0,
+        "note": "엑셀 1회 제공 원가 1회 71.25"
+      },
+      {
+        "id": "r7-5",
+        "name": "양배추",
+        "quantity": 0.022,
+        "unit": "kg",
+        "unitCost": 700.0,
+        "note": "엑셀 1회 제공 원가 1회15.4"
+      },
+      {
+        "id": "r7-6",
+        "name": "깻잎",
+        "quantity": 0.011,
+        "unit": "kg",
+        "unitCost": 41000.0,
+        "note": "엑셀 1회 제공 원가 1회451"
+      },
+      {
+        "id": "r7-7",
+        "name": "상추",
+        "quantity": 0.022,
+        "unit": "kg",
+        "unitCost": 11500.0,
+        "note": "엑셀 1회 제공 원가 1회253"
+      },
+      {
+        "id": "r7-8",
+        "name": "냉면무",
+        "quantity": 0.08,
+        "unit": "kg",
+        "unitCost": 3400.0,
+        "note": "엑셀 1회 제공 원가 1회272"
+      },
+      {
+        "id": "r7-9",
+        "name": "참기름",
+        "quantity": 0.01,
+        "unit": "L",
+        "unitCost": 18333.33,
+        "note": "엑셀 1회 제공 원가 1회183"
+      },
+      {
+        "id": "r7-10",
+        "name": "참깨",
+        "quantity": 0.005,
+        "unit": "kg",
+        "unitCost": 8500.0,
+        "note": "엑셀 1회 제공 원가 1회42.5"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 판매가·기준 인분을 채워 주세요.",
+    "active": true
+  },
+  {
+    "id": 8,
+    "name": "김반찬",
+    "category": "반찬",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r8-1",
+        "name": "김",
+        "quantity": 0.01,
+        "unit": "kg",
+        "unitCost": 27000.0,
+        "note": "엑셀 1회 제공 원가 1장당 270원"
+      },
+      {
+        "id": "r8-2",
+        "name": "몽고순간장",
+        "quantity": 0.0098,
+        "unit": "L",
+        "unitCost": 2438.46,
+        "note": "엑셀 1회 제공 원가 1회24원"
+      },
+      {
+        "id": "r8-3",
+        "name": "참기름",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 18333.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r8-4",
+        "name": "오징어젓갈",
+        "quantity": 0.03,
+        "unit": "kg",
+        "unitCost": 8000.0,
+        "note": "엑셀 1회 제공 원가 1회240"
+      },
+      {
+        "id": "r8-5",
+        "name": "참깨",
+        "quantity": 0.01,
+        "unit": "kg",
+        "unitCost": 8500.0,
+        "note": "엑셀 1회 제공 원가 1회85"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 수량·단가 확인 필요: 참기름",
+    "active": true
+  },
+  {
+    "id": 9,
+    "name": "쌈·쌈장",
+    "category": "반찬",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r9-1",
+        "name": "상추",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 11500.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r9-2",
+        "name": "된장",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 2714.29,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r9-3",
+        "name": "사이다",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 10666.67,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r9-4",
+        "name": "설탕",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 2083.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r9-5",
+        "name": "고춧가루",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 26666.67,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 수량·단가 확인 필요: 고춧가루, 된장, 사이다, 상추, 설탕",
+    "active": true
+  },
+  {
+    "id": 10,
+    "name": "구이야채",
+    "category": "반찬",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r10-1",
+        "name": "버섯",
+        "quantity": 0.077,
+        "unit": "kg",
+        "unitCost": 4000.0,
+        "note": "엑셀 1회 제공 원가 1회제공308"
+      },
+      {
+        "id": "r10-2",
+        "name": "마늘",
+        "quantity": 0.033,
+        "unit": "kg",
+        "unitCost": 9000.0,
+        "note": "엑셀 1회 제공 원가 1회제공297"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김",
+    "active": true
+  },
+  {
+    "id": 11,
+    "name": "겉절이",
+    "category": "반찬",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r11-1",
+        "name": "파",
+        "quantity": 0.198,
+        "unit": "kg",
+        "unitCost": 9500.0,
+        "note": "엑셀 1회 제공 원가 1회제공1881"
+      },
+      {
+        "id": "r11-2",
+        "name": "상추",
+        "quantity": 0.04,
+        "unit": "kg",
+        "unitCost": 11500.0,
+        "note": "엑셀 1회 제공 원가 1회 460"
+      },
+      {
+        "id": "r11-3",
+        "name": "깻잎",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 41000.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r11-4",
+        "name": "불간장",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 1933.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r11-5",
+        "name": "사이다",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 10666.67,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r11-6",
+        "name": "물엿",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 1966.67,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r11-7",
+        "name": "설탕",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 2083.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r11-8",
+        "name": "빙초산",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 5733.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 수량·단가 확인 필요: 깻잎, 물엿, 불간장, 빙초산, 사이다, 설탕",
+    "active": true
+  },
+  {
+    "id": 12,
+    "name": "땡초찌",
+    "category": "반찬",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r12-1",
+        "name": "땡초찌",
+        "quantity": 0.1,
+        "unit": "kg",
+        "unitCost": 9000.0,
+        "note": "엑셀 1회 제공 원가 1회900"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김",
+    "active": true
+  },
+  {
+    "id": 13,
+    "name": "깻잎절임",
+    "category": "반찬",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r13-1",
+        "name": "깻잎",
+        "quantity": 0.088,
+        "unit": "kg",
+        "unitCost": 41000.0,
+        "note": "엑셀 1회 제공 원가 1회3608"
+      },
+      {
+        "id": "r13-2",
+        "name": "불간장",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 1933.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r13-3",
+        "name": "설탕",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 2083.33,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r13-4",
+        "name": "물엿",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 1966.67,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r13-5",
+        "name": "2배사과식초",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 1527.78,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r13-6",
+        "name": "월계수",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 0,
+        "note": "단가 없음"
+      },
+      {
+        "id": "r13-7",
+        "name": "파뿌리",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 0,
+        "note": "단가 없음"
+      },
+      {
+        "id": "r13-8",
+        "name": "마늘",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 9000.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r13-9",
+        "name": "양파",
+        "quantity": 0.0,
+        "unit": "kg",
+        "unitCost": 1150.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 수량·단가 확인 필요: 2배사과식초, 마늘, 물엿, 불간장, 설탕, 양파, 월계수, 파뿌리",
+    "active": true
+  },
+  {
+    "id": 14,
+    "name": "백김치",
+    "category": "김치",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r14-1",
+        "name": "물(풀용)",
+        "quantity": 12.0,
+        "unit": "L",
+        "unitCost": 0,
+        "note": "단가 없음"
+      },
+      {
+        "id": "r14-2",
+        "name": "밀가루",
+        "quantity": 160.0,
+        "unit": "g",
+        "unitCost": 1.5667
+      },
+      {
+        "id": "r14-3",
+        "name": "물",
+        "quantity": 78.0,
+        "unit": "L",
+        "unitCost": 0,
+        "note": "단가 없음"
+      },
+      {
+        "id": "r14-4",
+        "name": "사이다",
+        "quantity": 18.0,
+        "unit": "L",
+        "unitCost": 10666.67
+      },
+      {
+        "id": "r14-5",
+        "name": "설탕",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 2083.33,
+        "note": "엑셀 수량: 종이컵 12"
+      },
+      {
+        "id": "r14-6",
+        "name": "천일염",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 790.0,
+        "note": "엑셀 수량: 종이컵 12"
+      },
+      {
+        "id": "r14-7",
+        "name": "무(채썰기)",
+        "quantity": 2.0,
+        "unit": "ea",
+        "unitCost": 0,
+        "note": "kg 단가 1,000원 — 개당 무게로 환산 필요"
+      },
+      {
+        "id": "r14-8",
+        "name": "당근(채썰기)",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 1000.0,
+        "note": "엑셀 수량: 5~6개"
+      },
+      {
+        "id": "r14-9",
+        "name": "양념(믹서)",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 0,
+        "note": "엑셀 수량: 양파5개/무1개/마늘2kg"
+      },
+      {
+        "id": "r14-10",
+        "name": "부재료",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 0,
+        "note": "엑셀 수량: 대파1대/땡초2개/소금물(소금2kg+물20kg)"
+      }
+    ],
+    "memo": "엑셀 배치 기준 8박스 수량·단가 확인 필요: 당근(채썰기), 무(채썰기), 물, 물(풀용), 부재료, 설탕, 양념(믹서), 천일염",
+    "active": true
+  },
+  {
+    "id": 15,
+    "name": "깍두기",
+    "category": "김치",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r15-1",
+        "name": "무",
+        "quantity": 72.0,
+        "unit": "kg",
+        "unitCost": 1000.0
+      },
+      {
+        "id": "r15-2",
+        "name": "물(풀용)",
+        "quantity": 8.0,
+        "unit": "L",
+        "unitCost": 0,
+        "note": "단가 없음"
+      },
+      {
+        "id": "r15-3",
+        "name": "찹쌀가루",
+        "quantity": 480.0,
+        "unit": "g",
+        "unitCost": 7.4
+      },
+      {
+        "id": "r15-4",
+        "name": "고춧가루",
+        "quantity": 1.0,
+        "unit": "kg",
+        "unitCost": 26666.67
+      },
+      {
+        "id": "r15-5",
+        "name": "까나리액젓",
+        "quantity": 1.0,
+        "unit": "kg",
+        "unitCost": 5000.0
+      },
+      {
+        "id": "r15-6",
+        "name": "다진마늘",
+        "quantity": 1.0,
+        "unit": "kg",
+        "unitCost": 9000.0
+      },
+      {
+        "id": "r15-7",
+        "name": "미원",
+        "quantity": 120.0,
+        "unit": "g",
+        "unitCost": 11.9
+      },
+      {
+        "id": "r15-8",
+        "name": "새우젓",
+        "quantity": 1.0,
+        "unit": "kg",
+        "unitCost": 8000.0
+      },
+      {
+        "id": "r15-9",
+        "name": "대파",
+        "quantity": 1.0,
+        "unit": "kg",
+        "unitCost": 9500.0
+      },
+      {
+        "id": "r15-10",
+        "name": "천일염(무절임용)",
+        "quantity": 1.92,
+        "unit": "kg",
+        "unitCost": 790.0
+      },
+      {
+        "id": "r15-11",
+        "name": "설탕(무절임용)",
+        "quantity": 1.92,
+        "unit": "kg",
+        "unitCost": 2083.33
+      }
+    ],
+    "memo": "엑셀 배치 기준 수량·단가 확인 필요: 물(풀용)",
+    "active": true
+  },
+  {
+    "id": 16,
+    "name": "샐러드",
+    "category": "반찬",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r16-1",
+        "name": "양상추",
+        "quantity": 0.06,
+        "unit": "kg",
+        "unitCost": 4133.33,
+        "note": "엑셀 1회 제공 원가 248원"
+      },
+      {
+        "id": "r16-2",
+        "name": "토마토",
+        "quantity": 0.022,
+        "unit": "kg",
+        "unitCost": 3000.0,
+        "note": "엑셀 1회 제공 원가 66원"
+      },
+      {
+        "id": "r16-3",
+        "name": "발사믹드레싱",
+        "quantity": 0.02,
+        "unit": "L",
+        "unitCost": 6750.0,
+        "note": "엑셀 1회 제공 원가 135원"
+      },
+      {
+        "id": "r16-4",
+        "name": "파마산치즈가루",
+        "quantity": 0.01,
+        "unit": "kg",
+        "unitCost": 21500.0,
+        "note": "엑셀 1회 제공 원가 215원"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김",
+    "active": true
+  },
+  {
+    "id": 17,
+    "name": "테이블 기본제공",
+    "category": "기타",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r17-1",
+        "name": "보리차원액",
+        "quantity": 0.0,
+        "unit": "L",
+        "unitCost": 17900.0,
+        "note": "수량 미입력 — 엑셀에 사용량 없음"
+      },
+      {
+        "id": "r17-2",
+        "name": "물",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 0,
+        "note": "단가 없음"
+      },
+      {
+        "id": "r17-3",
+        "name": "숯",
+        "quantity": 0.825,
+        "unit": "kg",
+        "unitCost": 2400.0,
+        "note": "엑셀 1회 제공 원가 1980원"
+      }
+    ],
+    "memo": "엑셀 원가재고관리에서 옮김 수량·단가 확인 필요: 물, 보리차원액",
+    "active": true
+  },
+  {
+    "id": 18,
+    "name": "파채소스",
+    "category": "육수·소스",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r18-1",
+        "name": "설탕",
+        "quantity": 7.6,
+        "unit": "kg",
+        "unitCost": 2083.33
+      },
+      {
+        "id": "r18-2",
+        "name": "황물엿",
+        "quantity": 0,
+        "unit": "L",
+        "unitCost": 1966.67,
+        "note": "엑셀 수량: 3kg x 4개"
+      },
+      {
+        "id": "r18-3",
+        "name": "불간장",
+        "quantity": 14.0,
+        "unit": "L",
+        "unitCost": 1933.33
+      },
+      {
+        "id": "r18-4",
+        "name": "사이다",
+        "quantity": 14.0,
+        "unit": "L",
+        "unitCost": 10666.67
+      },
+      {
+        "id": "r18-5",
+        "name": "빙초산",
+        "quantity": 0,
+        "unit": "L",
+        "unitCost": 5733.33,
+        "note": "엑셀 수량: 16온즈"
+      }
+    ],
+    "memo": "엑셀 배치 기준 수량·단가 확인 필요: 빙초산, 황물엿",
+    "active": true
+  },
+  {
+    "id": 19,
+    "name": "깻잎소스",
+    "category": "육수·소스",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r19-1",
+        "name": "설탕",
+        "quantity": 5.1,
+        "unit": "kg",
+        "unitCost": 2083.33
+      },
+      {
+        "id": "r19-2",
+        "name": "황물엿",
+        "quantity": 0,
+        "unit": "L",
+        "unitCost": 1966.67,
+        "note": "엑셀 수량: 3kg x 3개"
+      },
+      {
+        "id": "r19-3",
+        "name": "불간장",
+        "quantity": 18.0,
+        "unit": "L",
+        "unitCost": 1933.33
+      },
+      {
+        "id": "r19-4",
+        "name": "물",
+        "quantity": 18.0,
+        "unit": "L",
+        "unitCost": 0,
+        "note": "단가 없음"
+      },
+      {
+        "id": "r19-5",
+        "name": "두배사과식초",
+        "quantity": 0,
+        "unit": "L",
+        "unitCost": 1527.78,
+        "note": "엑셀 수량: 1750 x 3번"
+      },
+      {
+        "id": "r19-6",
+        "name": "양파/부재료",
+        "quantity": 0,
+        "unit": "kg",
+        "unitCost": 1150.0,
+        "note": "엑셀 수량: 양파3개/대파뿌리1봉/마늘꼬다리1봉/월계수잎10개"
+      }
+    ],
+    "memo": "엑셀 배치 기준 수량·단가 확인 필요: 두배사과식초, 물, 양파/부재료, 황물엿",
+    "active": true
+  },
+  {
+    "id": 20,
+    "name": "쌈장",
+    "category": "육수·소스",
+    "kind": "side",
+    "servings": 1,
+    "salePrice": 0,
+    "ingredients": [
+      {
+        "id": "r20-1",
+        "name": "재래식콩된장",
+        "quantity": 2.0,
+        "unit": "박스",
+        "unitCost": 0,
+        "note": "kg 단가 2,714원 — 개당 무게로 환산 필요"
+      },
+      {
+        "id": "r20-2",
+        "name": "사이다",
+        "quantity": 6.0,
+        "unit": "L",
+        "unitCost": 10666.67
+      },
+      {
+        "id": "r20-3",
+        "name": "설탕",
+        "quantity": 2.0,
+        "unit": "kg",
+        "unitCost": 2083.33
+      },
+      {
+        "id": "r20-4",
+        "name": "고춧가루",
+        "quantity": 600.0,
+        "unit": "g",
+        "unitCost": 26.6667
+      }
+    ],
+    "memo": "엑셀 배치 기준 수량·단가 확인 필요: 재래식콩된장",
+    "active": true
+  }
+]
