@@ -1,17 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
-import { Badge, Card, StatCard } from "../components/ui";
+import { Badge, Card } from "../components/ui";
 import type { Recipe, RecipeIngredient, RecipeKind } from "../data/types";
 import { UNITS, UNIT_LABELS, type Unit, convertQuantity, convertUnitCost, normalizeUnit } from "../data/units";
 
 /*
-  레시피 원가.
+  레시피 원가 — 휴대폰이 먼저다.
 
-  **원가율만 본다.** 인건비·운영비 배분은 뺐다 — 사장님이 보는 것은
-  «이 메뉴 하나에 재료비가 판매가의 몇 %인가»다.
+  목록은 표가 아니라 카드다. 여덟 칸짜리 표는 휴대폰에서 옆으로 밀어야 하고,
+  사장님은 «돼지갈비 원가율 몇 %»만 보면 된다. 카드를 누르면 모달에서 고친다.
 
-  **판매 메뉴와 기본 상차림을 가른다.** 김반찬·겉절이·쌈장은 판매가가 없다.
-  한 표에 섞으면 상차림 원가율이 0% 로 찍혀 «마진 100%» 로 읽힌다.
+  **원가율만 본다.** 인건비·운영비 배분은 없다. 판매 메뉴와 기본 상차림을 갈라서,
+  판매가 없는 상차림이 «원가율 0%»로 보이지 않게 한다.
 */
 
 const money = new Intl.NumberFormat("ko-KR");
@@ -37,7 +37,7 @@ function makeIngredient(): RecipeIngredient {
   return {
     id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now()),
     name: "",
-    quantity: 1,
+    quantity: 0,
     unit: "kg",
     unitCost: 0,
   };
@@ -93,56 +93,104 @@ function costRateText(rate: number | null): string {
   return rate === null ? "—" : `${rate.toFixed(1)}%`;
 }
 
-export default function Recipes() {
-  const { recipes, vendors, upsertRecipe, deleteRecipe, showToast } = useStore();
-  const [draft, setDraft] = useState<Recipe>(EMPTY_RECIPE);
-  const [customCategory, setCustomCategory] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [query, setQuery] = useState("");
+function won(value: number): string {
+  return `${money.format(Math.round(value))}원`;
+}
 
-  const categories = useMemo(() => {
-    const names = new Set<string>(PRESET_CATEGORIES);
-    recipes.forEach((recipe) => { if (recipe.category) names.add(recipe.category); });
-    return [...names];
-  }, [recipes]);
+/** 수량 표기: 0.0633kg → "0.063kg", 3.75kg → "3.75kg" */
+function qtyText(ingredient: RecipeIngredient): string {
+  const quantity = Number(ingredient.quantity) || 0;
+  if (quantity <= 0) return "";
+  const text = quantity >= 100 ? String(Math.round(quantity)) : String(Number(quantity.toFixed(3)));
+  return `${text}${normalizeUnit(ingredient.unit)}`;
+}
 
+/* ============================================================
+   목록 카드
+   ============================================================ */
+
+function RecipeCard({ recipe, onOpen }: { recipe: Recipe; onOpen: (recipe: Recipe) => void }) {
+  const cost = recipeCost(recipe);
+  const isSide = recipe.kind === "side";
+  const preview = recipe.ingredients.slice(0, 4).map((ingredient) => ingredient.name).join(" · ");
+  const more = recipe.ingredients.length - 4;
+  return (
+    <button type="button" className="recipe-card" onClick={() => onOpen(recipe)}>
+      <div className="recipe-card-top">
+        <div className="recipe-card-title">
+          <strong>{recipe.name}</strong>
+          {recipe.category && <span className="recipe-card-cat">{recipe.category}</span>}
+        </div>
+        {isSide ? (
+          <span className="recipe-card-rate muted">원가만</span>
+        ) : (
+          <span className={`recipe-card-rate ${costTone(cost.costRate)}`}>
+            {cost.costRate === null ? "판매가 없음" : costRateText(cost.costRate)}
+          </span>
+        )}
+      </div>
+      <div className="recipe-card-nums">
+        <span><em>{isSide ? "1회 원가" : "1인분 원가"}</em>{won(cost.perServingCost)}</span>
+        {!isSide && <span><em>판매가</em>{cost.salePrice ? won(cost.salePrice) : "—"}</span>}
+        <span><em>재료 전체</em>{won(cost.totalCost)}</span>
+      </div>
+      <div className="recipe-card-foot">
+        <span className="muted small recipe-card-preview">
+          {preview || "재료 없음"}{more > 0 ? ` 외 ${more}` : ""}
+        </span>
+        {cost.incomplete > 0 && <Badge tone="amber">확인 필요 {cost.incomplete}</Badge>}
+      </div>
+    </button>
+  );
+}
+
+/* ============================================================
+   편집 모달
+   ============================================================ */
+
+function RecipeEditor({
+  initial, categories, vendors, onSave, onDelete, onClose,
+}: {
+  initial: Recipe;
+  categories: string[];
+  vendors: { id: number; name: string }[];
+  onSave: (recipe: Recipe) => void;
+  onDelete?: (recipe: Recipe) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<Recipe>(() => ({
+    ...initial,
+    kind: initial.kind === "side" ? "side" : "menu",
+    ingredients: initial.ingredients.map((ingredient) => ({ ...ingredient, unit: normalizeUnit(ingredient.unit) })),
+  }));
+  const [customCategory, setCustomCategory] = useState(
+    Boolean(initial.category) && !categories.includes(initial.category)
+  );
+  const [error, setError] = useState<string | null>(null);
+  const isEditing = initial.id > 0;
+  const isSide = draft.kind === "side";
   const totals = useMemo(() => recipeCost(draft), [draft]);
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter((recipe) =>
-      [recipe.name, recipe.category, recipe.memo, ...recipe.ingredients.map((ingredient) => ingredient.name)]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(q))
-    );
-  }, [query, recipes]);
-  const menuRecipes = filtered.filter((recipe) => recipe.kind !== "side");
-  const sideRecipes = filtered.filter((recipe) => recipe.kind === "side");
 
-  // 평균 원가율은 판매가가 있는 메뉴만으로 낸다 — 0원 메뉴를 넣으면 평균이 거짓말한다
-  const pricedRates = recipes
-    .map((recipe) => recipeCost(recipe).costRate)
-    .filter((rate): rate is number => rate !== null);
-  const averageCostRate = pricedRates.length
-    ? pricedRates.reduce((sum, rate) => sum + rate, 0) / pricedRates.length
-    : null;
-  const menuCount = recipes.filter((recipe) => recipe.kind !== "side").length;
-  const sideCount = recipes.length - menuCount;
+  // 모달이 열린 동안 뒤 화면은 안 움직인다. Esc 로 닫는다.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
 
   const updateDraft = <K extends keyof Recipe>(key: K, value: Recipe[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
-  const updateIngredient = <K extends keyof RecipeIngredient>(
-    id: string,
-    key: K,
-    value: RecipeIngredient[K]
-  ) => {
+  const updateIngredient = <K extends keyof RecipeIngredient>(id: string, key: K, value: RecipeIngredient[K]) => {
     setDraft((prev) => ({
       ...prev,
-      ingredients: prev.ingredients.map((ingredient) =>
-        ingredient.id === id ? { ...ingredient, [key]: value } : ingredient
-      ),
+      ingredients: prev.ingredients.map((ingredient) => (ingredient.id === id ? { ...ingredient, [key]: value } : ingredient)),
     }));
   };
 
@@ -171,29 +219,9 @@ export default function Recipes() {
     setDraft((prev) => ({ ...prev, ingredients: prev.ingredients.filter((ingredient) => ingredient.id !== id) }));
   };
 
-  const resetForm = () => {
-    setDraft(EMPTY_RECIPE);
-    setCustomCategory(false);
-    setEditingId(null);
-  };
-
-  const editRecipe = (recipe: Recipe) => {
-    setDraft({
-      ...recipe,
-      kind: recipe.kind === "side" ? "side" : "menu",
-      ingredients: recipe.ingredients.map((ingredient) => ({ ...ingredient, unit: normalizeUnit(ingredient.unit) })),
-    });
-    setCustomCategory(Boolean(recipe.category) && !categories.includes(recipe.category));
-    setEditingId(recipe.id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const saveRecipe = () => {
+  const save = () => {
     const name = draft.name.trim();
-    if (!name) {
-      showToast("레시피명을 입력해주세요");
-      return;
-    }
+    if (!name) { setError("레시피명을 적어 주세요."); return; }
     const ingredients = draft.ingredients
       .map((ingredient) => ({
         ...ingredient,
@@ -204,174 +232,109 @@ export default function Recipes() {
         note: ingredient.note?.trim() || undefined,
       }))
       .filter((ingredient) => ingredient.name);
-    if (ingredients.length === 0) {
-      showToast("재료를 1개 이상 입력해주세요");
-      return;
-    }
-
-    const recipe: Recipe = {
+    if (ingredients.length === 0) { setError("재료를 1개 이상 넣어 주세요."); return; }
+    onSave({
       ...draft,
-      id: editingId ?? nextRecipeId(recipes),
       name,
       category: draft.category.trim(),
-      kind: draft.kind === "side" ? "side" : "menu",
+      kind: isSide ? "side" : "menu",
       servings: Math.max(1, Number(draft.servings) || 1),
       ingredients,
-      salePrice: draft.kind === "side" ? 0 : Number(draft.salePrice) || 0,
+      salePrice: isSide ? 0 : Number(draft.salePrice) || 0,
       memo: draft.memo?.trim(),
       active: true,
       createdAt: draft.createdAt ?? new Date().toISOString(),
-    };
-    upsertRecipe(recipe);
-    showToast(editingId ? "레시피를 수정했습니다" : "레시피를 등록했습니다");
-    resetForm();
+    });
   };
 
-  const removeRecipe = (recipe: Recipe) => {
-    if (!window.confirm(`${recipe.name} 레시피를 삭제할까요?`)) return;
-    deleteRecipe(recipe.id);
-    if (editingId === recipe.id) resetForm();
-    showToast("레시피를 삭제했습니다");
-  };
-
-  const vendorName = (vendorId?: number) =>
-    vendorId ? vendors.find((vendor) => vendor.id === vendorId)?.name ?? "등록 거래처" : "미지정";
-
-  const isSide = draft.kind === "side";
   const categorySelectValue = customCategory ? CUSTOM_CATEGORY : (draft.category || "");
 
-  const renderIngredientCell = (recipe: Recipe) => (
-    <>
-      {recipe.ingredients.slice(0, 3).map((ingredient) => (
-        <div className="muted small" key={ingredient.id}>
-          {ingredient.name}
-          {ingredient.quantity > 0 ? ` ${ingredient.quantity}${ingredient.unit}` : ""}
-        </div>
-      ))}
-      {recipe.ingredients.length > 3 && <div className="muted small">외 {recipe.ingredients.length - 3}개</div>}
-    </>
-  );
-
-  const renderActions = (recipe: Recipe) => (
-    <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-      <button className="btn btn-outline btn-sm" onClick={() => editRecipe(recipe)}>수정</button>
-      <button className="btn btn-danger btn-sm" onClick={() => removeRecipe(recipe)}>삭제</button>
-    </div>
-  );
-
   return (
-    <>
-      <div className="grid grid-4">
-        <StatCard label="판매 메뉴" value={menuCount} unit="개" trend="원가율 계산 대상" trendUp icon="🥘" />
-        <StatCard label="기본 상차림" value={sideCount} unit="개" trend="판매가 없음 · 원가만" trendUp icon="🥗" tone="blue" />
-        <StatCard
-          label="평균 원가율"
-          value={averageCostRate === null ? "—" : averageCostRate.toFixed(1)}
-          unit={averageCostRate === null ? undefined : "%"}
-          trend={pricedRates.length ? `판매가 있는 ${pricedRates.length}개 기준` : "판매가를 넣으면 계산됩니다"}
-          trendUp={averageCostRate === null || averageCostRate <= 35}
-          icon="📊"
-          tone="amber"
-        />
-        <StatCard
-          label="작성 중 원가율"
-          value={costRateText(totals.costRate)}
-          trend={isSide ? "기본 상차림은 원가만 봅니다" : totals.salePrice ? `판매가 ${money.format(totals.salePrice)}원 대비` : "판매가를 넣어 주세요"}
-          trendUp={totals.costRate === null || totals.costRate <= 35}
-          icon="📈"
-        />
-      </div>
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <section className="modal-panel recipe-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-modal-title">
+        <div className="modal-head">
+          <div>
+            <h2 id="recipe-modal-title">{isEditing ? draft.name || "레시피 수정" : "레시피 등록"}</h2>
+            <p>{isSide ? "기본 상차림은 판매가 없이 원가만 봅니다." : "재료비 ÷ 판매가 = 원가율. 30% 이하가 좋습니다."}</p>
+          </div>
+          <button className="icon-btn" type="button" onClick={onClose} aria-label="닫기">×</button>
+        </div>
 
-      <div className="grid grid-main-side">
-        <div className="stack">
-          <Card
-            title={editingId ? "레시피 수정" : "레시피 등록"}
-            icon="🥘"
-            action={editingId ? <button className="btn btn-outline btn-sm" onClick={resetForm}>새 레시피</button> : undefined}
-          >
-            {/* 판매 메뉴인지 상차림인지가 먼저다 — 그에 따라 판매가 칸이 있고 없다 */}
-            <div className="segmented fill" role="tablist" aria-label="레시피 종류" style={{ marginBottom: 14 }}>
-              {(["menu", "side"] as RecipeKind[]).map((kind) => (
-                <button
-                  key={kind}
-                  role="tab"
-                  aria-selected={draft.kind === kind}
-                  className={draft.kind === kind ? "on" : ""}
-                  onClick={() => updateDraft("kind", kind)}
-                >
-                  {KIND_LABEL[kind]}
-                </button>
-              ))}
+        <div className="modal-body recipe-modal-body">
+          {/* 판매 메뉴인지 상차림인지가 먼저다 — 그에 따라 판매가 칸이 있고 없다 */}
+          <div className="segmented fill" role="tablist" aria-label="레시피 종류">
+            {(["menu", "side"] as RecipeKind[]).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                role="tab"
+                aria-selected={draft.kind === kind}
+                className={draft.kind === kind ? "on" : ""}
+                onClick={() => updateDraft("kind", kind)}
+              >
+                {KIND_LABEL[kind]}
+              </button>
+            ))}
+          </div>
+
+          <div className="recipe-form-grid">
+            <div className="recipe-form-wide">
+              <label className="field-label">레시피명</label>
+              <input className="input" value={draft.name} onChange={(e) => updateDraft("name", e.target.value)} placeholder={isSide ? "예: 겉절이" : "예: 돼지갈비"} autoFocus={!isEditing} />
             </div>
-
-            <div className="grid grid-4" style={{ gap: 12 }}>
-              <div>
-                <label className="field-label">레시피명</label>
-                <input className="input" value={draft.name} onChange={(e) => updateDraft("name", e.target.value)} placeholder={isSide ? "예: 겉절이" : "예: 돼지갈비"} />
-              </div>
-              <div>
-                <label className="field-label">분류</label>
-                <select
-                  className="select"
-                  value={categorySelectValue}
-                  onChange={(e) => {
-                    if (e.target.value === CUSTOM_CATEGORY) {
-                      setCustomCategory(true);
-                      updateDraft("category", "");
-                    } else {
-                      setCustomCategory(false);
-                      updateDraft("category", e.target.value);
-                    }
-                  }}
-                >
-                  <option value="">분류 선택</option>
-                  {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-                  <option value={CUSTOM_CATEGORY}>+ 직접 입력</option>
-                </select>
-                {customCategory && (
-                  <input
-                    className="input"
-                    style={{ marginTop: 6 }}
-                    value={draft.category}
-                    onChange={(e) => updateDraft("category", e.target.value)}
-                    placeholder="새 분류 이름"
-                    autoFocus
-                  />
-                )}
-              </div>
-              <div>
-                <label className="field-label">{isSide ? "제공 횟수(인분)" : "기준 인분"}</label>
-                <input className="input" inputMode="numeric" value={draft.servings} onChange={(e) => updateDraft("servings", toNumber(e.target.value))} />
-                <div className="muted small" style={{ marginTop: 4 }}>이 재료 분량으로 몇 번 나가는가</div>
-              </div>
-              {isSide ? (
-                <div>
-                  <label className="field-label">판매가</label>
-                  <div className="muted small" style={{ paddingTop: 10 }}>기본 상차림은 판매가가 없습니다. 원가만 계산합니다.</div>
-                </div>
-              ) : (
-                <div>
-                  <label className="field-label">판매가 (1인분)</label>
-                  <input className="input" inputMode="numeric" value={draft.salePrice || ""} onChange={(e) => updateDraft("salePrice", toNumber(e.target.value))} placeholder="원" />
-                </div>
+            <div>
+              <label className="field-label">분류</label>
+              <select
+                className="select"
+                value={categorySelectValue}
+                onChange={(e) => {
+                  if (e.target.value === CUSTOM_CATEGORY) { setCustomCategory(true); updateDraft("category", ""); }
+                  else { setCustomCategory(false); updateDraft("category", e.target.value); }
+                }}
+              >
+                <option value="">분류 선택</option>
+                {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+                <option value={CUSTOM_CATEGORY}>+ 직접 입력</option>
+              </select>
+              {customCategory && (
+                <input className="input" style={{ marginTop: 6 }} value={draft.category} onChange={(e) => updateDraft("category", e.target.value)} placeholder="새 분류 이름" />
               )}
             </div>
-
-            <div className="spread" style={{ marginTop: 18, marginBottom: 10 }}>
-              <h3 style={{ fontSize: 15 }}>재료 원가</h3>
-              <button className="btn btn-soft btn-sm" onClick={addIngredient}>+ 재료 추가</button>
+            <div>
+              <label className="field-label">{isSide ? "제공 횟수" : "기준 인분"}</label>
+              <input className="input" inputMode="numeric" value={draft.servings || ""} onChange={(e) => updateDraft("servings", toNumber(e.target.value))} placeholder="1" />
+              <div className="muted small field-hint">이 재료 분량으로 몇 번 나가는가</div>
             </div>
+            {!isSide && (
+              <div>
+                <label className="field-label">판매가 (1인분)</label>
+                <input className="input" inputMode="numeric" value={draft.salePrice || ""} onChange={(e) => updateDraft("salePrice", toNumber(e.target.value))} placeholder="원" />
+              </div>
+            )}
+          </div>
 
-            <div className="recipe-ingredient-list">
-              {draft.ingredients.map((ingredient) => {
-                const unit = normalizeUnit(ingredient.unit);
-                const missing = !(Number(ingredient.quantity) > 0) || !(Number(ingredient.unitCost) > 0);
-                return (
-                  <div className={`recipe-ingredient-row ${missing ? "incomplete" : ""}`} key={ingredient.id}>
-                    <div>
-                      <label className="field-label">재료명</label>
-                      <input className="input" value={ingredient.name} onChange={(e) => updateIngredient(ingredient.id, "name", e.target.value)} placeholder="재료" />
-                    </div>
+          <div className="spread recipe-section-head">
+            <div className="modal-section-title" style={{ margin: 0 }}>재료 {draft.ingredients.length > 0 ? `${draft.ingredients.length}개` : ""}</div>
+            <button className="btn btn-soft btn-sm" type="button" onClick={addIngredient}>+ 재료 추가</button>
+          </div>
+
+          <div className="ri-list">
+            {draft.ingredients.map((ingredient, index) => {
+              const unit = normalizeUnit(ingredient.unit);
+              const missing = !(Number(ingredient.quantity) > 0) || !(Number(ingredient.unitCost) > 0);
+              const subtotal = (Number(ingredient.quantity) || 0) * (Number(ingredient.unitCost) || 0);
+              return (
+                <div className={`ri-card ${missing ? "incomplete" : ""}`} key={ingredient.id}>
+                  <div className="ri-name-row">
+                    <span className="ri-index">{index + 1}</span>
+                    <input className="input" value={ingredient.name} onChange={(e) => updateIngredient(ingredient.id, "name", e.target.value)} placeholder="재료명" />
+                    <button className="icon-btn ri-remove" type="button" aria-label="재료 삭제" onClick={() => removeIngredient(ingredient.id)}>×</button>
+                  </div>
+                  <div className="ri-grid">
                     <div>
                       <label className="field-label">수량</label>
                       <input className="input" inputMode="decimal" value={ingredient.quantity || ""} onChange={(e) => updateIngredient(ingredient.id, "quantity", toNumber(e.target.value))} placeholder="0" />
@@ -386,191 +349,233 @@ export default function Recipes() {
                       <label className="field-label">단가 (원/{unit})</label>
                       <input className="input" inputMode="decimal" value={ingredient.unitCost || ""} onChange={(e) => updateIngredient(ingredient.id, "unitCost", toNumber(e.target.value))} placeholder="원" />
                     </div>
-                    <div>
-                      <label className="field-label">거래처</label>
-                      <select
-                        className="select"
-                        value={ingredient.vendorId ?? ""}
-                        onChange={(e) => updateIngredient(ingredient.id, "vendorId", e.target.value ? Number(e.target.value) : undefined)}
-                      >
-                        <option value="">미지정</option>
-                        {vendors.map((vendor) => (
-                          <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="recipe-ingredient-cost">
-                      <span className="muted small">소계</span>
-                      <strong>{money.format(Math.round((ingredient.quantity || 0) * (ingredient.unitCost || 0)))}원</strong>
-                      <button className="btn btn-danger btn-sm" onClick={() => removeIngredient(ingredient.id)}>삭제</button>
-                    </div>
-                    {/* 엑셀에서 숫자로 못 옮긴 것은 원문을 남겨 두었다 — 사장님이 보고 채운다 */}
-                    {ingredient.note && (
-                      <div className="recipe-ingredient-note muted small">
-                        {ingredient.note}
-                        <button className="text-button" style={{ marginLeft: 8 }} onClick={() => updateIngredient(ingredient.id, "note", undefined)}>지우기</button>
-                      </div>
-                    )}
                   </div>
-                );
-              })}
-              {draft.ingredients.length === 0 && (
-                <button className="btn btn-outline btn-block" onClick={addIngredient}>재료를 추가해 원가계산을 시작하세요</button>
-              )}
-            </div>
+                  <div className="ri-foot">
+                    <select
+                      className="select ri-vendor"
+                      value={ingredient.vendorId ?? ""}
+                      onChange={(e) => updateIngredient(ingredient.id, "vendorId", e.target.value ? Number(e.target.value) : undefined)}
+                      aria-label="거래처"
+                    >
+                      <option value="">거래처 미지정</option>
+                      {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
+                    </select>
+                    <span className="ri-subtotal">{missing ? <span className="muted">수량·단가 필요</span> : won(subtotal)}</span>
+                  </div>
+                  {/* 엑셀에서 숫자로 못 옮긴 것은 원문을 남겨 두었다 — 보고 채운 뒤 지운다 */}
+                  {ingredient.note && (
+                    <div className="ri-note muted small">
+                      {ingredient.note}
+                      <button className="text-button" type="button" onClick={() => updateIngredient(ingredient.id, "note", undefined)}>지우기</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {draft.ingredients.length === 0 && (
+              <button className="btn btn-outline btn-block" type="button" onClick={addIngredient}>재료를 추가해 원가계산을 시작하세요</button>
+            )}
+          </div>
 
-            <div style={{ marginTop: 14 }}>
-              <label className="field-label">조리 메모</label>
-              <textarea className="textarea" value={draft.memo ?? ""} onChange={(e) => updateDraft("memo", e.target.value)} placeholder="소스 배합, 조리 순서, 보관 팁" />
-            </div>
+          <div style={{ marginTop: 14 }}>
+            <label className="field-label">메모</label>
+            <textarea className="textarea" value={draft.memo ?? ""} onChange={(e) => updateDraft("memo", e.target.value)} placeholder="소스 배합, 조리 순서, 보관 팁" rows={2} />
+          </div>
 
-            <div className="row" style={{ justifyContent: "flex-end", marginTop: 16, flexWrap: "wrap" }}>
-              <button className="btn btn-outline" onClick={resetForm}>취소</button>
-              <button className="btn btn-primary" onClick={saveRecipe}>{editingId ? "수정 저장" : "레시피 등록"}</button>
-            </div>
-          </Card>
+          {error && <p className="recipe-error" role="alert">{error}</p>}
         </div>
 
-        <div className="stack side-panel">
-          <Card title="원가계산 결과" icon="🧮">
-            <div className="pay-line">
-              <span className="k">재료 원가 (전체)</span>
-              <span className="v">{money.format(Math.round(totals.totalCost))}원</span>
+        {/* 원가 요약은 늘 보인다 — 재료를 고치면 여기 숫자가 바로 움직인다 */}
+        <div className="recipe-modal-foot">
+          <div className="recipe-summary">
+            <div>
+              <span className="muted small">{isSide ? "1회 제공 원가" : "1인분 원가"}</span>
+              <strong>{won(totals.perServingCost)}</strong>
             </div>
-            <div className="pay-line total">
-              <span className="k">{isSide ? "1회 제공 원가" : "1인분 원가"}</span>
-              <span className="v">{money.format(Math.round(totals.perServingCost))}원</span>
+            <div>
+              <span className="muted small">재료 전체</span>
+              <strong>{won(totals.totalCost)}</strong>
             </div>
-            {isSide ? (
-              <p className="muted small" style={{ marginTop: 10 }}>
-                기본 상차림은 판매가가 없어 원가율을 내지 않습니다. 1회 제공 원가로 보세요.
-              </p>
-            ) : (
-              <>
-                <div className="pay-line">
-                  <span className="k">판매가</span>
-                  <span className="v">{totals.salePrice ? `${money.format(totals.salePrice)}원` : "—"}</span>
-                </div>
-                <div className={`pay-line total ${totals.costRate !== null && totals.costRate > 40 ? "minus" : ""}`}>
-                  <span className="k">원가율</span>
-                  <span className="v">{costRateText(totals.costRate)}</span>
-                </div>
-                <div className="row" style={{ marginTop: 10, justifyContent: "space-between" }}>
-                  <Badge tone={costTone(totals.costRate)}>
-                    {totals.costRate === null ? "판매가 없음" : totals.costRate <= 30 ? "원가율 좋음" : totals.costRate <= 40 ? "원가율 보통" : "원가율 높음"}
-                  </Badge>
-                  <span className="muted small">30% 이하 좋음 · 40% 넘으면 확인</span>
-                </div>
-              </>
+            {!isSide && (
+              <div>
+                <span className="muted small">원가율</span>
+                <strong className={`recipe-rate ${costTone(totals.costRate)}`}>{costRateText(totals.costRate)}</strong>
+              </div>
             )}
             {totals.incomplete > 0 && (
-              <p className="muted small" style={{ marginTop: 10, color: "var(--red-tx)" }}>
-                수량이나 단가가 빈 재료가 {totals.incomplete}개 있습니다. 채우기 전까지 원가는 실제보다 작습니다.
-              </p>
+              <div className="recipe-summary-warn">수량·단가 빈 재료 {totals.incomplete}개 — 원가가 실제보다 작습니다</div>
             )}
-          </Card>
+          </div>
+          <div className="recipe-modal-actions">
+            {isEditing && onDelete && (
+              <button className="btn btn-danger" type="button" onClick={() => onDelete(draft)}>삭제</button>
+            )}
+            <button className="btn btn-outline" type="button" onClick={onClose}>취소</button>
+            <button className="btn btn-primary" type="button" onClick={save}>{isEditing ? "저장" : "등록"}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ============================================================
+   페이지
+   ============================================================ */
+
+export default function Recipes() {
+  const { recipes, vendors, upsertRecipe, deleteRecipe, showToast } = useStore();
+  const [kind, setKind] = useState<RecipeKind>("menu");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<string>("전체");
+  const [editing, setEditing] = useState<Recipe | null>(null);
+
+  const categories = useMemo(() => {
+    const names = new Set<string>(PRESET_CATEGORIES);
+    recipes.forEach((recipe) => { if (recipe.category) names.add(recipe.category); });
+    return [...names];
+  }, [recipes]);
+
+  const ofKind = useMemo(
+    () => recipes.filter((recipe) => (recipe.kind === "side") === (kind === "side")),
+    [recipes, kind],
+  );
+  const kindCategories = useMemo(() => {
+    const names = new Set<string>();
+    ofKind.forEach((recipe) => { if (recipe.category) names.add(recipe.category); });
+    return [...names];
+  }, [ofKind]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return ofKind
+      .filter((recipe) => category === "전체" || recipe.category === category)
+      .filter((recipe) => !q || [recipe.name, recipe.category, recipe.memo, ...recipe.ingredients.map((ingredient) => ingredient.name)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q)))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [ofKind, category, query]);
+
+  // 평균 원가율은 판매가가 있는 메뉴만으로 낸다 — 0원 메뉴를 넣으면 평균이 거짓말한다
+  const pricedRates = recipes
+    .map((recipe) => recipeCost(recipe).costRate)
+    .filter((rate): rate is number => rate !== null);
+  const averageCostRate = pricedRates.length ? pricedRates.reduce((sum, rate) => sum + rate, 0) / pricedRates.length : null;
+  const menuCount = recipes.filter((recipe) => recipe.kind !== "side").length;
+  const sideCount = recipes.length - menuCount;
+  const incompleteCount = recipes.filter((recipe) => recipeCost(recipe).incomplete > 0).length;
+
+  const openNew = () => setEditing({ ...EMPTY_RECIPE, kind });
+  const closeEditor = () => setEditing(null);
+
+  const handleSave = (recipe: Recipe) => {
+    const isNew = recipe.id <= 0;
+    upsertRecipe({ ...recipe, id: isNew ? nextRecipeId(recipes) : recipe.id });
+    showToast(isNew ? "레시피를 등록했습니다" : "레시피를 저장했습니다");
+    setEditing(null);
+  };
+
+  const handleDelete = (recipe: Recipe) => {
+    if (!window.confirm(`${recipe.name} 레시피를 삭제할까요?`)) return;
+    deleteRecipe(recipe.id);
+    showToast("레시피를 삭제했습니다");
+    setEditing(null);
+  };
+
+  return (
+    <>
+      {/* 제목은 상단바가 이미 «레시피 원가계산»으로 달아 준다 — 여기서는 설명과 버튼만 */}
+      <div className="recipe-head">
+        <p className="muted small">재료비 ÷ 판매가 = 원가율. 카드를 누르면 고칠 수 있습니다.</p>
+        <button className="btn btn-primary" type="button" onClick={openNew}>+ 레시피 등록</button>
+      </div>
+
+      <div className="recipe-kpis">
+        <div className="dash-kpi">
+          <span className="dash-kpi-label">판매 메뉴</span>
+          <strong>{menuCount}<em>개</em></strong>
+          <small>원가율 계산 대상</small>
+        </div>
+        <div className="dash-kpi">
+          <span className="dash-kpi-label">기본 상차림</span>
+          <strong>{sideCount}<em>개</em></strong>
+          <small>판매가 없음 · 원가만</small>
+        </div>
+        <div className={`dash-kpi ${averageCostRate !== null && averageCostRate > 40 ? "warn" : ""}`}>
+          <span className="dash-kpi-label">평균 원가율</span>
+          <strong>{averageCostRate === null ? "—" : <>{averageCostRate.toFixed(1)}<em>%</em></>}</strong>
+          <small>{pricedRates.length ? `판매가 있는 ${pricedRates.length}개 기준` : "판매가를 넣으면 계산됩니다"}</small>
+        </div>
+        <div className={`dash-kpi ${incompleteCount > 0 ? "warn" : ""}`}>
+          <span className="dash-kpi-label">확인 필요</span>
+          <strong>{incompleteCount}<em>개</em></strong>
+          <small>수량·단가 빈 재료 있음</small>
         </div>
       </div>
 
-      <Card
-        title="판매 메뉴"
-        icon="🍖"
-        action={
+      <Card className="recipe-list-card">
+        <div className="recipe-toolbar">
+          <div className="segmented fill recipe-kind-tabs" role="tablist" aria-label="레시피 종류">
+            {(["menu", "side"] as RecipeKind[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                aria-selected={kind === option}
+                className={kind === option ? "on" : ""}
+                onClick={() => { setKind(option); setCategory("전체"); }}
+              >
+                {KIND_LABEL[option]} {option === "menu" ? menuCount : sideCount}
+              </button>
+            ))}
+          </div>
           <input
-            className="input"
-            style={{ width: 240 }}
+            className="input recipe-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="레시피·재료 검색"
+            aria-label="레시피 검색"
           />
-        }
-      >
-        <div className="table-wrap">
-          <table className="table recipe-table">
-            <thead>
-              <tr>
-                <th>레시피</th>
-                <th>분류</th>
-                <th>재료</th>
-                <th className="num">재료 원가</th>
-                <th className="num">1인분</th>
-                <th className="num">판매가</th>
-                <th>원가율</th>
-                <th>관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {menuRecipes.map((recipe) => {
-                const cost = recipeCost(recipe);
-                return (
-                  <tr key={recipe.id}>
-                    <td className="bold">
-                      {recipe.name}
-                      {cost.incomplete > 0 && <div><Badge tone="amber">확인 필요 {cost.incomplete}</Badge></div>}
-                    </td>
-                    <td>{recipe.category || "-"}</td>
-                    <td>{renderIngredientCell(recipe)}</td>
-                    <td className="num">{money.format(Math.round(cost.totalCost))}원</td>
-                    <td className="num">{money.format(Math.round(cost.perServingCost))}원</td>
-                    <td className="num">{cost.salePrice ? `${money.format(cost.salePrice)}원` : <span className="muted">미입력</span>}</td>
-                    <td><Badge tone={costTone(cost.costRate)}>{costRateText(cost.costRate)}</Badge></td>
-                    <td>{renderActions(recipe)}</td>
-                  </tr>
-                );
-              })}
-              {menuRecipes.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="muted" style={{ textAlign: "center", padding: 24 }}>
-                    등록된 판매 메뉴가 없습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        </div>
+
+        {kindCategories.length > 1 && (
+          <div className="recipe-cat-row" role="tablist" aria-label="분류">
+            {["전체", ...kindCategories].map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`chip chip-sm ${category === option ? "on" : ""}`}
+                aria-pressed={category === option}
+                onClick={() => setCategory(option)}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="recipe-cards">
+          {visible.map((recipe) => <RecipeCard key={recipe.id} recipe={recipe} onOpen={setEditing} />)}
+          {visible.length === 0 && (
+            <div className="recipe-empty muted">
+              {query || category !== "전체" ? "조건에 맞는 레시피가 없습니다." : `등록된 ${KIND_LABEL[kind]}이 없습니다.`}
+              <button className="btn btn-outline btn-sm" type="button" onClick={openNew} style={{ marginTop: 10 }}>+ 레시피 등록</button>
+            </div>
+          )}
         </div>
       </Card>
 
-      <Card title="기본 상차림 · 소스" icon="🥗">
-        <div className="table-wrap">
-          <table className="table recipe-table">
-            <thead>
-              <tr>
-                <th>레시피</th>
-                <th>분류</th>
-                <th>재료</th>
-                <th className="num">재료 원가</th>
-                <th className="num">1회 제공</th>
-                <th>관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sideRecipes.map((recipe) => {
-                const cost = recipeCost(recipe);
-                return (
-                  <tr key={recipe.id}>
-                    <td className="bold">
-                      {recipe.name}
-                      {cost.incomplete > 0 && <div><Badge tone="amber">확인 필요 {cost.incomplete}</Badge></div>}
-                    </td>
-                    <td>{recipe.category || "-"}</td>
-                    <td>{renderIngredientCell(recipe)}</td>
-                    <td className="num">{money.format(Math.round(cost.totalCost))}원</td>
-                    <td className="num">{money.format(Math.round(cost.perServingCost))}원</td>
-                    <td>{renderActions(recipe)}</td>
-                  </tr>
-                );
-              })}
-              {sideRecipes.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="muted" style={{ textAlign: "center", padding: 24 }}>
-                    등록된 기본 상차림이 없습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      {editing && (
+        <RecipeEditor
+          key={editing.id || "new"}
+          initial={editing}
+          categories={categories}
+          vendors={vendors}
+          onSave={handleSave}
+          onDelete={editing.id > 0 ? handleDelete : undefined}
+          onClose={closeEditor}
+        />
+      )}
     </>
   );
 }

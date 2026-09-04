@@ -567,7 +567,6 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .table tbody tr.sel td { background: var(--green-50); }
 .table .num { font-variant-numeric: tabular-nums; }
 .vendor-table { min-width: 980px; }
-.recipe-table { min-width: 1040px; }
 
 .list-row {
   display: flex; align-items: center; gap: 12px;
@@ -2226,32 +2225,86 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   background: var(--card-alt);
 }
 
-.recipe-ingredient-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* ============ 레시피 원가 — 카드 목록 + 편집 모달 ============ */
+.recipe-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.recipe-head p { margin: 0; }
+.recipe-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+
+.recipe-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.recipe-kind-tabs { flex: 0 0 auto; width: auto; }
+.recipe-kind-tabs button { padding: 8px 18px; }
+.recipe-search { flex: 1 1 200px; min-width: 0; }
+.recipe-cat-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.chip.chip-sm { padding: 6px 11px; min-height: 32px; font-size: 12.5px; border-radius: 999px; }
+
+.recipe-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 12px; }
+/* 카드는 버튼이다 — 버튼은 내용만큼 넓어지려 하니 칸 너비에 묶어 둔다 */
+.recipe-card {
+  display: flex; flex-direction: column; gap: 8px; text-align: left; width: 100%; min-width: 0;
+  padding: 13px 14px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--card); box-shadow: var(--shadow); cursor: pointer;
+  transition: border-color 0.12s, transform 0.12s;
 }
-.recipe-ingredient-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 1.2fr) 88px 78px 112px minmax(130px, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card-alt);
+.recipe-card:hover { border-color: var(--ink-400); }
+.recipe-card:active { transform: scale(0.995); }
+.recipe-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+.recipe-card-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.recipe-card-title strong { font-size: 15.5px; letter-spacing: -0.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recipe-card-cat { font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
+.recipe-card-rate {
+  flex: 0 0 auto; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
+  padding: 4px 9px; border-radius: 8px; background: var(--gray-bg); color: var(--gray-tx);
 }
-.recipe-ingredient-cost {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  align-items: flex-end;
-  min-width: 88px;
-  font-variant-numeric: tabular-nums;
+.recipe-card-rate.green { background: var(--good-bg); color: var(--good-tx); }
+.recipe-card-rate.amber { background: var(--amber-bg); color: var(--amber-tx); }
+.recipe-card-rate.red { background: var(--red-bg); color: var(--red-tx); }
+.recipe-card-rate.muted { font-size: 12px; font-weight: 700; }
+.recipe-card-nums { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.recipe-card-nums em { font-style: normal; font-weight: 600; font-size: 11.5px; color: var(--text-muted); margin-right: 5px; }
+.recipe-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.recipe-card-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recipe-empty { grid-column: 1 / -1; text-align: center; padding: 28px 12px; }
+
+/* 편집 모달 */
+.recipe-modal { width: min(760px, 100%); min-width: 0; }
+/* 재료가 많으면 본문만 스크롤된다 — flex 자식은 min-height:0 이어야 줄어든다 */
+.recipe-modal .modal-body { min-height: 0; }
+.recipe-modal .modal-head, .recipe-modal-foot { flex-shrink: 0; }
+.recipe-modal-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.recipe-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.recipe-form-wide { grid-column: 1 / -1; }
+.field-hint { margin-top: 4px; }
+.recipe-section-head { margin-top: 4px; }
+.ri-list { display: flex; flex-direction: column; gap: 10px; }
+.ri-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card-alt);
 }
 /* 수량·단가가 빈 줄은 테두리로 알린다 — 원가가 덜 된 것이다 */
-.recipe-ingredient-row.incomplete { border-color: var(--amber-tx, #b78a3d); }
-.recipe-ingredient-note { grid-column: 1 / -1; line-height: 1.5; }
+.ri-card.incomplete { border-color: var(--amber-tx); }
+.ri-name-row { display: flex; align-items: center; gap: 8px; }
+.ri-name-row .input { flex: 1; min-width: 0; font-weight: 700; }
+.ri-index { flex: 0 0 20px; font-size: 12px; font-weight: 700; color: var(--text-muted); text-align: center; font-variant-numeric: tabular-nums; }
+.ri-remove { flex: 0 0 auto; }
+.ri-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px; }
+.ri-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ri-vendor { flex: 0 1 220px; min-width: 0; padding-top: 7px; padding-bottom: 7px; font-size: 12.5px; }
+.ri-subtotal { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ri-note { display: flex; align-items: center; justify-content: space-between; gap: 8px; line-height: 1.5; }
+.recipe-error { margin: 0; color: var(--red-tx); font-weight: 700; font-size: 13px; }
+
+.recipe-modal-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding: 12px 20px 16px; border-top: 1px solid var(--border); background: var(--bg-soft);
+}
+.recipe-summary { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.recipe-summary > div { display: flex; flex-direction: column; gap: 1px; }
+.recipe-summary strong { font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: -0.2px; }
+.recipe-rate.green { color: var(--good-tx); }
+.recipe-rate.amber { color: var(--amber-tx); }
+.recipe-rate.red { color: var(--red-tx); }
+.recipe-summary-warn { flex-basis: 100%; font-size: 12px; font-weight: 700; color: var(--amber-tx); }
+.recipe-modal-actions { display: flex; gap: 8px; margin-left: auto; }
 
 /* ============ Inventory OCR ============ */
 .inventory-category-manager {
@@ -3175,13 +3228,24 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   .order-line-edit .num {
     text-align: left;
   }
-  .recipe-ingredient-row { grid-template-columns: 1fr 1fr; }
-  .recipe-ingredient-cost {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
+  .recipe-head { align-items: stretch; flex-direction: column; gap: 8px; }
+  .recipe-head .btn { width: 100%; min-height: 46px; }
+  .recipe-kpis { grid-template-columns: 1fr 1fr; gap: 9px; }
+  .recipe-kind-tabs { width: 100%; }
+  .recipe-search { flex-basis: 100%; }
+  .recipe-cards { grid-template-columns: 1fr; }
+  .recipe-card-nums { gap: 10px; }
+  .recipe-modal { max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); }
+  .recipe-form-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ri-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ri-grid > div:last-child { grid-column: 1 / -1; }
+  .ri-foot { flex-direction: column; align-items: stretch; }
+  .ri-vendor { flex-basis: auto; }
+  .ri-subtotal { text-align: right; }
+  .recipe-modal-foot { padding-left: 15px; padding-right: 15px; flex-direction: column; align-items: stretch; }
+  .recipe-summary { justify-content: space-between; gap: 12px; }
+  .recipe-modal-actions { margin-left: 0; }
+  .recipe-modal-actions .btn { flex: 1; min-height: 46px; }
   .slot-checks { grid-template-columns: 1fr; }
   .slot-record-title { font-size: 25px; }
   .stat-value { font-size: 20px; }
