@@ -3614,9 +3614,12 @@ exports.geminiChat = onRequest(
  * 오너비스타는 네이버 플레이스플러스로 같은 매장 매출을 이미 받고 있어서,
  * 그것을 읽어 오면 적어도 «그날 얼마 팔았는지»는 안다.
  *
- * **주문 단위가 아니다.** 네이버는 순매출 숫자 하나만 준다 — 주문·메뉴·시간대가
- * 없다. 그래서 `salesOrders` 는 안 건드리고 일 합계만 채운다. 시간대별·메뉴별
- * 화면은 OK포스가 살아나야 다시 그려진다.
+ * **주문 단위가 아니다.** 네이버는 날짜별로 순매출과 결제 건수만 준다 — 주문·시간대가
+ * 없다. 그래서 `salesOrders` 는 안 건드리고 일 합계만 채운다.
+ *
+ * **메뉴 비중은 기간 합계 한 장이다.** 오너비스타가 스마트플레이스 「매출 내 메뉴
+ * 비중」을 같이 넘겨 준다. 날짜별이 아니라 `salesDailySummaries` 에 못 넣고
+ * `salesMenuReports/latest` 한 장으로 둔다.
  */
 const OWNERVISTA_FEED_BASE = "https://ownervista.co.kr/api/partners/pos-sales";
 /** 한 번에 받아올 일수. 늦게 들어온 매출이 있어도 이만큼 되짚어 덮는다. */
@@ -3673,6 +3676,47 @@ async function fetchOwnervistaDailySales(since, until) {
     throw new Error("오너비스타 매출 응답을 읽지 못했습니다.");
   }
   return { status: "ok", body };
+}
+
+/**
+ * 오너비스타가 넘겨 준 메뉴 비중을 우리 모양으로 옮긴다. **없으면 `null`.**
+ *
+ * 옛 오너비스타는 이 칸을 안 보낸다. 그때 빈 목록으로 저장하면 화면이 «메뉴가
+ * 하나도 안 팔렸다»로 그린다 — 없는 것과 0 은 다르다. 이상한 줄은 버리고,
+ * 남는 줄이 없으면 통째로 없는 것으로 본다.
+ */
+function normalizeOwnervistaMenuReport(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.menus)) return null;
+  const DAY = /^\d{4}-\d{2}-\d{2}$/;
+  if (typeof raw.startDate !== "string" || !DAY.test(raw.startDate)) return null;
+  if (typeof raw.endDate !== "string" || !DAY.test(raw.endDate)) return null;
+  const menus = raw.menus
+    .map((menu) => {
+      if (!menu || typeof menu !== "object") return null;
+      const menuName = typeof menu.menuName === "string" ? menu.menuName.trim() : "";
+      const sales = Math.round(Number(menu.sales));
+      if (!menuName || !Number.isFinite(sales) || sales <= 0) return null;
+      const share = Number(menu.sharePercent);
+      return {
+        menuId: typeof menu.menuId === "string" && menu.menuId ? menu.menuId : menuName,
+        menuName,
+        categoryName: typeof menu.categoryName === "string" && menu.categoryName ? menu.categoryName : null,
+        sales,
+        // 비중은 네이버 값 그대로다. 메뉴 합계로 다시 나누면 화면 숫자와 안 맞는다.
+        sharePercent: Number.isFinite(share) ? Math.min(100, Math.max(0, share)) : 0,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.sales - a.sales)
+    .slice(0, 100);
+  if (menus.length === 0) return null;
+  return {
+    startDate: raw.startDate,
+    endDate: raw.endDate,
+    overallSales: Math.max(0, Math.round(Number(raw.overallSales)) || 0),
+    collectedAt: typeof raw.collectedAt === "string" ? raw.collectedAt : null,
+    menus,
+  };
 }
 
 /**
@@ -3742,17 +3786,38 @@ async function syncOwnervistaSalesCore(mode = "scheduled", requestedBy = "system
     }
 
     /*
+      **메뉴 비중은 한 장짜리 최신본이다.** 기간 합계라 날짜 문서에 못 넣는다.
+
+      **안 왔으면 지우지 않는다.** 옛 오너비스타이거나 저쪽 메뉴 조회만 실패한
+      것인데, 지우면 어제까지 보이던 것이 이유 없이 사라진다. 대신 언제 받은
+      것인지를 같이 적어 화면이 오래된 것을 오래됐다고 말한다.
+    */
+    const menuReport = normalizeOwnervistaMenuReport(body.menuReport);
+    if (menuReport) {
+      await storeDoc("salesMenuReports", "latest").set({
+        id: "latest",
+        ...menuReport,
+        source: "ownervista",
+        sourceLabel: typeof body.sourceLabel === "string" ? body.sourceLabel : "오너비스타",
+        syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    /*
       **어디까지가 확정인지 같이 남긴다.** 오늘 것은 장사가 안 끝났고 오너비스타
       수집도 아직이라 모자라다. 그것을 «매출 급감»으로 읽으면 안 된다.
     */
     const through = typeof body.dataThroughDate === "string" ? body.dataThroughDate : null;
-    const message = `${written}일치를 받았습니다${through ? ` (${through}까지 확정)` : ""}.`;
+    const message = `${written}일치를 받았습니다${through ? ` (${through}까지 확정)` : ""}`
+      + (menuReport ? ` · 메뉴 비중 ${menuReport.menus.length}개 (${menuReport.startDate}~${menuReport.endDate})` : "")
+      + ".";
     await runRef.set({
       status: "success",
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
       importedCount: written,
       updatedCount: 0,
       dataThroughDate: through,
+      menuCount: menuReport ? menuReport.menus.length : 0,
       message,
     }, { merge: true });
     return { ok: true, runId, message };

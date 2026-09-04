@@ -356,6 +356,46 @@ export interface SalesDailySummary {
   sourceLabel?: string | null;
 }
 
+/** 매출 내 메뉴 한 줄. 네이버 스마트플레이스 「매출 내 메뉴 비중」이 원본이다. */
+export interface SalesMenuShare {
+  /** 네이버가 준 메뉴 id. 이름이 바뀌어도 같은 메뉴를 이을 수 있는 유일한 값이다. */
+  menuId: string;
+  menuName: string;
+  categoryName: string | null;
+  /** 이 기간 매출(원). */
+  sales: number;
+  /**
+   * 전체 매출에서 차지하는 비중(%). **네이버가 준 값 그대로다.**
+   *
+   * 메뉴 합계로 다시 나누면 안 된다 — 전체 매출에는 메뉴로 안 잡히는 것이 섞여
+   * 있어서, 다시 나누면 64.5% 가 89% 로 부풀어 오른다.
+   */
+  sharePercent: number;
+}
+
+/**
+ * 매출 내 메뉴 비중 최신본. **한 장뿐이다.**
+ *
+ * 오너비스타가 네이버 플레이스플러스에서 받아 넘겨 준다. **기간 합계다. 날짜별이
+ * 아니다** — 그래서 `SalesDailySummary` 에 끼우지 않고 따로 둔다. 화면이 묻는 것은
+ * 「요즘 무엇이 많이 팔렸나」라 합계로 충분하다.
+ */
+export interface SalesMenuReport {
+  id: string;
+  startDate: string;
+  endDate: string;
+  /** 그 기간 전체 순매출. 메뉴 합계와 다를 수 있다 — 메뉴로 안 잡힌 매출이 있다. */
+  overallSales: number;
+  /** 많이 판 순서. */
+  menus: SalesMenuShare[];
+  /** 오너비스타가 네이버에서 받은 때. 오래된 것은 오래됐다고 말해야 한다. */
+  collectedAt?: string;
+  /** 우리가 오너비스타에서 받은 때. */
+  syncedAt?: string;
+  source?: string | null;
+  sourceLabel?: string | null;
+}
+
 export interface SalesSyncRun {
   id: string;
   startedAt: string;

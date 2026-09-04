@@ -3735,6 +3735,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 }
 .pos-detail-dow { margin-left: 6px; font-size: 11.5px; color: var(--text-muted); }
 .pos-detail-dow.weekend { color: var(--text-sub); font-weight: 700; }
+/* 매출 내 메뉴 비중 */
+.pos-menu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pos-menu-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
+.pos-menu-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13.5px; font-weight: 700; }
+.pos-menu-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-menu-rank { flex: 0 0 auto; width: 18px; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pos-menu-cat { flex: 0 0 auto; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.pos-menu-share { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.2px; }
+.pos-menu-bar { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: var(--card-alt, #f1f1f1); overflow: hidden; }
+.pos-menu-bar i { display: block; height: 100%; width: var(--w, 0%); border-radius: 999px; background: var(--ink-300); transition: width 0.25s ease; }
+.pos-menu-row:first-child .pos-menu-bar i { background: var(--ink-900); }
+.pos-menu-won { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pos-menu-foot { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.pos-menu-foot p { margin: 0; }
+.pos-menu-stale { color: var(--red-tx); }
 .pos-note { margin: 0; line-height: 1.6; }
 .pos-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .pos-empty p { margin: 0; }

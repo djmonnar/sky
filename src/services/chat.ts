@@ -45,6 +45,15 @@ export interface SalesReportPayload {
   previous: { start: string; end: string; total: number; dataDays: number; changePercent: number | null };
   weekdayAverages: { dow: string; average: number; days: number }[];
   daily: { businessDate: string; dow: string; amount: number; orderCount?: number }[];
+  /** 매출 내 메뉴 비중. 물어본 기간과 무관한 최근 기간 합계 — 있을 때만 */
+  menuShare?: {
+    startDate: string;
+    endDate: string;
+    overallSales: number;
+    unlistedSales: number;
+    menus: { menuName: string; categoryName: string | null; sales: number; sharePercent: number }[];
+    note: string;
+  };
 }
 
 export type ChatBlock = { type: "salesReport"; payload: SalesReportPayload };

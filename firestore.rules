@@ -412,6 +412,11 @@ service cloud.firestore {
         allow read, write: if canManageSales(storeId);
       }
 
+      // 매출 내 메뉴 비중 최신본 (오너비스타 → 함수가 Admin SDK 로 씀). 매출을 보는 사람이 읽는다.
+      match /salesMenuReports/{id} {
+        allow read, write: if canManageSales(storeId);
+      }
+
       match /salesSyncRuns/{id} {
         allow read, write: if canManageSales(storeId);
       }

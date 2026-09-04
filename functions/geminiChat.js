@@ -133,8 +133,11 @@ function createGeminiChat(deps) {
 
   /**
    * POS 매출 보고서 재료. 이 매장의 매출 정본은 네이버 플레이스플러스(오너비스타 수집)
-   * 하나이고, 하루에 순매출 숫자 하나만 온다 — 그래서 여기서 주는 것도 날짜별 금액과
-   * 그것을 묶은 합계·평균·최고일·직전 기간 비교다. 건수·결제수단·메뉴별은 없다.
+   * 하나이고, 날짜별로는 순매출(과 아는 날은 결제 건수)만 온다 — 그래서 여기서 주는
+   * 것도 날짜별 금액과 그것을 묶은 합계·평균·최고일·직전 기간 비교다. 결제수단·시간대는 없다.
+   *
+   * 메뉴 비중은 **기간 합계 한 장**으로 따로 온다(`salesMenuReports/latest`). 물어본
+   * 기간과 다를 수 있어 그 기간을 같이 실어 보낸다 — 모델이 «이번 주 메뉴»로 말하면 안 된다.
    */
   async function toolSalesReport(args) {
     const endDate = resolveDate(args.endDate || args.startDate || "오늘");
@@ -191,6 +194,39 @@ function createGeminiChat(deps) {
       return text > acc ? text : acc;
     }, "");
 
+    let menuShare = null;
+    try {
+      const menuDoc = await storeDoc("salesMenuReports", "latest").get();
+      const menuData = menuDoc && menuDoc.exists ? menuDoc.data() : null;
+      const menus = menuData && Array.isArray(menuData.menus)
+        ? menuData.menus
+          .filter((menu) => menu && typeof menu.menuName === "string" && Number(menu.sales) > 0)
+          .sort((a, b) => Number(b.sales) - Number(a.sales))
+          .slice(0, 10)
+          .map((menu) => ({
+            menuName: menu.menuName,
+            categoryName: typeof menu.categoryName === "string" ? menu.categoryName : null,
+            sales: Math.round(Number(menu.sales)),
+            sharePercent: Number(menu.sharePercent) || 0,
+          }))
+        : [];
+      if (menus.length > 0) {
+        const listed = menus.reduce((acc, menu) => acc + menu.sales, 0);
+        const overall = Math.max(0, Number(menuData.overallSales) || 0);
+        menuShare = {
+          startDate: menuData.startDate,
+          endDate: menuData.endDate,
+          overallSales: overall,
+          unlistedSales: Math.max(0, overall - listed),
+          menus,
+          note: "이 기간 합계이며 위에서 물어본 기간과 다를 수 있다. 비중(%)은 네이버가 준 값 그대로라 합이 100이 아니다 — 메뉴로 안 잡힌 매출이 있다.",
+        };
+      }
+    } catch (error) {
+      // 메뉴 비중을 못 읽어도 매출 보고서는 나간다 — 새 칸 하나 때문에 있던 답이 죽으면 안 된다.
+      menuShare = null;
+    }
+
     return {
       source: "네이버 플레이스플러스 POS 매출 (오너비스타에서 매일 수집)",
       rangeStart,
@@ -223,9 +259,11 @@ function createGeminiChat(deps) {
         ...(typeof row.orderCount === "number" ? { orderCount: row.orderCount } : {}),
       })),
       latestSyncedAt,
+      ...(menuShare ? { menuShare } : {}),
       dataNote: rows.length === 0
         ? "해당 기간에 받아온 POS 매출이 없습니다. 매출·매입 화면의 「지금 동기화」를 눌러보라고 안내하세요."
-        : "카드 매출과 다른 숫자입니다(현금·계좌이체 포함, 아직 정산 안 된 것 포함). 건수·결제수단·메뉴별은 네이버가 주지 않아 없습니다.",
+        : "카드 매출과 다른 숫자입니다(현금·계좌이체 포함, 아직 정산 안 된 것 포함). 결제수단·시간대별은 네이버가 주지 않아 없습니다."
+          + (menuShare ? " 메뉴 비중(menuShare)은 위 기간과 별개인 기간 합계입니다." : " 메뉴 비중은 아직 받은 것이 없습니다."),
     };
   }
 
@@ -567,7 +605,7 @@ function createGeminiChat(deps) {
       declaration: {
         name: "sales_report",
         description:
-          "POS 매출(네이버 플레이스플러스 일 매출)을 기간으로 집계한다. 기간 합계, 일평균, 최고·최저 매출일, 요일별 평균, 직전 같은 길이 기간 대비 증감률, 일자별 금액을 반환한다. 매출 보고서·매출 정리·매출 비교 요청은 이 도구를 쓴다. 건수·결제수단·메뉴별은 제공되지 않는다. 하루치만 필요하면 startDate와 endDate를 같게 준다.",
+          "POS 매출(네이버 플레이스플러스 일 매출)을 기간으로 집계한다. 기간 합계, 일평균, 최고·최저 매출일, 요일별 평균, 직전 같은 길이 기간 대비 증감률, 일자별 금액을 반환한다. 매출 보고서·매출 정리·매출 비교·잘 팔리는 메뉴 요청은 이 도구를 쓴다. 메뉴 비중(menuShare)은 물어본 기간과 무관한 최근 기간 합계 한 장으로 같이 온다. 결제수단·시간대별은 제공되지 않는다. 하루치만 필요하면 startDate와 endDate를 같게 준다.",
         parameters: {
           type: "OBJECT",
           properties: {
@@ -721,7 +759,8 @@ function createGeminiChat(deps) {
       "- 등록/수정 도구는 즉시 저장되지 않고 사용자 확인 카드로 표시됩니다. 도구를 부른 뒤에는 '확인 카드를 띄웠으니 확인해달라'는 취지로 짧게 안내하세요.",
       "- 등록에 필요한 항목이 빠졌으면 도구를 부르지 말고 먼저 사용자에게 되물으세요.",
       "- 금액은 원 단위로 천 단위 쉼표를 넣어 표기하세요. (예: 1,250,000원)",
-      "- 매출은 네이버 플레이스플러스 POS 일 매출입니다(sales_report). 보고서를 요청받으면 기간 합계 → 직전 기간 대비 증감 → 일평균 → 최고·최저일 → 요일 경향 순으로 짧게 정리하고, 건수·메뉴별은 없다고 분명히 말하세요. 데이터 없는 날과 아직 오지 않은 날은 구분해서 말하세요.",
+      "- 매출은 네이버 플레이스플러스 POS 일 매출입니다(sales_report). 보고서를 요청받으면 기간 합계 → 직전 기간 대비 증감 → 일평균 → 최고·최저일 → 요일 경향 순으로 짧게 정리하세요. 결제수단·시간대별은 없다고 분명히 말하세요. 데이터 없는 날과 아직 오지 않은 날은 구분해서 말하세요.",
+      "- 메뉴 비중은 sales_report 결과의 menuShare 에만 있습니다. 그것은 물어본 기간이 아니라 menuShare.startDate~endDate 기간의 합계이므로 반드시 그 기간을 밝히고 말하세요. 없으면 아직 받은 메뉴 비중이 없다고 하세요. 비중(%)은 네이버 값 그대로 쓰고 다시 계산하지 마세요.",
       "- 전화번호는 개인정보 보호를 위해 가운데 자리가 가려진 채로 전달됩니다. 가려진 숫자를 임의로 채우지 마세요.",
       "- 목록이 길면 표 대신 핵심만 간추리고, 필요하면 더 볼지 물어보세요.",
       actor.role === "staff"
