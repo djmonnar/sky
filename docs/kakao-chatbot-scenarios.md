@@ -26,29 +26,36 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill?secret={KAK
 ## 챗봇 사용자 등록
 
 카카오 요청은 Firebase Auth 로그인 상태가 아니므로 챗봇 사용자는 별도 등록이 필요합니다.
-처음 챗봇을 호출하면 응답으로 `botUserKey`가 표시됩니다.
+처음 챗봇을 호출하면 응답으로 `botUserKey`(식별키)가 표시됩니다.
 
-Firestore에 아래 문서를 만듭니다.
+등록은 **대시보드 → 관리자 모드(비밀번호 확인) → 💬 카카오 챗봇 탭**에서 합니다.
+관리자(admin) 계정만 이 탭을 쓸 수 있고, Firestore 규칙도 `chatbotUsers` 컬렉션을 admin 에게만 열어 둡니다.
+
+1. 직원이 챗봇에 아무 말이나 보내 식별키를 받습니다.
+2. 관리자가 카카오 챗봇 탭에서 식별키, 이름, 역할을 넣고 등록합니다. 직원을 연결하면 본인 근무표 조회가 됩니다.
+3. 직원이 다시 말을 걸면 바로 권한이 적용됩니다.
+4. 잠시 막으려면 "중지", 완전히 빼려면 "삭제"를 누릅니다. 삭제하면 다시 식별키를 받아 등록해야 합니다.
+
+화면이 만드는 문서는 아래와 같습니다. 콘솔에서 직접 만들어도 같은 구조면 동작합니다.
 
 ```text
 stores/haneulttang/chatbotUsers/{botUserKey}
 ```
-
-예시:
 
 ```json
 {
   "name": "정하늘",
   "role": "admin",
   "employeeId": 1,
-  "active": true
+  "active": true,
+  "memo": ""
 }
 ```
 
 권한:
 
 - `admin`: 전체 기능
-- `manager`: 예약, 근무표, 직원 목록, 공지/전달 관리
+- `manager`: 예약, 근무표, 직원 목록, 공지/전달 관리, 재고·발주 사진 업로드
 - `staff`: 예약 조회/등록/상태 변경, 본인 근무표 조회, 전달사항 등록
 
 ## 추천 구성
@@ -180,6 +187,5 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill
 3. "자유 명령" 블록 또는 위 표의 업무별 블록을 만듭니다.
 4. 챗봇에서 첫 메시지를 보냅니다.
 5. 응답에 표시되는 `botUserKey`를 확인합니다.
-6. Firestore `stores/haneulttang/chatbotUsers/{botUserKey}` 문서를 생성합니다.
-7. 역할을 `admin`, `manager`, `staff` 중 하나로 넣고 `active: true`로 저장합니다.
-8. 다시 챗봇을 호출해 권한별 기능을 테스트합니다.
+6. 대시보드 관리자 모드 → 💬 카카오 챗봇 탭에서 그 키와 이름, 역할(`admin`/`manager`/`staff`)을 등록합니다.
+7. 다시 챗봇을 호출해 권한별 기능을 테스트합니다.

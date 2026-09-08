@@ -25,7 +25,7 @@ import type {
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
-  SettlementMethod, SettlementStatus, ManagerPermissions,
+  SettlementMethod, SettlementStatus, ManagerPermissions, ChatbotUser,
 } from "../data/types";
 import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
@@ -706,6 +706,25 @@ export function subscribeManagerPermissions(cb: (v: ManagerPermissions) => void,
   );
 }
 
+/** 카카오 챗봇 사용자 (stores/{id}/chatbotUsers). 규칙상 admin 만 읽고 쓸 수 있다. */
+export function subscribeChatbotUsers(cb: (v: ChatbotUser[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "chatbotUsers",
+    (d, id) => ({
+      id,
+      name: String(d.name ?? ""),
+      role: (["admin", "manager", "staff"].includes(String(d.role)) ? d.role : "staff") as Role,
+      employeeId: d.employeeId !== undefined && d.employeeId !== null && Number(d.employeeId) > 0
+        ? Number(d.employeeId)
+        : undefined,
+      active: d.active !== false,
+      memo: d.memo ? String(d.memo) : undefined,
+    }),
+    (items) => cb(items.sort((a, b) => a.name.localeCompare(b.name, "ko"))),
+    onError
+  );
+}
+
 /* ---------- 쓰기 ---------- */
 
 export async function fsUpsertReservation(r: Reservation): Promise<void> {
@@ -1024,6 +1043,33 @@ export async function fsSetManagerPermissions(next: ManagerPermissions): Promise
     },
     { merge: true }
   );
+}
+
+/** 카카오 식별키를 문서 ID 로 쓸 수 있게 정리한다. functions/index.js 의 getChatUser 와 같은 규칙. */
+export function chatbotUserDocId(botUserKey: string): string {
+  return botUserKey.trim().replace(/\//g, "_");
+}
+
+export async function fsUpsertChatbotUser(user: ChatbotUser): Promise<void> {
+  const id = chatbotUserDocId(user.id);
+  if (!id) throw new Error("카카오 식별키가 비어 있습니다.");
+  const payload: Record<string, unknown> = {
+    name: user.name.trim(),
+    role: user.role,
+    active: user.active,
+    employeeId: user.employeeId && user.employeeId > 0 ? user.employeeId : 0,
+    memo: user.memo?.trim() ?? "",
+    updatedAt: serverTimestamp(),
+    updatedBy: requireAuth().currentUser?.uid ?? "",
+  };
+  const ref = doc(col("chatbotUsers"), id);
+  const existing = await getDoc(ref);
+  if (!existing.exists()) payload.createdAt = serverTimestamp();
+  await setDoc(ref, payload, { merge: true });
+}
+
+export async function fsDeleteChatbotUser(id: string): Promise<void> {
+  await deleteDoc(doc(col("chatbotUsers"), chatbotUserDocId(id)));
 }
 
 export async function fsUpsertNotice(n: Notice): Promise<void> {

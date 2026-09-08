@@ -7,6 +7,16 @@ export type ShiftPeriod = "morning" | "afternoon";
 export type Department = "hall" | "kitchen";
 export type WorkDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
+/** 카카오 챗봇 사용자. 문서 ID = 카카오 botUserKey (슬래시는 _ 로 치환). */
+export interface ChatbotUser {
+  id: string;
+  name: string;
+  role: Role;
+  employeeId?: number;
+  active: boolean;
+  memo?: string;
+}
+
 export interface WeeklyWorkDay {
   useDefault?: boolean;
   off?: boolean;
