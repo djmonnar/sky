@@ -1072,11 +1072,15 @@ function classify(body) {
     "recipe.create",
     "recipe.update",
     "recipe.delete",
+    "me.info",
     "help",
   ]);
   if (explicitActions.has(requestedAction)) return requestedAction;
 
   const text = fullText(body).toLowerCase();
+  // 등록된 사람도 자기 식별키를 볼 수 있어야 한다 — 관리자가 대시보드에서 누가 누구인지 가릴 때 쓴다.
+  // 「안내 정보」처럼 앞 글자에 붙은 «내» 는 안 잡히게 앞을 문장 시작이나 공백으로 묶는다.
+  if (/(^|\s)(내\s*(식별키|키|정보|계정)|내가\s*누구|나\s*누구)/.test(text)) return "me.info";
   if (/도움|메뉴|help|시작/.test(text)) return "help";
   if (/재고\s*(확인|입고|ocr|사진|촬영)/.test(text)) return "inventory.ocr.start";
   if (/발주\s*(확인|입고|ocr|사진|촬영)/.test(text)) return "purchase.ocr.start";
@@ -2704,6 +2708,26 @@ async function syncOkposSalesCore(mode = "scheduled", requestedBy = "system") {
   }
 }
 
+/**
+ * 「내 정보」 — 자기 식별키를 그대로 보여 준다.
+ *
+ * 등록 안내는 미등록일 때만 나오니, 한 번 등록되면 자기 키를 다시 볼 길이 없었다.
+ * 관리자 화면에 같은 이름이 여럿 뜨면 어느 줄이 누구인지 가릴 수가 없다.
+ * 자기 키는 본인에게만 나가므로 남의 정보가 새지 않는다.
+ */
+function handleMyInfo(body, chatUser) {
+  const identity = getIdentity(body);
+  return textResponse([
+    "내 챗봇 정보",
+    `이름: ${chatUser.name}`,
+    `권한: ${ROLE_LABEL[chatUser.role] ?? chatUser.role}`,
+    chatUser.employeeId ? `직원번호: ${chatUser.employeeId}` : "직원 연결: 안 됨",
+    "",
+    "식별키(관리자에게 전달하면 이름을 고쳐 줍니다):",
+    identity.botUserKey || chatUser.id,
+  ].join("\n"), ["오늘 현황", "오늘 예약", "도움말"]);
+}
+
 async function routeAction(action, body, chatUser) {
   switch (action) {
     case "dashboard": return handleDashboard();
@@ -2743,6 +2767,7 @@ async function routeAction(action, body, chatUser) {
     case "recipe.create": return handleRecipeWrite(body, chatUser, "create");
     case "recipe.update": return handleRecipeWrite(body, chatUser, "update");
     case "recipe.delete": return handleRecipeWrite(body, chatUser, "delete");
+    case "me.info": return handleMyInfo(body, chatUser);
     case "help":
     default:
       return textResponse([
@@ -2761,6 +2786,7 @@ async function routeAction(action, body, chatUser) {
         "재고확인 / 발주확인: 사진 OCR 후 확인하면 재고와 정산에 반영",
         "거래처 목록 / 거래처 등록 / 거래처 수정 / 거래처 삭제",
         "레시피 목록 / 레시피 등록 / 레시피 수정 / 레시피 삭제",
+        "내 정보: 내 이름·권한·식별키 확인",
       ].join("\n"), ["오늘 현황", "오늘 예약", "오늘 근무표"]);
   }
 }
