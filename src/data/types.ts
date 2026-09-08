@@ -15,6 +15,9 @@ export interface ChatbotUser {
   employeeId?: number;
   active: boolean;
   memo?: string;
+  /** 표시용 등록/수정 시각. 같은 이름이 여럿일 때 누가 언제 등록됐는지 가른다. */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface WeeklyWorkDay {
