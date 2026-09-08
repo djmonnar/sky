@@ -719,8 +719,15 @@ export function subscribeChatbotUsers(cb: (v: ChatbotUser[]) => void, onError: E
         : undefined,
       active: d.active !== false,
       memo: d.memo ? String(d.memo) : undefined,
+      createdAt: asDisplayDate(d.createdAt),
+      updatedAt: asDisplayDate(d.updatedAt),
     }),
-    (items) => cb(items.sort((a, b) => a.name.localeCompare(b.name, "ko"))),
+    // 이름이 같은 계정이 흔해서(한 사람이 기기·채널마다 키를 받는다) 등록순을 2차 기준으로 둔다.
+    (items) => cb(items.sort((a, b) =>
+      a.name.localeCompare(b.name, "ko")
+      || (a.createdAt ?? "").localeCompare(b.createdAt ?? "")
+      || a.id.localeCompare(b.id)
+    )),
     onError
   );
 }

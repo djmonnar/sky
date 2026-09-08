@@ -83,7 +83,31 @@ export default function ChatbotUsersPanel() {
     () => [...employees].sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [employees]
   );
-  const employeeName = (id?: number) => (id ? activeEmployees.find((e) => e.id === id)?.name ?? employees.find((e) => e.id === id)?.name ?? `#${id}` : null);
+  /** 연결된 직원 이름. 직원 명부에 없는 번호면 그렇게 말한다 — 예전에 콘솔에서 손으로 넣은 번호가 남아 있다. */
+  const employeeName = (id?: number) => {
+    if (!id) return null;
+    const found = employees.find((e) => e.id === id);
+    return found ? found.name : `직원 명부에 없음 (#${id})`;
+  };
+
+  /** 같은 이름이 둘 이상이면 이름만으로는 못 가른다 — 화면에서 따로 알려 준다. */
+  const duplicatedNames = useMemo(() => {
+    const counted = new Map<string, number>();
+    users.forEach((user) => {
+      const key = user.name.trim();
+      counted.set(key, (counted.get(key) ?? 0) + 1);
+    });
+    return new Set([...counted.entries()].filter(([, count]) => count > 1).map(([name]) => name));
+  }, [users]);
+
+  const copyKey = async (key: string) => {
+    try {
+      await navigator.clipboard.writeText(key);
+      showToast("식별키를 복사했습니다.");
+    } catch {
+      showToast("복사하지 못했습니다. 키를 길게 눌러 직접 복사해주세요.");
+    }
+  };
 
   const normalizedKey = chatbotUserDocId(draft.key);
   const duplicate = !editingId && users.some((user) => user.id === normalizedKey);
@@ -209,7 +233,7 @@ export default function ChatbotUsersPanel() {
             <input
               className="input"
               value={draft.key}
-              disabled={Boolean(editingId)}
+              readOnly={Boolean(editingId)}
               onChange={(e) => updateDraft("key", e.target.value)}
               placeholder="챗봇이 알려 준 키를 그대로 붙여넣기"
               spellCheck={false}
@@ -280,6 +304,7 @@ export default function ChatbotUsersPanel() {
                   <th>역할</th>
                   <th>연결 직원</th>
                   <th>식별키</th>
+                  <th>등록일</th>
                   <th>상태</th>
                   <th style={{ textAlign: "right" }}>관리</th>
                 </tr>
@@ -289,11 +314,29 @@ export default function ChatbotUsersPanel() {
                   <tr key={user.id} style={{ opacity: user.active ? 1 : 0.6 }}>
                     <td>
                       <strong>{user.name || "(이름 없음)"}</strong>
+                      {duplicatedNames.has(user.name.trim()) && (
+                        <div className="small" style={{ color: "var(--amber-tx)" }}>
+                          같은 이름이 여럿입니다. 메모로 구분해주세요.
+                        </div>
+                      )}
                       {user.memo && <div className="muted small">{user.memo}</div>}
                     </td>
                     <td><Badge tone={roleTone(user.role)}>{roleLabel(user.role)}</Badge></td>
                     <td>{employeeName(user.employeeId) ?? <span className="muted">-</span>}</td>
-                    <td title={user.id}><code style={{ fontSize: 12 }}>{maskKey(user.id)}</code></td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ fontFamily: "monospace", fontSize: 11.5, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", display: "block" }}
+                        title={`${user.id}\n(누르면 전체가 복사됩니다)`}
+                        onClick={() => void copyKey(user.id)}
+                      >
+                        {maskKey(user.id)} 📋
+                      </button>
+                    </td>
+                    <td className="muted small" style={{ whiteSpace: "nowrap" }}>
+                      {user.createdAt || <span className="muted">-</span>}
+                    </td>
                     <td>{user.active ? <Badge tone="green">사용 중</Badge> : <Badge tone="red">중지</Badge>}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <button className="btn btn-outline btn-sm" onClick={() => startEdit(user)}>수정</button>{" "}
