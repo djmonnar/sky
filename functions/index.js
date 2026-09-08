@@ -2968,8 +2968,8 @@ exports.kakaoSkill = onRequest({ timeoutSeconds: 120, memory: "1GiB" }, async (r
         "관리자에게 아래 식별키를 전달해주세요.",
         `키: ${identity.botUserKey || "(식별키 없음)"}`,
         "",
-        `Firebase 경로: stores/${STORE_ID}/chatbotUsers/{키}`,
-        "필드 예시: name, role(admin/manager/staff), employeeId, active:true",
+        "관리자는 대시보드 → 관리자 모드 → 💬 카카오 챗봇 탭에서",
+        "이 키와 이름·역할을 등록하면 바로 사용할 수 있습니다.",
       ].join("\n")));
       return;
     }

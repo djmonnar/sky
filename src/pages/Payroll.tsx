@@ -26,8 +26,9 @@ import {
   MANAGER_PERMISSION_OPTIONS,
   normalizeManagerPermissions,
 } from "../config/managerPermissions";
+import ChatbotUsersPanel from "../components/ChatbotUsersPanel";
 
-type AdminTab = "schedule" | "payroll" | "permissions";
+type AdminTab = "schedule" | "payroll" | "permissions" | "chatbot";
 type PayFilter = "all" | "fullTime" | "partTime";
 
 interface PayrollViewRow {
@@ -1055,7 +1056,7 @@ export default function Payroll() {
       <div className="admin-mode-head">
         <div>
           <h2>관리자 모드</h2>
-          <p>재무 일정표, 급여 관리처럼 민감한 관리자 업무를 한곳에서 처리합니다.</p>
+          <p>재무 일정표, 급여, 매니저 권한, 카카오 챗봇 사용자처럼 민감한 관리자 업무를 한곳에서 처리합니다.</p>
         </div>
         <div className="admin-mode-tabs" role="tablist" aria-label="관리자 모드">
           <button className={activeTab === "schedule" ? "on" : ""} onClick={() => setActiveTab("schedule")}>
@@ -1067,6 +1068,9 @@ export default function Payroll() {
           <button className={activeTab === "permissions" ? "on" : ""} onClick={() => setActiveTab("permissions")}>
             🛡️ 매니저 권한
           </button>
+          <button className={activeTab === "chatbot" ? "on" : ""} onClick={() => setActiveTab("chatbot")}>
+            💬 카카오 챗봇
+          </button>
         </div>
         <button className="btn btn-outline" onClick={() => setUnlocked(false)}>
           🔒 잠그기
@@ -1076,7 +1080,9 @@ export default function Payroll() {
         ? renderSchedulePanel()
         : activeTab === "permissions"
           ? renderPermissionsPanel()
-          : renderPayrollPanel()}
+          : activeTab === "chatbot"
+            ? <ChatbotUsersPanel />
+            : renderPayrollPanel()}
     </div>
   );
 }
