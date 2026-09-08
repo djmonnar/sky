@@ -1038,6 +1038,15 @@ function classify(body) {
   const quick = parseQuickReservation(utteranceOf(body));
   if (quick.ok) return quick.cancel ? "reservation.quickCancel" : "reservation.quickCreate";
 
+  const text = fullText(body).toLowerCase();
+
+  /*
+    「내 정보」도 고정 action 보다 앞이다. 자유 발화 블록이 action=dashboard 를 달고 있으면
+    무엇을 적어도 오늘 현황이 돌아와서, 자기 식별키를 볼 방법이 아예 없어진다.
+    「안내 정보」처럼 앞 글자에 붙은 «내» 는 안 잡히게 앞을 문장 시작이나 공백으로 묶는다.
+  */
+  if (/(^|\s)(내\s*(식별키|키|정보|계정)|내가\s*누구|나\s*누구)/.test(text)) return "me.info";
+
   const requestedAction = paramOf(body, ["action", "작업", "command", "명령"]).toLowerCase();
   const explicitActions = new Set([
     "dashboard",
@@ -1077,10 +1086,6 @@ function classify(body) {
   ]);
   if (explicitActions.has(requestedAction)) return requestedAction;
 
-  const text = fullText(body).toLowerCase();
-  // 등록된 사람도 자기 식별키를 볼 수 있어야 한다 — 관리자가 대시보드에서 누가 누구인지 가릴 때 쓴다.
-  // 「안내 정보」처럼 앞 글자에 붙은 «내» 는 안 잡히게 앞을 문장 시작이나 공백으로 묶는다.
-  if (/(^|\s)(내\s*(식별키|키|정보|계정)|내가\s*누구|나\s*누구)/.test(text)) return "me.info";
   if (/도움|메뉴|help|시작/.test(text)) return "help";
   if (/재고\s*(확인|입고|ocr|사진|촬영)/.test(text)) return "inventory.ocr.start";
   if (/발주\s*(확인|입고|ocr|사진|촬영)/.test(text)) return "purchase.ocr.start";
