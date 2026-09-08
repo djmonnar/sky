@@ -36,6 +36,12 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill?secret={KAK
 3. 직원이 다시 말을 걸면 바로 권한이 적용됩니다.
 4. 잠시 막으려면 "중지", 완전히 빼려면 "삭제"를 누릅니다. 삭제하면 다시 식별키를 받아 등록해야 합니다.
 
+### 등록된 사람이 누구인지 가릴 때
+
+한 사람이 기기·채널마다 다른 식별키를 받으므로 같은 이름이 여러 줄로 보일 수 있습니다.
+등록된 사람은 챗봇에 **"내 정보"** 를 보내면 자기 이름·권한·식별키를 그대로 돌려받습니다.
+그 키를 대시보드 목록의 식별키(누르면 전체가 복사됩니다)와 맞춰 보고, 이름이나 메모를 고치면 됩니다.
+
 화면이 만드는 문서는 아래와 같습니다. 콘솔에서 직접 만들어도 같은 구조면 동작합니다.
 
 ```text
@@ -119,6 +125,7 @@ https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoSkill
 | 거래처 수정 | 거래처 수정 | `vendor.update` | `id`, 변경할 `address`, `phone`, `businessNumber` |
 | 거래처 삭제 | 거래처 삭제 | `vendor.delete` | `id` |
 | 레시피 목록 | 레시피 목록, 원가 목록 | `recipe.list` | 없음 |
+| 내 정보 | 내 정보, 내 식별키 | `me.info` | 없음 |
 | 레시피 등록 | 레시피 등록, 원가 등록 | `recipe.create` | `name`, `salePrice`, `laborCost`, `overheadCost`, `ingredients` |
 | 레시피 수정 | 레시피 수정 | `recipe.update` | `id`, 변경할 값 |
 | 레시피 삭제 | 레시피 삭제 | `recipe.delete` | `id` |
