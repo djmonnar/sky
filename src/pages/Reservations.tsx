@@ -325,7 +325,7 @@ export default function Reservations() {
         </div>
       </div>
 
-      <div className="grid grid-4">
+      <div className="grid grid-4 resv-stats">
         <div className="stat-card">
           <div><div className="stat-label">전체 예약</div><div className="stat-value">{stats.total}<span className="unit">건</span></div></div>
           <div className="stat-icon">📋</div>
@@ -430,37 +430,43 @@ export default function Reservations() {
           <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} />
           <span>전체선택</span>
         </label>
-        <span className="muted small">선택 {selectedIds.length}건</span>
-        <button className="btn btn-soft btn-sm" onClick={() => bulkStatus("방문완료")} disabled={selectedIds.length === 0}>방문완료</button>
-        <button className="btn btn-danger btn-sm" onClick={deleteSelectedReservations} disabled={selectedIds.length === 0}>삭제</button>
-        <button className="btn btn-outline btn-sm" onClick={editSelected} disabled={selectedIds.length !== 1}>수정</button>
-        <button className="btn btn-outline btn-sm" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>선택해제</button>
+        {selectedIds.length === 0 ? (
+          <span className="muted small">예약을 선택하면 한번에 처리할 수 있습니다</span>
+        ) : (
+          <>
+            <span className="bold small">{selectedIds.length}건 선택</span>
+            <button className="btn btn-soft btn-sm" onClick={() => bulkStatus("방문완료")}>방문완료</button>
+            <button className="btn btn-outline btn-sm" onClick={editSelected} disabled={selectedIds.length !== 1}>수정</button>
+            <button className="btn btn-danger btn-sm" onClick={deleteSelectedReservations}>삭제</button>
+            <button className="btn btn-outline btn-sm" onClick={() => setSelectedIds([])}>선택해제</button>
+          </>
+        )}
       </div>
 
-      <div className="grid grid-main-side">
-        <Card className="hide-mobile">
+      <div className="grid grid-main-side resv-layout">
+        <Card className="resv-table-card">
           <div className="table-wrap">
-            <table className="table">
+            <table className="table resv-table">
               <thead>
                 <tr>
-                  <th style={{ width: 42 }}></th>
+                  <th className="resv-col-check"></th>
                   <th>시간</th><th>예약자</th><th>연락처</th><th>인원</th><th>좌석</th><th>상태</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 {list.map((r) => (
                   <tr key={r.id} className={selId === r.id ? "sel" : ""} onClick={() => select(r)}>
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td className="resv-col-check" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelected(r.id)} />
                     </td>
                     <td className="bold num">{r.time}</td>
-                    <td className="bold">{r.name}{isWarn(r) && " !"}</td>
+                    <td className="bold resv-col-name" title={r.name}>{r.name}{isWarn(r) && " !"}</td>
                     <td className="muted num">{r.phone}</td>
                     <td className="num">{r.people}명</td>
-                    <td>{r.seat}</td>
+                    <td className="resv-col-seat" title={r.seat}>{r.seat || <span className="muted">-</span>}</td>
                     <td><StatusBadge status={r.status} /></td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                      <div className="row resv-row-actions">
                         <button className="btn btn-outline btn-sm" onClick={() => openEditForm(r)}>수정</button>
                         <button className="btn btn-danger btn-sm" onClick={() => deleteOneReservation(r)}>삭제</button>
                       </div>
@@ -475,7 +481,7 @@ export default function Reservations() {
           </div>
         </Card>
 
-        <div className="stack hide-desktop" style={{ gap: 10 }}>
+        <div className="stack resv-card-list" style={{ gap: 10 }}>
           {list.map((r) => {
             const open = openId === r.id;
             return (
@@ -496,10 +502,11 @@ export default function Reservations() {
                         <StatusBadge status={r.status} />
                       </span>
                     </div>
-                    <div className="bold" style={{ fontSize: 15, marginTop: 5 }}>
-                      {r.name} <span className="muted small" style={{ fontWeight: 500 }}>· {r.people}명 · {r.seat}</span>
+                    <div className="resv-card-name">{r.name}</div>
+                    <div className="resv-card-meta">
+                      {[`${r.people}명`, r.seat].filter(Boolean).join(" · ")}
                     </div>
-                    {r.request && <div className="muted small" style={{ marginTop: 1 }}>{r.request}</div>}
+                    {r.request && <div className="resv-card-request">{r.request}</div>}
                   </div>
                   <span className={`chev ${open ? "open" : ""}`}>›</span>
                 </button>
@@ -537,7 +544,7 @@ export default function Reservations() {
           )}
         </div>
 
-        <div className="side-panel hide-mobile">
+        <div className="side-panel resv-side">
           {sel ? (
             <Card title={`${sel.time} · ${sel.name}`} action={<StatusBadge status={sel.status} />}>
               <div className="detail-line"><span className="k">연락처</span><span className="v">{sel.phone}</span></div>
