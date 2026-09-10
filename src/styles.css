@@ -57,6 +57,8 @@
   --gray-tx: #5c5c5c;
   --orange-bg: #fae9da;
   --orange-tx: #a4581a;
+  --blue-50: #f2f6f9;
+  --blue-300: #a9bfcf;
   --blue-bg: #e6edf2;
   --blue-tx: #2e5872;
 
@@ -672,9 +674,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   color: var(--text-sub); font-weight: 700;
 }
 .day-tab strong { font-size: 16px; }
+.day-tab .day-dots { min-height: 6px; }
+.day-tab.off { background: var(--bg-soft); color: var(--text-muted); border-style: dashed; }
 .day-tab.on {
   background: var(--green-700); border-color: var(--green-700); color: #fff;
 }
+/* 선택된 탭은 짙은 바탕이라 점이 묻힌다. 흰 테두리를 둘러 살린다. */
+.day-tab.on .day-dots .dot { box-shadow: 0 0 0 1.5px #fff; }
 /* 슬롯 매트릭스 (행=오전/오후·홀/주방, 열=요일) */
 .smx-wrap { overflow-x: auto; }
 .smx {
@@ -1196,12 +1202,48 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .slot-hero { letter-spacing: 0; }
 .staff-slot-list { display: flex; flex-direction: column; gap: 10px; }
 .staff-slot-item {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
   background: var(--card-alt);
   border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
   border-radius: 10px;
   padding: 13px 14px;
 }
+/* 오전은 파랑, 오후는 주황. 한 화면에 둘 다 있을 때 눈으로 바로 갈린다.
+   (--green-* 토큰은 무채색 별칭이라 색이 안 난다 — 상태 토큰을 써야 한다.) */
+.staff-slot-item.morning {
+  background: var(--blue-50);
+  border-color: var(--blue-300);
+  border-left-color: var(--blue-tx);
+}
+.staff-slot-item.afternoon {
+  background: var(--amber-50);
+  border-color: var(--amber-300);
+  border-left-color: var(--amber-tx);
+}
+.staff-slot-time {
+  margin-left: 7px; font-weight: 600; font-size: 12.5px;
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+
+/* 부서는 배경색을 못 쓴다(이미 오전/오후가 쓴다). 알약으로 가른다. */
+.dept-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.dept-tag {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.dept-tag.hall { background: var(--good-bg); color: var(--good-tx); border-color: var(--good-300); }
+.dept-tag.kitchen { background: var(--orange-bg); color: var(--orange-tx); border-color: var(--amber-300); }
+
+/* 오전·오후 점. 요일 탭과 주간 목록에서 «그날 언제 나가는지» 를 글자 없이 알린다. */
+.day-dots { display: inline-flex; gap: 3px; align-items: center; }
+.day-dots .dot {
+  width: 6px; height: 6px; border-radius: 50%; display: block;
+}
+.day-dots .dot.morning { background: var(--blue-tx); }
+.day-dots .dot.afternoon { background: var(--amber-tx); }
 .slot-record-title {
   font-size: 28px;
   letter-spacing: 0;
@@ -1685,11 +1727,14 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   padding: 8px 12px; border-radius: 10px;
   background: var(--card-alt); font-size: 13px;
 }
-.week-day.today { background: var(--green-50); border: 1px solid var(--green-600); }
+.week-day { border: 1px solid transparent; }
+.week-day.today { background: var(--green-50); border-color: var(--green-600); }
+.week-day.off-day { background: var(--bg-soft); color: var(--text-muted); }
 .week-day .dow { font-weight: 700; width: 20px; }
 .week-day .dt { color: var(--text-muted); font-size: 12px; width: 38px; }
 .week-day .tm { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
-.week-day .tm.off { color: var(--orange-tx); }
+.week-day .tm.off { color: var(--text-muted); font-weight: 600; }
+.week-day .day-dots { margin-left: 8px; }
 
 /* ============ Filter chips ============ */
 .reservation-date-row {
