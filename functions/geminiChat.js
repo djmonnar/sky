@@ -78,6 +78,16 @@ function createGeminiChat(deps) {
 
   // ── 조회 도구 ────────────────────────────────────────────────────────────
 
+  /**
+   * 오늘 현황. 예전에는 **건수만** 돌려줘서 모델이 「예약 5건, 22명」까지밖에 말하지
+   * 못했고, 사장님이 매번 「자세히」를 한 번 더 쳐야 그때 list_reservations 를 다시
+   * 불렀다. 지금은 **상세가 기본**이라 예약 한 줄 한 줄과 근무자 명단을 같이 싣는다.
+   *
+   * 읽는 문서는 예전과 같다 — 이미 가져온 것을 버리지 않을 뿐이라 조회 비용은 그대로다.
+   *
+   * 실무자에게는 남의 근무·근무기록을 주지 않는다(list_shifts 와 같은 경계). 건수도
+   * 같이 좁힌다 — 목록은 한 줄인데 건수만 18이면 그게 더 헷갈린다.
+   */
   async function toolTodayOverview(_args, actor) {
     const today = formatDate();
     const [reservations, employees, shifts, workRecords] = await Promise.all([
@@ -86,13 +96,31 @@ function createGeminiChat(deps) {
       storeCol("shifts").where("date", "==", today).get(),
       storeCol("workRecords").where("date", "==", today).get(),
     ]);
-    const activeReservations = reservations.docs
-      .map((doc) => doc.data())
-      .filter((row) => !["취소", "노쇼"].includes(String(row.status || "")));
-    const activeEmployees = employees.docs.filter((doc) => doc.data().active !== false);
-    const pendingRecords = workRecords.docs
+    const allReservations = reservations.docs.map((doc) => doc.data());
+    const activeReservations = allReservations
+      .filter((row) => !["취소", "노쇼"].includes(String(row.status || "")))
+      .sort((a, b) => String(a.time ?? "").localeCompare(String(b.time ?? "")));
+    const employeeRows = employees.docs.map((doc) => doc.data());
+    const activeEmployees = employeeRows.filter((row) => row.active !== false);
+    const nameOf = (empId) =>
+      employeeRows.find((row) => Number(row.id) === Number(empId))?.name || `직원${empId}`;
+
+    let shiftRows = shifts.docs.map((doc) => doc.data());
+    let pendingRecords = workRecords.docs
       .map((doc) => doc.data())
       .filter((row) => ["미작성", "제출", "승인대기"].includes(String(row.status || "")));
+    if (actor.role === "staff") {
+      shiftRows = shiftRows.filter((row) => Number(row.employeeId ?? row.empId) === actor.employeeId);
+      pendingRecords = pendingRecords.filter((row) => Number(row.empId) === actor.employeeId);
+    }
+    const periodRank = (row) => (row.period === "morning" ? 0 : 1);
+    shiftRows.sort(
+      (a, b) =>
+        periodRank(a) - periodRank(b) ||
+        String(a.department ?? "").localeCompare(String(b.department ?? "")) ||
+        String(a.employeeName ?? "").localeCompare(String(b.employeeName ?? ""))
+    );
+
     const guestCount = activeReservations.reduce((sum, row) => sum + (Number(row.people) || 0), 0);
 
     return {
@@ -100,10 +128,35 @@ function createGeminiChat(deps) {
       dayOfWeek: `${DOW_LABEL[dayIndexOf(today)]}요일`,
       reservationCount: activeReservations.length,
       expectedGuestCount: guestCount,
-      shiftAssignmentCount: shifts.size,
+      shiftAssignmentCount: shiftRows.length,
       activeEmployeeCount: activeEmployees.length,
       pendingWorkRecordCount: pendingRecords.length,
+      // 건수에서 빠진 것을 숨기지 않는다. 0 이 아니면 모델이 그 사실을 덧붙인다.
+      canceledReservationCount: allReservations.length - activeReservations.length,
       viewerRole: actor.role,
+      scopedToSelf: actor.role === "staff",
+      // ↓ 여기서부터가 «상세». 건수만 말하고 끝내지 못하도록 목록을 함께 준다.
+      reservations: activeReservations.slice(0, MAX_ROWS).map((row) => ({
+        reservationId: String(row.id ?? ""),
+        time: row.time ?? "",
+        name: row.name ?? "",
+        people: Number(row.people) || 0,
+        seat: row.seat || "",
+        status: row.status || "",
+        request: row.request || "",
+      })),
+      shifts: shiftRows.slice(0, MAX_ROWS).map((row) => ({
+        employeeName: row.employeeName || `직원${row.employeeId ?? row.empId ?? ""}`,
+        period: PERIOD_LABEL[row.period] || row.period || "",
+        department: DEPARTMENT_LABEL[row.department] || row.department || "",
+        roleLabel: row.roleLabel || "",
+        start: row.start || "",
+        end: row.end || "",
+      })),
+      pendingWorkRecords: pendingRecords.slice(0, MAX_ROWS).map((row) => ({
+        employeeName: nameOf(row.empId),
+        status: row.status || "",
+      })),
     };
   }
 
@@ -582,7 +635,7 @@ function createGeminiChat(deps) {
       declaration: {
         name: "get_today_overview",
         description:
-          "오늘 매장 현황 요약을 가져온다. 예약 건수, 예상 손님 수, 근무 배치 건수, 활성 직원 수, 확인이 필요한 근무기록 건수를 반환한다.",
+          "오늘 매장 현황을 가져온다. 건수(예약, 예상 손님 수, 근무 배치, 활성 직원, 확인 필요 근무기록)와 함께 오늘 예약 목록(reservations: 시간·이름·인원·좌석·상태·요청), 오늘 근무자 명단(shifts: 이름·오전/오후·홀/주방), 확인이 필요한 근무기록 명단(pendingWorkRecords)까지 한 번에 반환한다. 오늘 현황은 이 도구 하나로 상세까지 답할 수 있으니 목록을 다시 조회하지 않아도 된다.",
       },
     },
     list_reservations: {
@@ -783,7 +836,11 @@ function createGeminiChat(deps) {
       "- 매출은 네이버 플레이스플러스 POS 일 매출입니다(sales_report). 보고서를 요청받으면 기간 합계 → 직전 기간 대비 증감 → 일평균 → 최고·최저일 → 요일 경향 순으로 짧게 정리하세요. 결제수단·시간대별은 없다고 분명히 말하세요. 데이터 없는 날과 아직 오지 않은 날은 구분해서 말하세요.",
       "- 메뉴 비중은 sales_report 결과의 menuShare 에만 있습니다. 그것은 물어본 기간이 아니라 menuShare.startDate~endDate 기간의 합계이므로 반드시 그 기간을 밝히고 말하세요. 없으면 아직 받은 메뉴 비중이 없다고 하세요. 비중(%)은 네이버 값 그대로 쓰고 다시 계산하지 마세요.",
       "- 전화번호는 개인정보 보호를 위해 가운데 자리가 가려진 채로 전달됩니다. 가려진 숫자를 임의로 채우지 마세요.",
-      "- 목록이 길면 표 대신 핵심만 간추리고, 필요하면 더 볼지 물어보세요.",
+      "- 목록이 길면 표 대신 핵심만 간추리고, 필요하면 더 볼지 물어보세요. 다만 아래 «오늘 현황» 규칙은 예외입니다.",
+      // 사장님이 매번 「자세히」를 한 번 더 치게 하지 않는다. 현황은 상세가 기본이다.
+      "- 「오늘 현황」·「대시보드」·「요약」·「오늘 어때」 류의 질문에는 상세가 기본입니다. get_today_overview 한 번이면 목록까지 다 오니, 건수만 말하고 끝내지 말고 이렇게 적으세요. ① 예약: 상태별로 묶어 '시간 | 이름 (인원)' 한 줄씩, 좌석·요청이 있으면 뒤에 덧붙임. ② 근무자: 오전/오후로 나누고 그 안에서 홀/주방으로 묶어 이름을 모두 적음. ③ 확인이 필요한 근무기록이 있으면 누구 것인지 이름까지. 예약이나 근무가 0건인 항목은 '없습니다'라고 한 줄로 적으세요.",
+      "- canceledReservationCount가 0이 아니면 '취소·노쇼 N건은 건수에서 빠져 있습니다'를 한 줄 덧붙이세요. 그 건들의 내역은 list_reservations로 따로 확인합니다.",
+      "- 사용자가 '간단히'·'짧게'·'요약만'이라고 할 때만 건수 중심으로 줄이세요.",
       actor.role === "staff"
         ? "- 이 사용자는 실무자라 매출/직원 관리 도구를 쓸 수 없습니다. 요청받으면 관리자에게 문의하라고 안내하세요."
         : "",
