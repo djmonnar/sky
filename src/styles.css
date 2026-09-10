@@ -839,20 +839,22 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   gap: 6px;
   min-width: 0;
 }
+/* 오전 파랑 / 오후 주황. 직원용 근무표(.staff-slot-item)와 같은 규칙을 쓴다 —
+   관리자와 직원이 다른 색으로 같은 것을 보면 서로 말이 안 통한다. */
 .schedule-period-title {
   min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: var(--green-50);
-  color: var(--green-700);
+  background: var(--blue-bg);
+  color: var(--blue-tx);
   font-size: 12px;
   font-weight: 850;
 }
 .schedule-period-card.afternoon .schedule-period-title {
-  background: var(--amber-50);
-  color: var(--orange-tx);
+  background: var(--amber-bg);
+  color: var(--amber-tx);
 }
 .schedule-slot-cell {
   display: flex;
@@ -861,9 +863,20 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   min-height: 138px;
   padding: 6px;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
   border-radius: 10px;
   background: var(--card);
   cursor: pointer;
+}
+/* 칸 자체에도 옅게 색을 깐다. 하루에 네 칸(오전·오후 x 홀·주방)이라
+   제목 줄만 칠하면 아래로 내려갈수록 어느 쪽인지 헷갈린다. */
+.schedule-period-card.morning .schedule-slot-cell {
+  background: var(--blue-50);
+  border-left-color: var(--blue-300);
+}
+.schedule-period-card.afternoon .schedule-slot-cell {
+  background: var(--amber-50);
+  border-left-color: var(--amber-300);
 }
 .schedule-slot-cell:hover {
   border-color: var(--green-600);
@@ -879,13 +892,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 }
 .schedule-dept-label {
   align-self: flex-start;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 999px;
   background: var(--card-alt);
   color: var(--text-muted);
+  border: 1px solid transparent;
   font-size: 10.5px;
   font-weight: 850;
 }
+/* 홀 초록 / 주방 주황 — 직원용 .dept-tag 와 같은 색. */
+.schedule-dept-label.hall { background: var(--good-bg); color: var(--good-tx); border-color: var(--good-300); }
+.schedule-dept-label.kitchen { background: var(--orange-bg); color: var(--orange-tx); border-color: var(--amber-300); }
 
 /* 편집 패널 배치 목록 */
 .employee-multi-add {
