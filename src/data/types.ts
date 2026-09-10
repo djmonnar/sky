@@ -7,6 +7,28 @@ export type ShiftPeriod = "morning" | "afternoon";
 export type Department = "hall" | "kitchen";
 export type WorkDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
+/**
+ * 챗봇이 늘 참고하는 «업체 기억». 관리자만 쓰고, 모든 대화의 시스템 지시에 실린다.
+ * 예: "주차는 건물 뒤 공영주차장 2시간 무료", "단체는 10인 이상부터".
+ */
+export interface ChatbotMemory {
+  id: string;
+  text: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** 지난 대화 한 건. 로그인 사용자별로 따로 쌓인다. */
+export interface ChatConversation {
+  id: string;
+  uid: string;
+  title: string;
+  messages: { role: "user" | "model"; text: string }[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /** 카카오 챗봇 사용자. 문서 ID = 카카오 botUserKey (슬래시는 _ 로 치환). */
 export interface ChatbotUser {
   id: string;
@@ -54,7 +76,53 @@ export type ResvStatus =
 
 export type Seat = string;
 
-export type PunchStatus = "before" | "working" | "done";
+export type PunchStatus = "before" | "working" | "onBreak" | "done";
+
+/** 출퇴근 기록의 종류. 휴게는 시작/종료가 짝을 이룬다. */
+export type AttendanceType = "in" | "out" | "breakStart" | "breakEnd";
+
+export interface AttendanceLog {
+  id: string;
+  empId: number;
+  date: string;
+  type: AttendanceType;
+  time: string;
+  /**
+   * 저장된 순서 (epoch ms). 시각 문자열로 정렬하면 자정을 넘긴 퇴근("01:30")이
+   * 출근("18:00")보다 앞서 버린다. 저장 순서가 곧 실제 순서다.
+   */
+  createdAt?: number;
+}
+
+export interface TimesheetSubmission {
+  id: string;
+  empId: number;
+  empName: string;
+  month: string;
+  status: "제출" | "확인완료";
+  workedDays: number;
+  totalMinutes: number;
+  breakMinutes: number;
+  note?: string;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
+/** 오늘 하루치 출퇴근 기록을 한 눈에 본 것. attendanceLogs 에서 계산한다. */
+export interface AttendanceDay {
+  date: string;
+  empId: number;
+  status: PunchStatus;
+  inAt: string | null;
+  outAt: string | null;
+  /** 끝나지 않은 휴게는 end 가 null 이다. */
+  breaks: { start: string; end: string | null }[];
+  /** 끝난 휴게의 합 (분). 진행 중인 휴게는 빼지 않는다. */
+  breakMinutes: number;
+  /** 출근~퇴근에서 휴게를 뺀 시간 (분). 퇴근 전이면 지금까지. */
+  workedMinutes: number;
+}
 
 export interface Reservation {
   id: number;

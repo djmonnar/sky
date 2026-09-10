@@ -16,6 +16,8 @@ const DEFAULT_MODEL = "gemini-3.5-flash";
 const MAX_TOOL_ROUNDS = 4;
 const MAX_HISTORY = 12;
 const MAX_MESSAGE_LENGTH = 2000;
+/** 시스템 지시에 실을 업체 기억 최대 개수. 너무 많으면 지시가 길어져 답이 흐려진다. */
+const MAX_MEMORIES = 40;
 const MAX_ROWS = 40;
 const MAX_REPORT_DAYS = 92;
 
@@ -745,7 +747,26 @@ function createGeminiChat(deps) {
     return Object.entries(TOOLS).filter(([, spec]) => spec.access !== "ops" || isOps(actor));
   }
 
-  function systemInstruction(actor) {
+  /**
+   * 관리자가 적어 둔 «업체 기억». 모든 대화의 시스템 지시에 실린다.
+   *
+   * 읽기는 admin SDK 라 규칙을 타지 않는다 — 실무자가 직접 문서를 못 읽어도
+   * 챗봇 답변에는 반영된다. 못 읽어도 대화는 계속돼야 하므로 실패는 삼킨다.
+   */
+  async function loadMemories() {
+    try {
+      const snap = await storeCol("chatbotMemories").get();
+      return snap.docs
+        .map((doc) => String(doc.data().text ?? "").trim())
+        .filter(Boolean)
+        .slice(0, MAX_MEMORIES);
+    } catch (error) {
+      console.error("CHATBOT_MEMORIES_FAILED", error);
+      return [];
+    }
+  }
+
+  function systemInstruction(actor, memories = []) {
     const today = formatDate();
     return [
       '당신은 진해 식당 "하늘땅"의 매장관리 시스템에 내장된 업무 비서입니다.',
@@ -765,6 +786,18 @@ function createGeminiChat(deps) {
       "- 목록이 길면 표 대신 핵심만 간추리고, 필요하면 더 볼지 물어보세요.",
       actor.role === "staff"
         ? "- 이 사용자는 실무자라 매출/직원 관리 도구를 쓸 수 없습니다. 요청받으면 관리자에게 문의하라고 안내하세요."
+        : "",
+      /*
+        업체 기억은 «가게가 정해 둔 사실» 이다. 도구로 확인할 수 있는 숫자(예약·매출·
+        근무표)를 대신하지 않는다 — 그것은 반드시 도구로 확인해야 한다.
+      */
+      memories.length > 0
+        ? [
+            "",
+            "이 가게에 대해 관리자가 적어 둔 것 (질문에 관련되면 참고해서 답하세요):",
+            ...memories.map((line) => `- ${line}`),
+            "위 내용은 가게가 정해 둔 사실입니다. 예약·매출·근무표 같은 숫자는 여기서 가져오지 말고 반드시 도구로 확인하세요.",
+          ].join("\n")
         : "",
     ]
       .filter(Boolean)
@@ -818,7 +851,7 @@ function createGeminiChat(deps) {
   async function runConversation({ apiKey, model, actor, messages }) {
     const allowed = toolsFor(actor);
     const declarations = allowed.map(([, spec]) => spec.declaration);
-    const instruction = systemInstruction(actor);
+    const instruction = systemInstruction(actor, await loadMemories());
     const contents = buildContents(messages);
     if (contents.length === 0) return { reply: "무엇을 도와드릴까요?" };
 

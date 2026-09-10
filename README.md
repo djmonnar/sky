@@ -68,6 +68,17 @@ CLI로도 가능: `npx vercel env add VITE_FIREBASE_API_KEY production`
 모든 화면 우하단의 💬 버튼을 누르면 채팅창이 열립니다. 말로 예약을 등록하거나
 매출을 뽑아볼 수 있습니다.
 
+채팅창에는 탭이 셋입니다.
+
+- **대화**: 지금 나누는 대화. 우측 위 ＋ 로 새 대화를 시작합니다.
+- **업체 기억** (관리자만): 챗봇이 *모든 대화*에서 참고할 사실을 적어 둡니다 — 주차,
+  단체 기준, 휴무일 같은 것. `stores/{id}/chatbotMemories` 에 쌓이고, 함수가 admin SDK 로
+  읽어 시스템 지시에 싣습니다. 그래서 실무자가 문서를 못 읽어도 답변에는 반영됩니다.
+  예약·매출 숫자는 여기 적지 않습니다 — 그건 챗봇이 도구로 직접 확인합니다.
+- **이전 대화**: 로그인 사용자별로 쌓입니다. Rules 가 본인 것만 열어 주므로 관리자도
+  남의 대화는 못 봅니다. 대화가 한 번 오갈 때마다 `chatConversations` 에 덮어씁니다
+  (최근 60개 메시지까지).
+
 ```
 예: 오늘 현황 알려줘
 예: 내일 저녁 7시 김하늘 4명 창가로 예약 등록해줘
@@ -228,6 +239,7 @@ functions/
 
 ```bash
 npm run test:pos              # POS 매출 집계 로직 (브라우저·Firebase 없이)
+npm run test:attendance       # 출퇴근·휴게 계산 (상태 전이, 자정 넘김, 잘못 누른 기록)
 cd functions && npm run test:chat   # Gemini 챗봇 도구 레이어
 cd functions && npm run test:kakao  # 카카오 빠른 예약 파서 (9/5 18시 3명 박현제 45184312)
 ```

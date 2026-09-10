@@ -2,34 +2,30 @@ import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Badge, Card, StatCard } from "../components/ui";
-import GranterFinanceBoard from "../components/GranterFinanceBoard";
 import PosSalesBoard from "../components/PosSalesBoard";
 import type {
   FinanceDailyClose,
-  FinanceMatch,
-  FinanceMatchKind,
-  GranterFinanceItem,
   PurchaseOrder,
   PurchaseOrderStatus,
   SettlementMethod,
 } from "../data/types";
 import { TODAY_STR } from "../lib/time";
 
-type FinanceTab = "close" | "sales" | "pos" | "purchases" | "matching" | "profit";
+type FinanceTab = "close" | "pos" | "purchases" | "profit";
 type SettlementFilter = "all" | "unsettled" | "settled";
 
+/*
+  **POS 매출이 첫 탭이다.** 매출·매입에 들어와서 제일 먼저 봐야 할 숫자다.
+
+  「매출」(카드 승인·정산)과 「입출금 매칭」 탭은 뺐다. 둘 다 그랜터가 준 카드·계좌
+  거래로만 돌아가는데, 동기화가 너무 오래 걸려 그랜터를 보류하기로 했다. 남겨 두면
+  0원과 빈 목록만 보인다. 데이터·규칙·함수와 GranterFinanceBoard 파일은 그대로
+  두었으니 다시 켤 때 이 배열과 렌더 두 곳만 되돌리면 된다.
+*/
 const TABS: Array<{ id: FinanceTab; label: string; icon: string }> = [
-  /*
-    **POS 매출이 첫 탭이다.** 매출·매입에 들어와서 제일 먼저 봐야 할 숫자.
-    카드 매출과 다른 숫자다 — 「매출」 탭은 그랜터가 준 카드 승인·정산이라 현금이
-    안 들어 있고, POS 매출에는 아직 정산 안 된 것이 들어 있다. 한 탭에 섞으면
-    어느 쪽이 「오늘 얼마 팔았나」인지 알 수 없다.
-  */
   { id: "pos", label: "POS 매출", icon: "🧾" },
   { id: "close", label: "오늘 마감", icon: "✓" },
-  { id: "sales", label: "매출", icon: "💳" },
   { id: "purchases", label: "매입", icon: "🧾" },
-  { id: "matching", label: "입출금 매칭", icon: "↔" },
   { id: "profit", label: "손익", icon: "📊" },
 ];
 
@@ -64,29 +60,14 @@ function orderBaseDate(order: PurchaseOrder): string {
   return (order.receivedAt || order.orderedAt || order.createdAt || "").slice(0, 10);
 }
 
-function signedAmount(item: GranterFinanceItem): number {
-  return item.direction === "out" ? -Math.abs(item.amount) : Math.abs(item.amount);
-}
 
-function isCardSale(item: GranterFinanceItem): boolean {
-  return item.ticketType === "MERCHANT_CARD_TRANSACTION_TICKET";
-}
 
-function isCardSettlement(item: GranterFinanceItem): boolean {
-  return item.ticketType === "MERCHANT_CARD_SETTLEMENT_DETAIL_TICKET";
-}
 
-function itemName(item: GranterFinanceItem): string {
-  return item.content || item.contactName || item.description || (item.domain === "card" ? "카드 매출" : "계좌 거래");
-}
 
 function sumOrders(orders: PurchaseOrder[]): number {
   return orders.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0);
 }
 
-function sumItems(items: GranterFinanceItem[]): number {
-  return items.reduce((sum, item) => sum + Math.abs(item.amount), 0);
-}
 
 interface SettlementDraft {
   settledAt: string;
@@ -108,51 +89,38 @@ function createMatchId(): string {
 export default function Settlements() {
   const {
     role, profile, authUser, managerPermissions, vendors, purchaseOrders, payroll,
-    granterCardSales, granterAccountTransactions, granterFinanceCategories,
     salesDailySummaries, salesMenuReport, syncSales,
-    financeDailyCloses, financeMatches,
-    upsertPurchaseOrder, syncGranterFinance, classifyGranterFinanceItems,
-    upsertGranterFinanceCategory, deleteGranterFinanceCategory,
-    upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch, showToast,
+    financeDailyCloses,
+    upsertPurchaseOrder,
+    upsertFinanceDailyClose, showToast,
   } = useStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab") as FinanceTab | null;
   const [activeTab, setActiveTab] = useState<FinanceTab>(TABS.some((tab) => tab.id === requestedTab) ? requestedTab! : "pos");
   const [date, setDate] = useState(TODAY_STR);
   const [month, setMonth] = useState(TODAY_STR.slice(0, 7));
-  const [syncing, setSyncing] = useState(false);
   const [closeDraft, setCloseDraft] = useState<CloseDraft>({ cashSales: "", transferSales: "", otherSales: "", memo: "" });
   const [statusFilter, setStatusFilter] = useState<SettlementFilter>("unsettled");
   const [vendorFilter, setVendorFilter] = useState<number | "all">("all");
   const [query, setQuery] = useState("");
   const [settlementDrafts, setSettlementDrafts] = useState<Record<number, SettlementDraft>>({});
-  const [matchKind, setMatchKind] = useState<FinanceMatchKind>("purchasePayment");
-  const [selectedOrders, setSelectedOrders] = useState<number[]>([]);
-  const [selectedCards, setSelectedCards] = useState<string[]>([]);
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [matchMemo, setMatchMemo] = useState("");
-  const [matching, setMatching] = useState(false);
   const canViewSales = role === "admin" || managerPermissions.sales;
   const canViewPurchases = role === "admin" || managerPermissions.settlements;
   const visibleTabs = useMemo(() => TABS.filter((tab) => {
-    if (tab.id === "close" || tab.id === "sales") return canViewSales;
+    if (tab.id === "close") return canViewSales;
     if (tab.id === "purchases") return canViewPurchases;
     // POS 매출과 손익은 관리자만 본다.
-    if (tab.id === "pos" || tab.id === "profit") return role === "admin";
-    return canViewSales || canViewPurchases;
+    return role === "admin";
   }), [canViewPurchases, canViewSales, role]);
 
   useEffect(() => {
     if (visibleTabs.some((tab) => tab.id === activeTab)) return;
-    const fallback = canViewSales ? "sales" : "purchases";
+    // 볼 수 있는 첫 탭으로 보낸다. 없어진 탭 이름을 적으면 이 효과가 무한히 돈다.
+    const fallback = visibleTabs[0]?.id;
+    if (!fallback || fallback === activeTab) return;
     setActiveTab(fallback);
-    setSearchParams({ tab: fallback });
-  }, [activeTab, canViewSales, setSearchParams, visibleTabs]);
-
-  useEffect(() => {
-    if (!canViewPurchases && matchKind === "purchasePayment") setMatchKind("salesDeposit");
-    if (!canViewSales && matchKind === "salesDeposit") setMatchKind("purchasePayment");
-  }, [canViewPurchases, canViewSales, matchKind]);
+    setSearchParams(fallback === "pos" ? {} : { tab: fallback });
+  }, [activeTab, setSearchParams, visibleTabs]);
 
   const [posSyncing, setPosSyncing] = useState(false);
   // POS 매출은 저장된 일 합계를 그대로 읽는다 — 집계·달력은 PosSalesBoard 가 맡는다.
@@ -188,20 +156,18 @@ export default function Settlements() {
     });
   }, [date, selectedClose?.cashSales, selectedClose?.transferSales, selectedClose?.otherSales, selectedClose?.memo]);
 
-  const dayCardItems = granterCardSales.filter((item) => item.businessDate === date && isCardSale(item));
-  const dayCardSales = dayCardItems.reduce((sum, item) => sum + signedAmount(item), 0);
-  const dayAccountIn = granterAccountTransactions.filter((item) => item.businessDate === date && item.direction === "in");
-  const dayAccountOut = granterAccountTransactions.filter((item) => item.businessDate === date && item.direction === "out");
+  /*
+    카드 매출은 그랜터가 채우던 칸이라 지금은 비어 있다. 대신 이 매장의 매출 정본인
+    POS 일 매출(네이버 플레이스플러스)을 참고로 보여 준다. 마감 합계에는 더하지 않는다 —
+    POS 에 이미 카드·현금이 섞여 있어 직접 입력분과 겹칠 수 있다.
+  */
+  const dayPos = salesDailySummaries.find((row) => row.businessDate === date);
   const dayOrders = activeOrders.filter((order) => orderBaseDate(order) === date);
   const dayPurchases = sumOrders(dayOrders);
   const manualSales = Number(closeDraft.cashSales || 0) + Number(closeDraft.transferSales || 0) + Number(closeDraft.otherSales || 0);
-  const totalDaySales = dayCardSales + manualSales;
+  const totalDaySales = manualSales;
 
-  const matchedOrderIds = useMemo(() => new Set(financeMatches.flatMap((match) => match.purchaseOrderIds)), [financeMatches]);
-  const matchedCardIds = useMemo(() => new Set(financeMatches.flatMap((match) => match.cardItemIds)), [financeMatches]);
-  const matchedAccountIds = useMemo(() => new Set(financeMatches.flatMap((match) => match.accountItemIds)), [financeMatches]);
   const receivedUnpaid = dayOrders.filter((order) => order.status === "received" && order.settlementStatus !== "settled");
-  const unmatchedDayOutflows = dayAccountOut.filter((item) => !matchedAccountIds.has(item.id));
 
   const saveClose = async (status: FinanceDailyClose["status"]) => {
     const next: FinanceDailyClose = {
@@ -217,17 +183,6 @@ export default function Settlements() {
       createdAt: selectedClose?.createdAt,
     };
     await upsertFinanceDailyClose(next);
-  };
-
-  const runSync = async () => {
-    setSyncing(true);
-    try {
-      await syncGranterFinance();
-    } catch (error) {
-      showToast((error as Error).message || "카드·계좌 동기화에 실패했습니다");
-    } finally {
-      setSyncing(false);
-    }
   };
 
   const monthOrders = activeOrders.filter((order) => orderBaseDate(order).startsWith(month));
@@ -268,107 +223,21 @@ export default function Settlements() {
     showToast(settled ? `${order.vendorName} 정산을 완료했습니다` : "미정산으로 변경했습니다");
   };
 
-  const unmatchedOrders = activeOrders.filter((order) =>
-    (order.status === "ordered" || order.status === "received") && !matchedOrderIds.has(order.id)
-  );
-  const unmatchedSettlements = granterCardSales.filter((item) => isCardSettlement(item) && !matchedCardIds.has(item.id));
-  const availableAccounts = granterAccountTransactions.filter((item) =>
-    item.direction === (matchKind === "purchasePayment" ? "out" : "in") && !matchedAccountIds.has(item.id)
-  );
-  const selectedOrderAmount = sumOrders(unmatchedOrders.filter((order) => selectedOrders.includes(order.id)));
-  const selectedCardAmount = sumItems(unmatchedSettlements.filter((item) => selectedCards.includes(item.id)));
-  const selectedAccountAmount = sumItems(availableAccounts.filter((item) => selectedAccounts.includes(item.id)));
-  const selectedSourceAmount = matchKind === "purchasePayment" ? selectedOrderAmount : selectedCardAmount;
 
-  const toggleNumber = (value: number, setter: React.Dispatch<React.SetStateAction<number[]>>) => {
-    setter((items) => items.includes(value) ? items.filter((item) => item !== value) : [...items, value]);
-  };
-  const toggleString = (value: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
-    setter((items) => items.includes(value) ? items.filter((item) => item !== value) : [...items, value]);
-  };
 
-  const clearMatchSelection = () => {
-    setSelectedOrders([]);
-    setSelectedCards([]);
-    setSelectedAccounts([]);
-    setMatchMemo("");
-  };
+  /*
+    총매출은 POS 일 매출(네이버 플레이스플러스) 합계다. 예전에는 그랜터 카드 승인액에
+    직접 입력분을 더했는데, 그랜터를 보류하면서 카드가 통째로 빠져 손익이 크게 부풀
+    수밖에 없다. POS 가 이 매장 매출의 정본이므로 그것을 쓴다.
 
-  const changeMatchKind = (kind: FinanceMatchKind) => {
-    setMatchKind(kind);
-    clearMatchSelection();
-  };
-
-  const dragSource = (event: DragEvent<HTMLElement>, id: string | number) => {
-    const ids = matchKind === "purchasePayment"
-      ? (selectedOrders.includes(Number(id)) ? selectedOrders : [Number(id)])
-      : (selectedCards.includes(String(id)) ? selectedCards : [String(id)]);
-    if (matchKind === "purchasePayment") setSelectedOrders(ids as number[]);
-    else setSelectedCards(ids as string[]);
-    event.dataTransfer.setData("application/json", JSON.stringify({ kind: matchKind, ids }));
-  };
-
-  const dropOnAccount = (event: DragEvent<HTMLElement>, accountId: string) => {
-    event.preventDefault();
-    try {
-      const payload = JSON.parse(event.dataTransfer.getData("application/json")) as { kind?: FinanceMatchKind; ids?: Array<string | number> };
-      if (payload.kind !== matchKind || !payload.ids?.length) return;
-      if (matchKind === "purchasePayment") setSelectedOrders(payload.ids.map(Number));
-      else setSelectedCards(payload.ids.map(String));
-      setSelectedAccounts((items) => items.includes(accountId) ? items : [...items, accountId]);
-      showToast("양쪽 거래를 선택했습니다. 연결하기로 확정해주세요");
-    } catch {
-      showToast("거래를 선택하지 못했습니다");
-    }
-  };
-
-  const createMatch = async () => {
-    const sourceIds = matchKind === "purchasePayment" ? selectedOrders : selectedCards;
-    if (sourceIds.length === 0 || selectedAccounts.length === 0) {
-      showToast("왼쪽 증빙과 오른쪽 계좌 거래를 각각 선택해주세요");
-      return;
-    }
-    setMatching(true);
-    try {
-      const next: FinanceMatch = {
-        id: createMatchId(),
-        kind: matchKind,
-        purchaseOrderIds: matchKind === "purchasePayment" ? selectedOrders : [],
-        cardItemIds: matchKind === "salesDeposit" ? selectedCards : [],
-        accountItemIds: selectedAccounts,
-        amount: Math.min(selectedSourceAmount, selectedAccountAmount),
-        memo: matchMemo,
-        createdAt: new Date().toISOString(),
-        createdBy: profile?.name || authUser?.email || "관리자",
-      };
-      await upsertFinanceMatch(next);
-      if (matchKind === "purchasePayment") {
-        selectedOrders.forEach((orderId) => {
-          const order = purchaseOrders.find((item) => item.id === orderId);
-          if (!order) return;
-          upsertPurchaseOrder({
-            ...order,
-            settlementStatus: "settled",
-            settledAt: availableAccounts.find((item) => selectedAccounts.includes(item.id))?.businessDate || TODAY_STR,
-            settlementMethod: "bank",
-            settlementMemo: matchMemo || "계좌 출금 자동 연결",
-          });
-        });
-      }
-      clearMatchSelection();
-    } finally {
-      setMatching(false);
-    }
-  };
-
-  const removeMatch = async (match: FinanceMatch) => {
-    if (!window.confirm("이 연결을 해제할까요? 원본 거래와 발주서는 삭제되지 않습니다.")) return;
-    await deleteFinanceMatch(match.id);
-  };
-
-  const monthCardSales = granterCardSales
-    .filter((item) => item.businessDate.startsWith(month) && isCardSale(item))
-    .reduce((sum, item) => sum + signedAmount(item), 0);
+    직접 입력 마감분(현금·계좌이체·기타)은 POS 와 겹칠 수 있어 더하지 않고 따로 보여 준다.
+    고정·운영비는 그랜터 계좌 출금을 분류해 세던 값이라 지금은 셀 수 없다 — 0 으로
+    슬쩍 넣으면 이익이 그만큼 부풀어 보이므로, 아예 빼고 그렇게 말한다.
+  */
+  const monthPos = salesDailySummaries
+    .filter((row) => row.businessDate.startsWith(month))
+    .reduce((sum, row) => sum + row.netAmount, 0);
+  const monthPosDays = salesDailySummaries.filter((row) => row.businessDate.startsWith(month)).length;
   const monthManualSales = financeDailyCloses
     .filter((item) => item.date.startsWith(month))
     .reduce((sum, item) => sum + item.cashSales + item.transferSales + item.otherSales, 0);
@@ -376,19 +245,14 @@ export default function Settlements() {
   const monthPayroll = payroll
     .filter((row) => row.month ? row.month === month : month === TODAY_STR.slice(0, 7))
     .reduce((sum, row) => sum + Math.max(0, row.base + row.extra - row.deduct), 0);
-  const fixedCategoryIds = new Set(granterFinanceCategories.filter((category) => category.kind === "fixedExpense").map((category) => category.id));
-  const monthFixedExpenses = granterAccountTransactions
-    .filter((item) => item.businessDate.startsWith(month) && item.direction === "out" && item.categoryId && fixedCategoryIds.has(item.categoryId))
-    .reduce((sum, item) => sum + Math.abs(item.amount), 0);
-  const monthSales = monthCardSales + monthManualSales;
-  const estimatedProfit = monthSales - monthPurchaseAmount - monthPayroll - monthFixedExpenses;
+  const monthSales = monthPos;
+  const estimatedProfit = monthSales - monthPurchaseAmount - monthPayroll;
 
   return (
     <div className="stack finance-page">
       {/* 제목은 상단바가 이미 보여준다 — 여기서 한 번 더 적으면 모바일에서 한 화면을 잡아먹는다 */}
       <div className="finance-page-head">
-        <p className="muted">카드 매출, 계좌 거래, 발주와 결제를 한곳에서 확인합니다.</p>
-        {role === "admin" && <button className="btn btn-outline" disabled={syncing} onClick={() => void runSync()}>{syncing ? "동기화 중..." : "↻ 카드·계좌 동기화"}</button>}
+        <p className="muted">POS 매출, 하루 마감, 발주와 결제를 한곳에서 확인합니다.</p>
       </div>
 
       <div className="finance-tabs" role="tablist" aria-label="매출 매입 관리 보기">
@@ -409,10 +273,16 @@ export default function Settlements() {
             </div>
           </div>
 
-          <div className="grid grid-4 finance-overview-stats">
-            <StatCard label="카드사 매출" value={money.format(dayCardSales)} unit="원" trend={`${dayCardItems.length}건 · 자동`} trendUp icon="💳" />
+          <div className="grid grid-3 finance-overview-stats">
+            <StatCard
+              label="POS 일 매출"
+              value={dayPos ? money.format(dayPos.netAmount) : "-"}
+              unit={dayPos ? "원" : ""}
+              trend={dayPos ? "네이버 플레이스플러스" : "아직 안 들어옴"}
+              trendUp={!!dayPos}
+              icon="📈"
+            />
             <StatCard label="직접 입력 매출" value={money.format(manualSales)} unit="원" trend="현금·계좌이체·기타" trendUp icon="✍️" tone="blue" />
-            <StatCard label="오늘 총매출" value={money.format(totalDaySales)} unit="원" trend="카드 + 직접 입력" trendUp icon="📈" />
             <StatCard label="오늘 등록 매입" value={money.format(dayPurchases)} unit="원" trend={`${dayOrders.length}건`} trendUp={dayPurchases === 0} icon="🧾" tone="amber" />
           </div>
 
@@ -424,7 +294,7 @@ export default function Settlements() {
                 <label><span className="field-label">기타 매출</span><input className="input num" inputMode="numeric" value={closeDraft.otherSales} onChange={(event) => setCloseDraft((draft) => ({ ...draft, otherSales: event.target.value.replace(/[^0-9]/g, "") }))} placeholder="0" /></label>
                 <label className="finance-close-memo"><span className="field-label">마감 메모</span><textarea className="textarea" value={closeDraft.memo} onChange={(event) => setCloseDraft((draft) => ({ ...draft, memo: event.target.value }))} placeholder="현금 차이, 단체 결제, 확인할 내용을 적어주세요" /></label>
               </div>
-              <div className="finance-close-total"><span>마감 매출 합계</span><strong>{amount(totalDaySales)}</strong></div>
+              <div className="finance-close-total"><span>직접 입력 합계</span><strong>{amount(totalDaySales)}</strong></div>
               <div className="finance-close-actions">
                 <button className="btn btn-outline" onClick={() => void saveClose("draft")}>임시 저장</button>
                 {selectedClose?.status === "closed"
@@ -434,31 +304,15 @@ export default function Settlements() {
             </Card>
 
             <div className="stack">
-              <Card title="입출금 확인" icon="🏦">
-                <div className="pay-line"><span className="k">계좌 입금</span><strong>{amount(sumItems(dayAccountIn))}</strong></div>
-                <div className="pay-line"><span className="k">계좌 출금</span><strong>{amount(sumItems(dayAccountOut))}</strong></div>
-                <div className="muted small">계좌 입금은 카드 정산금이나 기타 입금일 수 있어 총매출에 자동 합산하지 않습니다.</div>
-              </Card>
               <Card title="확인할 일" icon="⚠️">
                 <button className="finance-alert-row" onClick={() => openTab("purchases")}><span>입고 후 미정산</span><b>{receivedUnpaid.length}건</b></button>
-                <button className="finance-alert-row" onClick={() => openTab("matching")}><span>연결 안 된 오늘 출금</span><b>{unmatchedDayOutflows.length}건</b></button>
-                <button className="finance-alert-row" onClick={() => openTab("matching")}><span>연결 안 된 계좌 입금</span><b>{dayAccountIn.filter((item) => !matchedAccountIds.has(item.id)).length}건</b></button>
+                <div className="muted small" style={{ marginTop: 8 }}>
+                  계좌 입출금 확인은 카드·계좌 연동을 다시 켤 때 돌아옵니다.
+                </div>
               </Card>
             </div>
           </div>
         </>
-      )}
-
-      {activeTab === "sales" && (
-        <GranterFinanceBoard
-          role={role}
-          cardItems={granterCardSales}
-          accountItems={granterAccountTransactions}
-          categories={granterFinanceCategories}
-          classifyItems={classifyGranterFinanceItems}
-          upsertCategory={upsertGranterFinanceCategory}
-          deleteCategory={deleteGranterFinanceCategory}
-        />
       )}
 
       {activeTab === "pos" && (
@@ -515,97 +369,27 @@ export default function Settlements() {
         </>
       )}
 
-      {activeTab === "matching" && (
-        <>
-          <Card title="증빙과 계좌 거래 연결" icon="↔">
-            <div className="segmented finance-match-mode">
-              {canViewPurchases && <button className={matchKind === "purchasePayment" ? "on" : ""} onClick={() => changeMatchKind("purchasePayment")}>매입 ↔ 계좌 출금</button>}
-              {canViewSales && <button className={matchKind === "salesDeposit" ? "on" : ""} onClick={() => changeMatchKind("salesDeposit")}>카드 정산 ↔ 계좌 입금</button>}
-            </div>
-            <div className="finance-match-summary">
-              <div><span>증빙 선택</span><strong>{amount(selectedSourceAmount)}</strong></div>
-              <span className="finance-match-arrow">↔</span>
-              <div><span>계좌 선택</span><strong>{amount(selectedAccountAmount)}</strong></div>
-              <div className={selectedSourceAmount === selectedAccountAmount ? "match-ok" : "match-diff"}><span>차이</span><strong>{amount(Math.abs(selectedSourceAmount - selectedAccountAmount))}</strong></div>
-            </div>
-            <div className="finance-match-controls">
-              <input className="input" value={matchMemo} onChange={(event) => setMatchMemo(event.target.value)} placeholder="연결 메모 (선택)" />
-              <button className="btn btn-outline" onClick={clearMatchSelection}>선택 해제</button>
-              <button className="btn btn-primary" disabled={matching} onClick={() => void createMatch()}>{matching ? "연결 중..." : "선택 거래 연결"}</button>
-            </div>
-          </Card>
-
-          <div className="finance-match-board">
-            <Card title={matchKind === "purchasePayment" ? "미연결 매입" : "미연결 카드 정산"} icon={matchKind === "purchasePayment" ? "🧾" : "💳"}>
-              <div className="finance-match-list">
-                {matchKind === "purchasePayment" ? unmatchedOrders.map((order) => (
-                  <label key={order.id} className={`finance-match-item ${selectedOrders.includes(order.id) ? "selected" : ""}`} draggable onDragStart={(event) => dragSource(event, order.id)}>
-                    <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => toggleNumber(order.id, setSelectedOrders)} />
-                    <span><strong>{order.vendorName}</strong><small>#{order.id} · {orderBaseDate(order)} · {order.items.map((item) => item.name).slice(0, 2).join(", ")}</small></span>
-                    <b>{amount(order.totalAmount)}</b>
-                  </label>
-                )) : unmatchedSettlements.map((item) => (
-                  <label key={item.id} className={`finance-match-item ${selectedCards.includes(item.id) ? "selected" : ""}`} draggable onDragStart={(event) => dragSource(event, item.id)}>
-                    <input type="checkbox" checked={selectedCards.includes(item.id)} onChange={() => toggleString(item.id, setSelectedCards)} />
-                    <span><strong>{itemName(item)}</strong><small>{item.businessDate} · 카드 정산예정</small></span>
-                    <b>{amount(Math.abs(item.amount))}</b>
-                  </label>
-                ))}
-                {(matchKind === "purchasePayment" ? unmatchedOrders.length : unmatchedSettlements.length) === 0 && <div className="empty-state">연결할 증빙이 없습니다.</div>}
-              </div>
-            </Card>
-
-            <Card title={matchKind === "purchasePayment" ? "미연결 계좌 출금" : "미연결 계좌 입금"} icon="🏦">
-              <div className="finance-match-list">
-                {availableAccounts.map((item) => (
-                  <label key={item.id} className={`finance-match-item account ${selectedAccounts.includes(item.id) ? "selected" : ""}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnAccount(event, item.id)}>
-                    <input type="checkbox" checked={selectedAccounts.includes(item.id)} onChange={() => toggleString(item.id, setSelectedAccounts)} />
-                    <span><strong>{itemName(item)}</strong><small>{item.businessDate} {item.transactedAt.slice(11, 16)} · {item.categoryName || "미분류"}</small></span>
-                    <b>{amount(Math.abs(item.amount))}</b>
-                  </label>
-                ))}
-                {availableAccounts.length === 0 && <div className="empty-state">연결할 계좌 거래가 없습니다.</div>}
-              </div>
-            </Card>
-          </div>
-
-          <Card title="최근 연결 내역" icon="🔗">
-            <div className="finance-match-history">
-              {financeMatches.map((match) => (
-                <div className="finance-match-history-row" key={match.id}>
-                  <div><Badge tone={match.kind === "purchasePayment" ? "amber" : "green"}>{match.kind === "purchasePayment" ? "매입 결제" : "카드 정산"}</Badge><strong>{amount(match.amount)}</strong></div>
-                  <div className="muted small">증빙 {match.kind === "purchasePayment" ? match.purchaseOrderIds.length : match.cardItemIds.length}건 · 계좌 {match.accountItemIds.length}건 · {match.createdAt.slice(0, 16)}</div>
-                  <div>{match.memo && <span className="muted small">{match.memo}</span>}<button className="btn btn-outline btn-sm" onClick={() => void removeMatch(match)}>연결 해제</button></div>
-                </div>
-              ))}
-              {financeMatches.length === 0 && <div className="empty-state">아직 연결한 거래가 없습니다.</div>}
-            </div>
-          </Card>
-        </>
-      )}
-
       {activeTab === "profit" && (
         <>
           <Card title="월 손익 조회" icon="📅">
             <div className="finance-profit-toolbar"><label><span className="field-label">조회 월</span><input className="input" type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label><Badge tone="amber">추정 손익</Badge></div>
           </Card>
           <div className="grid grid-4">
-            <StatCard label="총매출" value={money.format(monthSales)} unit="원" trend={`카드 ${amount(monthCardSales)}`} trendUp icon="📈" />
+            <StatCard label="총매출 (POS)" value={money.format(monthSales)} unit="원" trend={`${monthPosDays}일 집계`} trendUp icon="📈" />
             <StatCard label="식자재·매입" value={money.format(monthPurchaseAmount)} unit="원" trend={`${monthOrders.length}건`} trendUp={false} icon="🧾" tone="amber" />
             <StatCard label="인건비" value={money.format(monthPayroll)} unit="원" trend="급여 데이터 기준" trendUp={false} icon="👥" tone="blue" />
-            <StatCard label="고정·운영비" value={money.format(monthFixedExpenses)} unit="원" trend="분류된 계좌 출금" trendUp={false} icon="🏢" tone="amber" />
+            <StatCard label="직접 입력 매출" value={money.format(monthManualSales)} unit="원" trend="총매출에 더하지 않음" trendUp icon="✍️" tone="blue" />
           </div>
           <Card title="예상 영업이익" icon="📊">
             <div className={`finance-profit-total ${estimatedProfit < 0 ? "negative" : ""}`}>
               <div><span>{month} 예상 영업이익</span><strong>{amount(estimatedProfit)}</strong></div>
-              <div className="finance-profit-formula"><span>총매출 {amount(monthSales)}</span><span>− 매입 {amount(monthPurchaseAmount)}</span><span>− 인건비 {amount(monthPayroll)}</span><span>− 고정·운영비 {amount(monthFixedExpenses)}</span></div>
+              <div className="finance-profit-formula"><span>총매출 {amount(monthSales)}</span><span>− 매입 {amount(monthPurchaseAmount)}</span><span>− 인건비 {amount(monthPayroll)}</span></div>
             </div>
-            <div className="finance-profit-note">카드 수수료, 부가세와 아직 분류하지 않은 출금은 제외된 운영용 추정치입니다. 계좌 거래를 `고정·운영비` 용도로 분류할수록 정확해집니다.</div>
-          </Card>
-          <Card title="분류 점검" icon="🏷️">
-            <div className="finance-category-audit">
-              <div><strong>{granterAccountTransactions.filter((item) => item.businessDate.startsWith(month) && !item.categoryId).length}건</strong><span>이번 달 미분류 계좌 거래</span></div>
-              <button className="btn btn-outline" onClick={() => openTab("sales")}>거래 분류하러 가기</button>
+            <div className="finance-profit-note">
+              총매출은 POS 일 매출(네이버 플레이스플러스) 합계입니다. 직접 입력 마감분은
+              POS 와 겹칠 수 있어 더하지 않았습니다. <strong>고정·운영비(임대료·공과금 등)는
+              빠져 있습니다</strong> — 계좌 출금을 분류해 세던 값인데 카드·계좌 연동을 보류해
+              지금은 셀 수 없습니다. 카드 수수료와 부가세도 빠진 운영용 추정치입니다.
             </div>
           </Card>
         </>

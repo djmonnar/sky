@@ -26,8 +26,9 @@ import type {
   FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
   SettlementMethod, SettlementStatus, ManagerPermissions, ChatbotUser,
+  AttendanceLog, TimesheetSubmission, ChatbotMemory, ChatConversation,
 } from "../data/types";
-import type { AttendanceLogDoc, UserProfileDoc } from "../types/firestore";
+import type { AttendanceLogDoc, TimesheetSubmissionDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
 import { normalizeManagerPermissions } from "../config/managerPermissions";
 import { normalizeUnit } from "../data/units";
@@ -104,6 +105,13 @@ export function subscribeUserProfiles(cb: (v: UserProfileDoc[]) => void, onError
     ),
     (e) => onError(new Error(`users: ${e.message}`))
   );
+}
+
+/** Firestore Timestamp → epoch ms. 저장 순서로 줄 세울 때 쓴다. */
+function asMillis(raw: unknown): number | undefined {
+  const maybe = raw as { toMillis?: () => number } | null | undefined;
+  if (maybe && typeof maybe.toMillis === "function") return maybe.toMillis();
+  return undefined;
 }
 
 /** Firestore Timestamp 등 비문자열 값을 표시용 문자열로 정규화 */
@@ -732,6 +740,121 @@ export function subscribeChatbotUsers(cb: (v: ChatbotUser[]) => void, onError: E
   );
 }
 
+/**
+ * 출퇴근·휴게 기록.
+ *
+ * 화면 상태(출근 전/근무중/휴게중/퇴근)를 이 기록에서 계산하므로, 새로고침하거나
+ * 다른 기기에서 열어도 같은 상태가 보인다. 예전에는 화면 안에만 들고 있어서
+ * 새로고침하면 «출근 전» 으로 돌아갔다.
+ *
+ * @param empId  없으면 구독하지 않는다 (직원 문서와 연결 안 된 계정).
+ * @param month  YYYY-MM. 그 달 것만 받는다.
+ */
+export function subscribeAttendanceLogs(
+  empId: number | undefined,
+  month: string,
+  cb: (v: AttendanceLog[]) => void,
+  onError: ErrCb
+): Unsub {
+  if (!empId) {
+    cb([]);
+    return () => {};
+  }
+  return subscribe(
+    "attendanceLogs",
+    (d, id) => ({
+      id,
+      empId: Number(d.empId ?? 0),
+      date: String(d.date ?? ""),
+      type: String(d.type ?? "in") as AttendanceLog["type"],
+      time: String(d.time ?? ""),
+      createdAt: asMillis(d.createdAt),
+    }),
+    (items) => cb(
+      items
+        .filter((row) => row.date.startsWith(month))
+        .sort((a, b) =>
+          a.date.localeCompare(b.date)
+          || (a.createdAt ?? 0) - (b.createdAt ?? 0)
+          || a.time.localeCompare(b.time)
+        )
+    ),
+    onError,
+    where("empId", "==", empId)
+  );
+}
+
+/** 관리자용: 제출된 월별 근무내역. */
+export function subscribeTimesheetSubmissions(
+  cb: (v: TimesheetSubmission[]) => void,
+  onError: ErrCb
+): Unsub {
+  return subscribe(
+    "timesheetSubmissions",
+    (d, id) => ({
+      id,
+      empId: Number(d.empId ?? 0),
+      empName: String(d.empName ?? ""),
+      month: String(d.month ?? ""),
+      status: (d.status === "확인완료" ? "확인완료" : "제출") as TimesheetSubmission["status"],
+      workedDays: Number(d.workedDays ?? 0),
+      totalMinutes: Number(d.totalMinutes ?? 0),
+      breakMinutes: Number(d.breakMinutes ?? 0),
+      note: d.note ? String(d.note) : undefined,
+      submittedAt: asDisplayDate(d.submittedAt) || asDisplayDate(d.createdAt),
+      reviewedAt: asDisplayDate(d.reviewedAt),
+      reviewedBy: d.reviewedBy ? String(d.reviewedBy) : undefined,
+    }),
+    (items) => cb(items.sort((a, b) => b.month.localeCompare(a.month) || a.empName.localeCompare(b.empName, "ko"))),
+    onError
+  );
+}
+
+/**
+ * 챗봇이 참고하는 «업체 기억». 관리자만 읽고 쓴다 (Rules).
+ * 챗봇 함수는 admin SDK 로 서버에서 따로 읽으므로, 직원이 못 읽어도 답변에는 반영된다.
+ */
+export function subscribeChatbotMemories(cb: (v: ChatbotMemory[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "chatbotMemories",
+    (d, id) => ({
+      id,
+      text: String(d.text ?? ""),
+      createdBy: d.createdBy ? String(d.createdBy) : undefined,
+      createdAt: asDisplayDate(d.createdAt),
+      updatedAt: asDisplayDate(d.updatedAt),
+    }),
+    (items) => cb(items.sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))),
+    onError
+  );
+}
+
+/** 내 지난 대화만 받는다. Rules 도 본인 것만 허용한다. */
+export function subscribeChatConversations(
+  uid: string | undefined,
+  cb: (v: ChatConversation[]) => void,
+  onError: ErrCb
+): Unsub {
+  if (!uid) {
+    cb([]);
+    return () => {};
+  }
+  return subscribe(
+    "chatConversations",
+    (d, id) => ({
+      id,
+      uid: String(d.uid ?? ""),
+      title: String(d.title ?? "새 대화"),
+      messages: Array.isArray(d.messages) ? (d.messages as ChatConversation["messages"]) : [],
+      createdAt: asDisplayDate(d.createdAt),
+      updatedAt: asDisplayDate(d.updatedAt),
+    }),
+    (items) => cb(items.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))),
+    onError,
+    where("uid", "==", uid)
+  );
+}
+
 /* ---------- 쓰기 ---------- */
 
 export async function fsUpsertReservation(r: Reservation): Promise<void> {
@@ -1079,6 +1202,55 @@ export async function fsDeleteChatbotUser(id: string): Promise<void> {
   await deleteDoc(doc(col("chatbotUsers"), chatbotUserDocId(id)));
 }
 
+export async function fsUpsertChatbotMemory(memory: { id?: string; text: string }): Promise<void> {
+  const text = memory.text.trim();
+  if (!text) throw new Error("기억할 내용을 입력해주세요.");
+  const uid = requireAuth().currentUser?.uid ?? "";
+  if (memory.id) {
+    await setDoc(
+      doc(col("chatbotMemories"), memory.id),
+      { text, updatedAt: serverTimestamp(), updatedBy: uid },
+      { merge: true }
+    );
+    return;
+  }
+  await addDoc(col("chatbotMemories"), {
+    text,
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function fsDeleteChatbotMemory(id: string): Promise<void> {
+  await deleteDoc(doc(col("chatbotMemories"), id));
+}
+
+/** 대화 한 건을 통째로 저장한다. 같은 id 로 다시 부르면 덮어쓴다. */
+export async function fsSaveChatConversation(
+  conversation: { id: string; title: string; messages: ChatConversation["messages"] }
+): Promise<void> {
+  const uid = requireAuth().currentUser?.uid;
+  if (!uid) throw new Error("로그인이 필요합니다.");
+  const ref = doc(col("chatConversations"), conversation.id);
+  const existing = await getDoc(ref);
+  await setDoc(
+    ref,
+    {
+      uid,
+      title: conversation.title.slice(0, 60),
+      messages: conversation.messages.slice(-60), // 문서가 무한히 커지지 않게 최근 것만
+      updatedAt: serverTimestamp(),
+      ...(existing.exists() ? {} : { createdAt: serverTimestamp() }),
+    },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteChatConversation(id: string): Promise<void> {
+  await deleteDoc(doc(col("chatConversations"), id));
+}
+
 export async function fsUpsertNotice(n: Notice): Promise<void> {
   const docId = n.docId ?? String(n.id);
   await setDoc(
@@ -1125,6 +1297,38 @@ export async function fsAddAttendanceLog(
     ...log,
     createdAt: serverTimestamp(),
   });
+}
+
+/** 직원이 이번 달 근무내역을 관리자에게 보낸다. 다시 보내면 덮어쓴다. */
+export async function fsSubmitTimesheet(
+  submission: Omit<TimesheetSubmissionDoc, "createdAt" | "updatedAt" | "submittedAt" | "status">
+): Promise<void> {
+  const id = `${submission.empId}_${submission.month}`;
+  const ref = doc(col("timesheetSubmissions"), id);
+  const existing = await getDoc(ref);
+  await setDoc(
+    ref,
+    {
+      ...submission,
+      status: "제출",
+      submittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      // 다시 보내면 관리자가 확인한 표시는 지운다 — 내용이 바뀌었으니 다시 봐야 한다.
+      reviewedAt: null,
+      reviewedBy: null,
+      ...(existing.exists() ? {} : { createdAt: serverTimestamp() }),
+    },
+    { merge: true }
+  );
+}
+
+/** 관리자가 제출된 근무내역을 확인 처리한다. */
+export async function fsReviewTimesheet(id: string, reviewedBy: string): Promise<void> {
+  await setDoc(
+    doc(col("timesheetSubmissions"), id),
+    { status: "확인완료", reviewedBy, reviewedAt: serverTimestamp(), updatedAt: serverTimestamp() },
+    { merge: true }
+  );
 }
 
 export async function fsUpdateUserRole(uid: string, role: Role): Promise<void> {

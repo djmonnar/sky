@@ -7,6 +7,7 @@ import {
   PERIOD_LABEL,
   PERIODS,
   countSlots,
+  PERIOD_TIME,
   planTimesForShifts,
   shiftDateForDay,
   shiftsForEmployeeDay,
@@ -53,16 +54,26 @@ export default function SchedulePage() {
           <button className="icon-btn" style={{ width: 30, height: 30 }} aria-label="다음 주">›</button>
         </div>
         <div className="day-tabs compact">
-          {week.map((d, i) => (
-            <button
-              key={i}
-              className={`day-tab ${selDay === i ? "on" : ""}`}
-              onClick={() => setSelDay(i)}
-            >
-              <span>{DOW_KO[i]}</span>
-              <strong>{d.getDate()}</strong>
-            </button>
-          ))}
+          {week.map((d, i) => {
+            const daySlots = weekSlots[i];
+            const hasMorning = daySlots.some((s) => s.period === "morning");
+            const hasAfternoon = daySlots.some((s) => s.period === "afternoon");
+            return (
+              <button
+                key={i}
+                className={`day-tab ${selDay === i ? "on" : ""} ${daySlots.length === 0 ? "off" : ""}`}
+                onClick={() => setSelDay(i)}
+              >
+                <span>{DOW_KO[i]}</span>
+                <strong>{d.getDate()}</strong>
+                {/* 근무가 있는 날은 오전·오후를 점으로 알린다. 숫자만 보면 어느 날 나가는지 모른다. */}
+                <span className="day-dots" aria-hidden="true">
+                  {hasMorning && <i className="dot morning" />}
+                  {hasAfternoon && <i className="dot afternoon" />}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </Card>
 
@@ -106,11 +117,20 @@ export default function SchedulePage() {
                 const periodSlots = selSlots.filter((s) => s.period === period);
                 if (periodSlots.length === 0) return null;
                 return (
-                  <div className="staff-slot-item" key={period}>
-                    <div>
-                      <div className="bold">{PERIOD_LABEL[period]} 근무</div>
-                      <div className="muted small">
-                        {periodSlots.map((s) => DEPARTMENT_LABEL[s.department]).join(", ")}
+                  <div className={`staff-slot-item ${period}`} key={period}>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="bold">
+                        {PERIOD_LABEL[period]} 근무
+                        <span className="staff-slot-time">
+                          {PERIOD_TIME[period].start}~{PERIOD_TIME[period].end}
+                        </span>
+                      </div>
+                      <div className="dept-tags">
+                        {Array.from(new Set(periodSlots.map((s) => s.department))).map((dept) => (
+                          <span className={`dept-tag ${dept}`} key={dept}>
+                            {DEPARTMENT_LABEL[dept]}
+                          </span>
+                        ))}
                       </div>
                     </div>
                     <Badge tone={period === "morning" ? "blue" : "amber"}>
@@ -146,12 +166,16 @@ export default function SchedulePage() {
                 const daySlots = weekSlots[i];
                 return (
                   <button
-                    className={`week-day ${i === selDay ? "today" : ""}`}
+                    className={`week-day ${i === selDay ? "today" : ""} ${daySlots.length === 0 ? "off-day" : ""}`}
                     key={i}
                     onClick={() => setSelDay(i)}
                   >
                     <span className="dow">{DOW_KO[i]}</span>
                     <span className="dt">{d.getMonth() + 1}/{d.getDate()}</span>
+                    <span className="day-dots" aria-hidden="true">
+                      {daySlots.some((s) => s.period === "morning") && <i className="dot morning" />}
+                      {daySlots.some((s) => s.period === "afternoon") && <i className="dot afternoon" />}
+                    </span>
                     <span className={`tm ${daySlots.length === 0 ? "off" : ""}`}>
                       {daySlots.length > 0 ? slotSummary(daySlots) : "휴무"}
                     </span>
