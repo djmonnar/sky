@@ -1127,7 +1127,16 @@ function classify(body) {
   return "help";
 }
 
-async function handleDashboard() {
+/**
+ * 오늘 현황. 예전에는 건수 네 줄이 전부라 누가 언제 오는지 알려면 「오늘 예약」과
+ * 「오늘 근무표」를 다시 쳐야 했다. 지금은 **상세가 기본**이라 예약 한 줄 한 줄과
+ * 근무자 이름을 같이 싣는다. 읽는 문서는 예전과 같다 — 이미 가져온 것을 버리지 않을 뿐이다.
+ *
+ * 카톡 말풍선은 길면 잘리므로 예약은 12건까지만 적고 나머지는 「외 N건」으로 줄인다.
+ * 실무자에게는 남의 근무·근무기록을 주지 않는다(근무표 조회와 같은 경계).
+ */
+async function handleDashboard(chatUser) {
+  const MAX_RESERVATION_LINES = 12;
   const today = formatDate();
   const [reservations, employees, shifts, workRecords] = await Promise.all([
     storeCol("reservations").where("date", "==", today).get(),
@@ -1136,20 +1145,74 @@ async function handleDashboard() {
     storeCol("workRecords").where("date", "==", today).get(),
   ]);
 
-  const activeReservations = reservations.docs.filter((doc) => !["취소", "노쇼"].includes(doc.data().status));
-  const activeEmployees = employees.docs.filter((doc) => doc.data().active !== false);
-  const pendingRecords = workRecords.docs.filter((doc) => ["미작성", "제출", "승인대기"].includes(doc.data().status));
+  const activeReservations = reservations.docs
+    .map((doc) => doc.data())
+    .filter((row) => !["취소", "노쇼"].includes(String(row.status || "")))
+    .sort((a, b) => String(a.time ?? "").localeCompare(String(b.time ?? "")));
+  const canceledCount = reservations.docs.length - activeReservations.length;
+  const guestCount = activeReservations.reduce((sum, row) => sum + (Number(row.people) || 0), 0);
 
-  return textResponse(
-    [
-      "하늘땅 오늘 현황",
-      `예약: ${activeReservations.length}건`,
-      `근무 배치: ${shifts.size}건`,
-      `직원: ${activeEmployees.length}명`,
-      `확인 필요 근무기록: ${pendingRecords.length}건`,
-    ].join("\n"),
-    ["오늘 예약", "오늘 근무표", "공지"]
+  const employeeRows = employees.docs.map((doc) => doc.data());
+  const activeEmployees = employeeRows.filter((row) => row.active !== false);
+  const nameOf = (empId) => employeeRows.find((row) => Number(row.id) === Number(empId))?.name || `직원${empId}`;
+
+  let shiftRows = shifts.docs.map((doc) => doc.data());
+  let pendingRecords = workRecords.docs
+    .map((doc) => doc.data())
+    .filter((row) => ["미작성", "제출", "승인대기"].includes(String(row.status || "")));
+  const scopedToSelf = chatUser?.role === "staff";
+  if (scopedToSelf) {
+    shiftRows = shiftRows.filter((row) => Number(row.employeeId ?? row.empId) === chatUser.employeeId);
+    pendingRecords = pendingRecords.filter((row) => Number(row.empId) === chatUser.employeeId);
+  }
+
+  const grouped = { morning: { hall: [], kitchen: [] }, afternoon: { hall: [], kitchen: [] } };
+  shiftRows.forEach((shift) => {
+    const period = shift.period === "afternoon" ? "afternoon" : "morning";
+    const dept = shift.department === "kitchen" ? "kitchen" : "hall";
+    grouped[period][dept].push(shift.employeeName || `직원${shift.employeeId ?? shift.empId ?? ""}`);
+  });
+  const shiftLine = (period, dept, label) => `${label}: ${grouped[period][dept].join(", ") || "-"}`;
+
+  // 예약은 상태별로 묶는다 — 이미 다녀간 손님과 아직 안 온 손님이 섞이면 읽기 어렵다.
+  const byStatus = new Map();
+  activeReservations.slice(0, MAX_RESERVATION_LINES).forEach((row) => {
+    const key = row.status || "상태 없음";
+    if (!byStatus.has(key)) byStatus.set(key, []);
+    byStatus
+      .get(key)
+      .push(`  ${row.time || "시간미정"} ${row.name || "이름없음"} ${Number(row.people) || 0}명${row.seat ? ` ${row.seat}` : ""}`);
+  });
+  const moreCount = Math.max(0, activeReservations.length - MAX_RESERVATION_LINES);
+
+  const lines = [
+    `하늘땅 오늘 현황 (${today})`,
+    `예약 ${activeReservations.length}건 · 손님 ${guestCount}명 / 근무 ${shiftRows.length}건 / 직원 ${activeEmployees.length}명 / 확인 필요 근무기록 ${pendingRecords.length}건`,
+  ];
+  if (canceledCount > 0) lines.push(`※ 취소·노쇼 ${canceledCount}건은 위 건수에서 빠져 있습니다.`);
+
+  lines.push("", "▶ 예약");
+  if (activeReservations.length === 0) {
+    lines.push("  없습니다.");
+  } else {
+    byStatus.forEach((rows, status) => lines.push(`[${status}]`, ...rows));
+    if (moreCount > 0) lines.push(`  ... 외 ${moreCount}건 (「오늘 예약」으로 전부 보기)`);
+  }
+
+  lines.push("", scopedToSelf ? "▶ 내 근무" : "▶ 근무표");
+  lines.push(
+    shiftLine("morning", "hall", "오전 홀"),
+    shiftLine("morning", "kitchen", "오전 주방"),
+    shiftLine("afternoon", "hall", "오후 홀"),
+    shiftLine("afternoon", "kitchen", "오후 주방")
   );
+
+  if (pendingRecords.length > 0) {
+    lines.push("", "▶ 확인 필요 근무기록");
+    pendingRecords.forEach((row) => lines.push(`  ${nameOf(row.empId)} (${row.status || ""})`));
+  }
+
+  return textResponse(lines.join("\n"), ["오늘 예약", "오늘 근무표", "공지"]);
 }
 
 async function handleReservationList(body) {
@@ -2740,7 +2803,7 @@ function handleMyInfo(body, chatUser) {
 
 async function routeAction(action, body, chatUser) {
   switch (action) {
-    case "dashboard": return handleDashboard();
+    case "dashboard": return handleDashboard(chatUser);
     case "reservation.list": return handleReservationList(body);
     case "reservation.create": return handleReservationCreate(body, chatUser);
     case "reservation.quickCreate": return handleReservationCreate(body, chatUser, parseQuickReservation(utteranceOf(body)));

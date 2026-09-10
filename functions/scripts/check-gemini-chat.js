@@ -194,6 +194,49 @@ async function check(label, fn) {
     assert.strictEqual(payload.reservationCount, 2, "취소 아닌 예약 2건");
     assert.strictEqual(payload.expectedGuestCount, 6, "예상 손님 6명");
     assert.strictEqual(payload.activeEmployeeCount, 2, "퇴사자 제외 2명");
+    assert.strictEqual(payload.canceledReservationCount, 0, "오늘 취소·노쇼 없음");
+  });
+
+  // 건수만 오면 모델이 「예약 2건」에서 멈춘다. 상세를 기본으로 만들려면
+  // 도구 응답 자체에 목록이 실려 있어야 한다.
+  await check("조회: 오늘 현황이 목록까지 함께 준다 (상세가 기본)", async () => {
+    stubGemini([{ calls: [{ name: "get_today_overview", args: {} }] }, { text: "정리했습니다." }]);
+    await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "오늘 현황" }] });
+    const toolTurn = requests[1].contents.find((entry) => entry.parts.some((part) => part.functionResponse));
+    const payload = toolTurn.parts[0].functionResponse.response;
+
+    assert.strictEqual(payload.reservations.length, 2, "예약이 한 줄씩 실려야 함");
+    assert.strictEqual(payload.reservations[0].time, "18:00", "시간순 정렬");
+    assert.strictEqual(payload.reservations[0].name, "김하늘");
+    assert.strictEqual(payload.reservations[0].people, 4);
+    assert.strictEqual(payload.reservations[1].name, "박땅");
+
+    assert.strictEqual(payload.shifts.length, 2, "근무자 명단이 실려야 함");
+    assert.deepStrictEqual(
+      payload.shifts.map((row) => [row.employeeName, row.period, row.department]),
+      [
+        ["김현지", "오전", "홀"],
+        ["이바다", "오후", "주방"],
+      ],
+      "오전이 먼저, 라벨은 한국어로"
+    );
+
+    assert.strictEqual(payload.pendingWorkRecords.length, 1, "확인 필요 근무기록 1건");
+    assert.strictEqual(payload.pendingWorkRecords[0].employeeName, "김현지", "건수가 아니라 누구 것인지");
+  });
+
+  // 목록을 실으면서 남의 근무·근무기록이 실무자에게 새면 안 된다.
+  await check("권한: 실무자의 오늘 현황은 본인 근무만 담는다", async () => {
+    stubGemini([{ calls: [{ name: "get_today_overview", args: {} }] }, { text: "오늘 근무입니다." }]);
+    await chat.runConversation({ apiKey: "k", model: "m", actor: STAFF, messages: [{ role: "user", text: "오늘 현황" }] });
+    const toolTurn = requests[1].contents.find((entry) => entry.parts.some((part) => part.functionResponse));
+    const payload = toolTurn.parts[0].functionResponse.response;
+
+    assert.strictEqual(payload.scopedToSelf, true);
+    assert.strictEqual(payload.shifts.length, 1, "본인 근무만");
+    assert.strictEqual(payload.shifts[0].employeeName, "김현지");
+    assert.strictEqual(payload.shiftAssignmentCount, 1, "건수도 같이 좁혀야 목록과 안 어긋난다");
+    assert.ok(!JSON.stringify(payload).includes("이바다"), "남의 근무가 새면 안 됨");
   });
 
   await check("조회: 예약 목록의 전화번호가 마스킹됨", async () => {
