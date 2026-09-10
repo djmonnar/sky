@@ -7,6 +7,28 @@ export type ShiftPeriod = "morning" | "afternoon";
 export type Department = "hall" | "kitchen";
 export type WorkDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
+/**
+ * 챗봇이 늘 참고하는 «업체 기억». 관리자만 쓰고, 모든 대화의 시스템 지시에 실린다.
+ * 예: "주차는 건물 뒤 공영주차장 2시간 무료", "단체는 10인 이상부터".
+ */
+export interface ChatbotMemory {
+  id: string;
+  text: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** 지난 대화 한 건. 로그인 사용자별로 따로 쌓인다. */
+export interface ChatConversation {
+  id: string;
+  uid: string;
+  title: string;
+  messages: { role: "user" | "model"; text: string }[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /** 카카오 챗봇 사용자. 문서 ID = 카카오 botUserKey (슬래시는 _ 로 치환). */
 export interface ChatbotUser {
   id: string;

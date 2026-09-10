@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
+import {
+  fsDeleteChatConversation,
+  fsDeleteChatbotMemory,
+  fsSaveChatConversation,
+  fsUpsertChatbotMemory,
+  subscribeChatConversations,
+  subscribeChatbotMemories,
+} from "../services/firestore";
+import type { ChatConversation, ChatbotMemory } from "../data/types";
 import {
   confirmChatAction,
   sendChatMessage,
@@ -109,9 +118,19 @@ function SalesReportCard({ payload }: { payload: SalesReportPayload }) {
   );
 }
 
+type ChatTab = "chat" | "memory" | "history";
+
+/** 대화 제목은 첫 질문에서 딴다. 길면 자른다. */
+function titleFrom(bubbles: Bubble[]): string {
+  const first = bubbles.find((b) => b.role === "user" && b.text.trim());
+  const text = first?.text.trim() ?? "새 대화";
+  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+}
+
 export default function ChatWidget() {
   const { mode, authUser, role, showToast } = useStore();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<ChatTab>("chat");
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,7 +138,95 @@ export default function ChatWidget() {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  /* 지금 이어 가는 대화의 id. 새 대화를 시작하면 새 id 를 만든다.
+     같은 id 로 계속 덮어써서 대화 하나가 문서 하나로 남는다. */
+  const [conversationId, setConversationId] = useState(() => newId());
+  const [memories, setMemories] = useState<ChatbotMemory[]>([]);
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [memoryDraft, setMemoryDraft] = useState("");
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [savingMemory, setSavingMemory] = useState(false);
+
+  const isAdmin = role === "admin";
   const suggestions = role === "staff" ? SUGGESTIONS_STAFF : SUGGESTIONS_OPS;
+
+  // 패널을 열었을 때만 구독한다. 닫혀 있는 동안 읽을 이유가 없다.
+  useEffect(() => {
+    if (!open || mode !== "live" || !isAdmin) return;
+    return subscribeChatbotMemories(setMemories, (e) => console.error("[chatbotMemories]", e));
+  }, [open, mode, isAdmin]);
+
+  useEffect(() => {
+    if (!open || mode !== "live") return;
+    return subscribeChatConversations(
+      authUser?.uid,
+      setConversations,
+      (e) => console.error("[chatConversations]", e)
+    );
+  }, [open, mode, authUser]);
+
+  const tabs = useMemo(
+    () => [
+      { id: "chat" as const, label: "대화", icon: "💬" },
+      ...(isAdmin ? [{ id: "memory" as const, label: "업체 기억", icon: "📝" }] : []),
+      { id: "history" as const, label: "이전 대화", icon: "🕘" },
+    ],
+    [isAdmin]
+  );
+
+  const startNewChat = useCallback(() => {
+    setBubbles([]);
+    setInput("");
+    setConversationId(newId());
+    setTab("chat");
+  }, []);
+
+  const openConversation = useCallback((conversation: ChatConversation) => {
+    setBubbles(conversation.messages.map((m) => ({ id: newId(), role: m.role, text: m.text })));
+    setConversationId(conversation.id);
+    setTab("chat");
+  }, []);
+
+  const saveMemory = useCallback(async () => {
+    const text = memoryDraft.trim();
+    if (!text) return;
+    setSavingMemory(true);
+    try {
+      await fsUpsertChatbotMemory({ id: editingMemoryId ?? undefined, text });
+      setMemoryDraft("");
+      setEditingMemoryId(null);
+      showToast(editingMemoryId ? "기억을 고쳤어요" : "기억에 담았어요");
+    } catch (error) {
+      showToast((error as Error).message);
+    } finally {
+      setSavingMemory(false);
+    }
+  }, [memoryDraft, editingMemoryId, showToast]);
+
+  const removeMemory = useCallback(async (memory: ChatbotMemory) => {
+    if (!window.confirm(`«${memory.text.slice(0, 30)}» 을(를) 잊게 할까요?`)) return;
+    try {
+      await fsDeleteChatbotMemory(memory.id);
+      if (editingMemoryId === memory.id) {
+        setEditingMemoryId(null);
+        setMemoryDraft("");
+      }
+      showToast("기억에서 지웠어요");
+    } catch (error) {
+      showToast((error as Error).message);
+    }
+  }, [editingMemoryId, showToast]);
+
+  const removeConversation = useCallback(async (conversation: ChatConversation) => {
+    if (!window.confirm("이 대화를 지울까요?")) return;
+    try {
+      await fsDeleteChatConversation(conversation.id);
+      if (conversation.id === conversationId) startNewChat();
+      showToast("대화를 지웠어요");
+    } catch (error) {
+      showToast((error as Error).message);
+    }
+  }, [conversationId, startNewChat, showToast]);
 
   useEffect(() => {
     if (!listRef.current) return;
@@ -158,8 +265,8 @@ export default function ChatWidget() {
           .filter((bubble) => bubble.text.trim().length > 0)
           .map((bubble) => ({ role: bubble.role, text: bubble.text }));
         const reply = await sendChatMessage(history);
-        setBubbles((prev) => [
-          ...prev,
+        const answered: Bubble[] = [
+          ...next,
           {
             id: newId(),
             role: "model",
@@ -167,7 +274,18 @@ export default function ChatWidget() {
             blocks: reply.blocks,
             pendingAction: reply.pendingAction,
           },
-        ]);
+        ];
+        setBubbles(answered);
+        // 대화가 한 번 오갈 때마다 통째로 덮어쓴다. 실패해도 대화는 계속돼야 하므로 삼킨다.
+        if (mode === "live") {
+          void fsSaveChatConversation({
+            id: conversationId,
+            title: titleFrom(answered),
+            messages: answered
+              .filter((b) => b.text.trim())
+              .map((b) => ({ role: b.role, text: b.text })),
+          }).catch((error) => console.error("[chatConversations]", error));
+        }
       } catch (error) {
         setBubbles((prev) => [
           ...prev,
@@ -177,7 +295,7 @@ export default function ChatWidget() {
         setBusy(false);
       }
     },
-    [bubbles, busy]
+    [bubbles, busy, conversationId, mode]
   );
 
   const confirm = useCallback(
@@ -233,7 +351,109 @@ export default function ChatWidget() {
             <button className="chat-close" aria-label="닫기" onClick={() => setOpen(false)}>✕</button>
           </div>
 
-          <div className="chat-list" ref={listRef}>
+          <div className="chat-tabs" role="tablist" aria-label="챗봇 보기">
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                className={tab === item.id ? "on" : ""}
+                onClick={() => setTab(item.id)}
+              >
+                <span aria-hidden="true">{item.icon}</span>{item.label}
+              </button>
+            ))}
+            <button className="chat-new" aria-label="새 대화 시작" title="새 대화" onClick={startNewChat}>＋</button>
+          </div>
+
+          {tab === "memory" && (
+            <div className="chat-pane">
+              <p className="chat-pane-note">
+                여기 적어 둔 것은 <strong>모든 대화</strong>에서 챗봇이 참고합니다. 가게가 정해 둔
+                사실을 적으세요 — 주차, 단체 기준, 휴무일 같은 것. 예약이나 매출 숫자는 적지 마세요,
+                그건 챗봇이 직접 확인합니다.
+              </p>
+              <div className="chat-memory-form">
+                <textarea
+                  className="textarea"
+                  rows={2}
+                  value={memoryDraft}
+                  onChange={(event) => setMemoryDraft(event.target.value)}
+                  placeholder="예: 주차는 건물 뒤 공영주차장 2시간 무료"
+                  maxLength={300}
+                />
+                <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                  {editingMemoryId && (
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => { setEditingMemoryId(null); setMemoryDraft(""); }}
+                    >
+                      취소
+                    </button>
+                  )}
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={savingMemory || !memoryDraft.trim()}
+                    onClick={() => void saveMemory()}
+                  >
+                    {savingMemory ? "저장 중…" : editingMemoryId ? "고치기" : "기억시키기"}
+                  </button>
+                </div>
+              </div>
+
+              {memories.length === 0 ? (
+                <div className="chat-pane-empty">아직 기억시킨 것이 없습니다.</div>
+              ) : (
+                <ul className="chat-memory-list">
+                  {memories.map((memory) => (
+                    <li key={memory.id} className={editingMemoryId === memory.id ? "on" : ""}>
+                      <span>{memory.text}</span>
+                      <div className="chat-memory-actions">
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => { setEditingMemoryId(memory.id); setMemoryDraft(memory.text); }}
+                        >
+                          고치기
+                        </button>
+                        <button className="btn btn-danger btn-sm" onClick={() => void removeMemory(memory)}>
+                          잊기
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {tab === "history" && (
+            <div className="chat-pane">
+              <p className="chat-pane-note">내가 나눈 대화만 보입니다. 다른 사람은 볼 수 없습니다.</p>
+              {conversations.length === 0 ? (
+                <div className="chat-pane-empty">아직 저장된 대화가 없습니다.</div>
+              ) : (
+                <ul className="chat-history-list">
+                  {conversations.map((conversation) => (
+                    <li key={conversation.id} className={conversation.id === conversationId ? "on" : ""}>
+                      <button className="chat-history-open" onClick={() => openConversation(conversation)}>
+                        <strong>{conversation.title}</strong>
+                        <small>
+                          {conversation.updatedAt || ""} · {conversation.messages.length}개
+                        </small>
+                      </button>
+                      <button
+                        className="chat-history-del"
+                        aria-label="대화 지우기"
+                        onClick={() => void removeConversation(conversation)}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div className="chat-list" ref={listRef} hidden={tab !== "chat"}>
             {bubbles.length === 0 && (
               <div className="chat-empty">
                 <p>무엇을 도와드릴까요?</p>
@@ -298,6 +518,7 @@ export default function ChatWidget() {
 
           <form
             className="chat-input"
+            hidden={tab !== "chat"}
             onSubmit={(event) => {
               event.preventDefault();
               void send(input);
@@ -321,7 +542,7 @@ export default function ChatWidget() {
               보내기
             </button>
           </form>
-          <div className="chat-foot">등록·수정은 확인 버튼을 눌러야 저장됩니다.</div>
+          <div className="chat-foot" hidden={tab !== "chat"}>등록·수정은 확인 버튼을 눌러야 저장됩니다.</div>
         </div>
       )}
     </>

@@ -26,7 +26,7 @@ import type {
   FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
   SettlementMethod, SettlementStatus, ManagerPermissions, ChatbotUser,
-  AttendanceLog, TimesheetSubmission,
+  AttendanceLog, TimesheetSubmission, ChatbotMemory, ChatConversation,
 } from "../data/types";
 import type { AttendanceLogDoc, TimesheetSubmissionDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
@@ -810,6 +810,51 @@ export function subscribeTimesheetSubmissions(
   );
 }
 
+/**
+ * 챗봇이 참고하는 «업체 기억». 관리자만 읽고 쓴다 (Rules).
+ * 챗봇 함수는 admin SDK 로 서버에서 따로 읽으므로, 직원이 못 읽어도 답변에는 반영된다.
+ */
+export function subscribeChatbotMemories(cb: (v: ChatbotMemory[]) => void, onError: ErrCb): Unsub {
+  return subscribe(
+    "chatbotMemories",
+    (d, id) => ({
+      id,
+      text: String(d.text ?? ""),
+      createdBy: d.createdBy ? String(d.createdBy) : undefined,
+      createdAt: asDisplayDate(d.createdAt),
+      updatedAt: asDisplayDate(d.updatedAt),
+    }),
+    (items) => cb(items.sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))),
+    onError
+  );
+}
+
+/** 내 지난 대화만 받는다. Rules 도 본인 것만 허용한다. */
+export function subscribeChatConversations(
+  uid: string | undefined,
+  cb: (v: ChatConversation[]) => void,
+  onError: ErrCb
+): Unsub {
+  if (!uid) {
+    cb([]);
+    return () => {};
+  }
+  return subscribe(
+    "chatConversations",
+    (d, id) => ({
+      id,
+      uid: String(d.uid ?? ""),
+      title: String(d.title ?? "새 대화"),
+      messages: Array.isArray(d.messages) ? (d.messages as ChatConversation["messages"]) : [],
+      createdAt: asDisplayDate(d.createdAt),
+      updatedAt: asDisplayDate(d.updatedAt),
+    }),
+    (items) => cb(items.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))),
+    onError,
+    where("uid", "==", uid)
+  );
+}
+
 /* ---------- 쓰기 ---------- */
 
 export async function fsUpsertReservation(r: Reservation): Promise<void> {
@@ -1155,6 +1200,55 @@ export async function fsUpsertChatbotUser(user: ChatbotUser): Promise<void> {
 
 export async function fsDeleteChatbotUser(id: string): Promise<void> {
   await deleteDoc(doc(col("chatbotUsers"), chatbotUserDocId(id)));
+}
+
+export async function fsUpsertChatbotMemory(memory: { id?: string; text: string }): Promise<void> {
+  const text = memory.text.trim();
+  if (!text) throw new Error("기억할 내용을 입력해주세요.");
+  const uid = requireAuth().currentUser?.uid ?? "";
+  if (memory.id) {
+    await setDoc(
+      doc(col("chatbotMemories"), memory.id),
+      { text, updatedAt: serverTimestamp(), updatedBy: uid },
+      { merge: true }
+    );
+    return;
+  }
+  await addDoc(col("chatbotMemories"), {
+    text,
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function fsDeleteChatbotMemory(id: string): Promise<void> {
+  await deleteDoc(doc(col("chatbotMemories"), id));
+}
+
+/** 대화 한 건을 통째로 저장한다. 같은 id 로 다시 부르면 덮어쓴다. */
+export async function fsSaveChatConversation(
+  conversation: { id: string; title: string; messages: ChatConversation["messages"] }
+): Promise<void> {
+  const uid = requireAuth().currentUser?.uid;
+  if (!uid) throw new Error("로그인이 필요합니다.");
+  const ref = doc(col("chatConversations"), conversation.id);
+  const existing = await getDoc(ref);
+  await setDoc(
+    ref,
+    {
+      uid,
+      title: conversation.title.slice(0, 60),
+      messages: conversation.messages.slice(-60), // 문서가 무한히 커지지 않게 최근 것만
+      updatedAt: serverTimestamp(),
+      ...(existing.exists() ? {} : { createdAt: serverTimestamp() }),
+    },
+    { merge: true }
+  );
+}
+
+export async function fsDeleteChatConversation(id: string): Promise<void> {
+  await deleteDoc(doc(col("chatConversations"), id));
 }
 
 export async function fsUpsertNotice(n: Notice): Promise<void> {

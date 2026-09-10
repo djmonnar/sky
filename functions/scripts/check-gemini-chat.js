@@ -51,6 +51,11 @@ const data = {
       source: "ownervista",
     },
   },
+  chatbotMemories: {
+    m1: { text: "주차는 건물 뒤 공영주차장, 2시간 무료" },
+    m2: { text: "단체는 10인 이상부터" },
+    m3: { text: "   " },
+  },
 };
 
 const writes = [];
@@ -384,6 +389,36 @@ async function check(label, fn) {
     assert.strictEqual(modelTurns.length, 2, "도구 호출 턴 2개가 히스토리에 남아야 함");
     assert.strictEqual(modelTurns[0].parts[0].thoughtSignature, "sig-list_reservations-0");
     assert.strictEqual(modelTurns[1].parts[0].thoughtSignature, "sig-get_today_overview-0");
+  });
+
+  await check("업체 기억이 시스템 지시에 실린다", async () => {
+    stubGemini([{ text: "주차는 건물 뒤 공영주차장을 쓰시면 됩니다." }]);
+    await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "주차 어디에 하나요?" }] });
+    const instruction = requests[0].systemInstruction.parts[0].text;
+    assert.match(instruction, /주차는 건물 뒤 공영주차장, 2시간 무료/);
+    assert.match(instruction, /단체는 10인 이상부터/);
+    // 빈 줄은 싣지 않는다 — 지시에 «- » 만 남으면 모델이 헷갈린다.
+    assert.ok(!/\n- $/m.test(instruction), "빈 기억이 실리면 안 된다");
+    // 숫자는 여전히 도구로 확인하라고 못 박는다.
+    assert.match(instruction, /반드시 도구로 확인하세요/);
+  });
+
+  await check("업체 기억은 실무자에게도 반영된다", async () => {
+    stubGemini([{ text: "네." }]);
+    await chat.runConversation({ apiKey: "k", model: "m", actor: STAFF, messages: [{ role: "user", text: "주차" }] });
+    assert.match(requests[0].systemInstruction.parts[0].text, /주차는 건물 뒤 공영주차장/);
+  });
+
+  await check("기억을 못 읽어도 대화는 이어진다", async () => {
+    const original = deps.storeCol;
+    deps.storeCol = (name) => name === "chatbotMemories"
+      ? { get: async () => { throw new Error("permission-denied"); } }
+      : original(name);
+    const isolated = createGeminiChat(deps);
+    stubGemini([{ text: "네, 도와드릴게요." }]);
+    const result = await isolated.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "안녕" }] });
+    assert.match(result.reply, /도와드릴게요/);
+    deps.storeCol = original;
   });
 
   await check("프로토콜: 도구 호출이 끝없이 반복되면 중단됨", async () => {

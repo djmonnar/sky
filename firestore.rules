@@ -526,6 +526,26 @@ service cloud.firestore {
       match /chatbotUsers/{id} {
         allow read, write: if isAdmin(storeId);
       }
+
+      /*
+        챗봇이 늘 참고하는 «업체 기억». 관리자만 읽고 쓴다.
+
+        직원은 못 읽지만 답변에는 반영된다 — 챗봇 함수가 admin SDK 로 서버에서
+        따로 읽기 때문이다. 화면에 그대로 보여 줄 내용이 아니라 가게 운영 지식이라
+        열지 않는다.
+      */
+      match /chatbotMemories/{id} {
+        allow read, write: if isAdmin(storeId);
+      }
+
+      /*
+        지난 대화. 로그인 사용자 «본인 것만» 읽고 쓴다 — 관리자도 남의 대화는 못 본다.
+        대화에는 그 사람이 무엇을 물었는지가 그대로 남는다.
+      */
+      match /chatConversations/{id} {
+        allow read, delete: if inStore(storeId) && resource.data.uid == request.auth.uid;
+        allow create, update: if inStore(storeId) && request.resource.data.uid == request.auth.uid;
+      }
     }
   }
 }
