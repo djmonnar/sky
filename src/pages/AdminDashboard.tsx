@@ -71,8 +71,7 @@ function KpiTile({ to, tone, label, value, unit, sub }: {
 
 export default function AdminDashboard() {
   const {
-    reservations, shifts, records, employees, salesDailySummaries, salesSyncRuns, granterSyncRuns,
-    mode, loading, showToast, role, managerPermissions, profile,
+    reservations, shifts, records, employees, salesDailySummaries, salesSyncRuns, mode, loading, showToast, role, managerPermissions, profile,
   } = useStore();
   const [seeding, setSeeding] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -161,7 +160,6 @@ export default function AdminDashboard() {
   const posMonthRows = salesDailySummaries.filter((row) => row.businessDate.startsWith(monthKey));
   const posMonthTotal = posMonthRows.reduce((sum, row) => sum + row.netAmount, 0);
   const latestSalesSync = latestSyncRun(salesSyncRuns);
-  const latestGranterSync = granterSyncRuns[0];
 
   const userName = mode === "live"
     ? (profile?.name ?? "관리자")
@@ -334,7 +332,6 @@ export default function AdminDashboard() {
             <Card title="데이터 연결" icon="🔄" action={<Link to="/finance" className="card-link">매출·매입 ›</Link>}>
               <div className="dash-sync">
                 <span>POS 매출 <b>{syncedAt(latestSalesSync?.finishedAt || latestSalesSync?.startedAt)}</b>{latestSalesSync?.status && latestSalesSync.status !== "success" ? <Badge tone="amber">{latestSalesSync.status}</Badge> : null}</span>
-                <span>카드·계좌 <b>{syncedAt(latestGranterSync?.finishedAt || latestGranterSync?.startedAt)}</b></span>
               </div>
             </Card>
           )}

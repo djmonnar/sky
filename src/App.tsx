@@ -64,7 +64,8 @@ export default function App() {
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />
         <Route path="/employees" element={canAdminOrManager("employees") ? <EmployeeList /> : <Navigate to="/" replace />} />
         <Route path="/finance" element={canUseFinance ? <Settlements /> : <Navigate to="/" replace />} />
-        <Route path="/sales" element={<Navigate to="/finance?tab=sales" replace />} />
+        {/* 「매출」 탭은 그랜터 보류로 없앴다. 옛 링크는 매출·매입 첫 화면으로 보낸다. */}
+        <Route path="/sales" element={<Navigate to="/finance" replace />} />
         <Route path="/vendors" element={canAdminOrManager("vendors") ? <Vendors /> : <Navigate to="/" replace />} />
         <Route path="/inventory" element={canAdminOrManager("inventory") ? <Inventory /> : <Navigate to="/" replace />} />
         <Route path="/settlements" element={<Navigate to="/finance?tab=purchases" replace />} />
