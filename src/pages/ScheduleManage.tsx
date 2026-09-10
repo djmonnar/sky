@@ -1021,7 +1021,7 @@ function ScheduleSlotCell({
         onDropSlot(slot);
       }}
     >
-      <div className="schedule-dept-label">{DEPARTMENT_LABEL[slot.department]}</div>
+      <div className={`schedule-dept-label ${slot.department}`}>{DEPARTMENT_LABEL[slot.department]}</div>
       {shifts.length === 0 ? (
         <span className="smx-add">＋</span>
       ) : (
