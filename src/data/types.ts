@@ -54,7 +54,53 @@ export type ResvStatus =
 
 export type Seat = string;
 
-export type PunchStatus = "before" | "working" | "done";
+export type PunchStatus = "before" | "working" | "onBreak" | "done";
+
+/** 출퇴근 기록의 종류. 휴게는 시작/종료가 짝을 이룬다. */
+export type AttendanceType = "in" | "out" | "breakStart" | "breakEnd";
+
+export interface AttendanceLog {
+  id: string;
+  empId: number;
+  date: string;
+  type: AttendanceType;
+  time: string;
+  /**
+   * 저장된 순서 (epoch ms). 시각 문자열로 정렬하면 자정을 넘긴 퇴근("01:30")이
+   * 출근("18:00")보다 앞서 버린다. 저장 순서가 곧 실제 순서다.
+   */
+  createdAt?: number;
+}
+
+export interface TimesheetSubmission {
+  id: string;
+  empId: number;
+  empName: string;
+  month: string;
+  status: "제출" | "확인완료";
+  workedDays: number;
+  totalMinutes: number;
+  breakMinutes: number;
+  note?: string;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
+/** 오늘 하루치 출퇴근 기록을 한 눈에 본 것. attendanceLogs 에서 계산한다. */
+export interface AttendanceDay {
+  date: string;
+  empId: number;
+  status: PunchStatus;
+  inAt: string | null;
+  outAt: string | null;
+  /** 끝나지 않은 휴게는 end 가 null 이다. */
+  breaks: { start: string; end: string | null }[];
+  /** 끝난 휴게의 합 (분). 진행 중인 휴게는 빼지 않는다. */
+  breakMinutes: number;
+  /** 출근~퇴근에서 휴게를 뺀 시간 (분). 퇴근 전이면 지금까지. */
+  workedMinutes: number;
+}
 
 export interface Reservation {
   id: number;

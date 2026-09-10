@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Card, ChipSelect, Badge } from "../components/ui";
 import { TODAY_DOW, TODAY_STR, CHECKLIST_TEMPLATE } from "../data";
@@ -12,9 +13,17 @@ import {
   slotSummary,
 } from "../lib/shifts";
 import { isMonthlyEmployee, payBasisLabel } from "../lib/payroll";
+import MonthlyTimesheet from "../components/MonthlyTimesheet";
+
+type WorkLogTab = "today" | "month";
 
 export default function WorkLog() {
   const { shifts, records, addRecord, showToast, currentEmployee, loading } = useStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: WorkLogTab = searchParams.get("tab") === "month" ? "month" : "today";
+  const openTab = (next: WorkLogTab) => {
+    setSearchParams(next === "month" ? { tab: "month" } : {}, { replace: true });
+  };
   const me = currentEmployee;
   const planSlots = shiftsForEmployeeDay(shifts, me?.id, TODAY_STR, TODAY_DOW);
   const plan = planTimesForShifts(planSlots);
@@ -107,8 +116,29 @@ export default function WorkLog() {
     showToast(asDraft ? "임시 저장되었습니다" : "근무기록이 제출되었습니다");
   };
 
+  const tabs = (
+    <div className="admin-mode-tabs" role="tablist" aria-label="근무기록">
+      <button className={tab === "today" ? "on" : ""} onClick={() => openTab("today")}>
+        ✍️ 오늘 기록
+      </button>
+      <button className={tab === "month" ? "on" : ""} onClick={() => openTab("month")}>
+        🗓️ 이번 달 근무내역
+      </button>
+    </div>
+  );
+
+  if (tab === "month") {
+    return (
+      <>
+        {tabs}
+        <MonthlyTimesheet />
+      </>
+    );
+  }
+
   return (
     <>
+      {tabs}
       <Card>
         <div className="spread" style={{ flexWrap: "wrap", gap: 12 }}>
           <div>

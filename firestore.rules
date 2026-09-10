@@ -386,12 +386,33 @@ service cloud.firestore {
         allow update, delete: if canManageSchedule(storeId);
       }
 
+      // 출퇴근·휴게 기록. type 은 in / out / breakStart / breakEnd 넷뿐이다.
       match /attendanceLogs/{id} {
         allow read: if canManageSchedule(storeId)
                     || (isStaff(storeId) && resource.data.empId == myEmpId());
-        allow create: if canManageSchedule(storeId)
-                      || (isStaff(storeId) && request.resource.data.empId == myEmpId());
+        allow create: if (canManageSchedule(storeId)
+                          || (isStaff(storeId) && request.resource.data.empId == myEmpId()))
+                      && request.resource.data.type in ['in', 'out', 'breakStart', 'breakEnd'];
         allow update, delete: if false; // 출퇴근 로그는 수정 불가
+      }
+
+      /*
+        직원이 월말에 관리자에게 보내는 근무내역. 문서 ID = `${empId}_${YYYY-MM}`.
+
+        직원은 자기 것만 만들고 고칠 수 있다. 다시 보내면 덮어쓰므로 update 도 연다.
+        확인 처리(status: 확인완료)는 관리자·매니저만 — 직원이 스스로 «확인완료» 로
+        바꾸지 못하게 status 를 검사한다. 지우는 것은 아무도 못 한다.
+      */
+      match /timesheetSubmissions/{id} {
+        allow read: if canManageSchedule(storeId)
+                    || (isStaff(storeId) && resource.data.empId == myEmpId());
+        allow create, update: if canManageSchedule(storeId)
+                              || (
+                                isStaff(storeId)
+                                && request.resource.data.empId == myEmpId()
+                                && request.resource.data.status == '제출'
+                              );
+        allow delete: if false;
       }
 
       match /payroll/{id} {

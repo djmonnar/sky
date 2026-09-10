@@ -27,6 +27,7 @@ import {
   normalizeManagerPermissions,
 } from "../config/managerPermissions";
 import ChatbotUsersPanel from "../components/ChatbotUsersPanel";
+import { fmtMinutes } from "../lib/attendance";
 
 type AdminTab = "schedule" | "payroll" | "permissions" | "chatbot";
 type PayFilter = "all" | "fullTime" | "partTime";
@@ -219,6 +220,7 @@ export default function Payroll() {
     payroll, records, shifts, updatePayroll, approveRecord, showToast, employees,
     getPayrollPassword, setPayrollPassword, ownerSchedules, upsertOwnerSchedule, deleteOwnerSchedule,
     managerPermissions, updateManagerPermissions,
+    timesheetSubmissions, reviewTimesheet,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<AdminTab>("schedule");
@@ -854,6 +856,56 @@ export default function Payroll() {
                   </tbody>
                 </table>
               </div>
+            </Card>
+
+            <Card
+              title="직원이 보낸 근무내역"
+              icon="📤"
+              action={<span className="muted small">{timesheetSubmissions.length}건</span>}
+            >
+              {timesheetSubmissions.length === 0 ? (
+                <div className="empty-state">아직 보낸 직원이 없습니다.</div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="table timesheet-table">
+                    <thead>
+                      <tr>
+                        <th>직원</th><th>기간</th><th>근무일</th><th>근무시간</th><th>휴게</th><th>보낸 때</th><th>상태</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timesheetSubmissions.map((row) => (
+                        <tr key={row.id}>
+                          <td className="bold">
+                            {row.empName || `#${row.empId}`}
+                            {row.note && <div className="muted small" style={{ whiteSpace: "normal" }}>{row.note}</div>}
+                          </td>
+                          <td className="num">{row.month}</td>
+                          <td className="num">{row.workedDays}일</td>
+                          <td className="num bold">{fmtMinutes(row.totalMinutes)}</td>
+                          <td className="num muted">{fmtMinutes(row.breakMinutes)}</td>
+                          <td className="muted small">{row.submittedAt || "-"}</td>
+                          <td>
+                            <Badge tone={row.status === "확인완료" ? "green" : "amber"}>{row.status}</Badge>
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            {row.status === "제출" ? (
+                              <button
+                                className="btn btn-outline btn-sm"
+                                onClick={() => void reviewTimesheet(row.id)}
+                              >
+                                확인
+                              </button>
+                            ) : (
+                              <span className="muted small">{row.reviewedBy ?? ""}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </Card>
 
             <Card title="근무기록 승인 대기" icon="📂" action={<span className="muted small">{pendingRecords.length}건</span>}>

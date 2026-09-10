@@ -228,6 +228,7 @@ functions/
 
 ```bash
 npm run test:pos              # POS 매출 집계 로직 (브라우저·Firebase 없이)
+npm run test:attendance       # 출퇴근·휴게 계산 (상태 전이, 자정 넘김, 잘못 누른 기록)
 cd functions && npm run test:chat   # Gemini 챗봇 도구 레이어
 cd functions && npm run test:kakao  # 카카오 빠른 예약 파서 (9/5 18시 3명 박현제 45184312)
 ```

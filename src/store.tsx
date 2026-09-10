@@ -3,7 +3,8 @@ import {
   useEffect, useRef, ReactNode,
 } from "react";
 import {
-  Role, PunchStatus, Reservation, Shift, WorkRecord, PayrollRow,
+  Role, PunchStatus, AttendanceLog, AttendanceType, AttendanceDay, TimesheetSubmission,
+  Reservation, Shift, WorkRecord, PayrollRow,
   Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, SalesMenuReport, GranterSyncRun,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch,
@@ -31,6 +32,7 @@ import {
   subscribeOwnerSchedules, fsUpsertOwnerSchedule, fsDeleteOwnerSchedule,
   fsUpsertNotice, fsDeleteNotice,
   fsUpsertHandover, fsDeleteHandover, fsAddAttendanceLog,
+  subscribeAttendanceLogs, subscribeTimesheetSubmissions, fsSubmitTimesheet, fsReviewTimesheet,
   subscribeUserProfiles, fsUpdateUserRole,
   subscribeVendors, subscribeRecipes,
   fsUpsertVendor, fsDeleteVendor, fsUpsertRecipe, fsDeleteRecipe,
@@ -49,6 +51,7 @@ import {
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
 import { DEFAULT_MANAGER_PERMISSIONS, normalizeManagerPermissions } from "./config/managerPermissions";
+import { canPunch, foldAttendanceDay, foldAttendanceMonth, monthTotals } from "./lib/attendance";
 
 export type AppMode = "demo" | "live";
 
@@ -175,11 +178,25 @@ interface Store {
   upsertFinanceMatch: (match: FinanceMatch) => Promise<void>;
   deleteFinanceMatch: (id: string) => Promise<void>;
 
+  /** 오늘 내 출퇴근 상태. 기록에서 계산하므로 새로고침해도 그대로다. */
+  today: AttendanceDay;
   punchStatus: PunchStatus;
   punchInAt: string | null;
   punchOutAt: string | null;
   punchIn: () => void;
   punchOut: () => void;
+  breakStart: () => void;
+  breakEnd: () => void;
+  /** 이번 달 내 출퇴근 기록 (원본). */
+  attendanceLogs: AttendanceLog[];
+  /** 근무내역을 볼 달. YYYY-MM. */
+  attendanceMonth: string;
+  setAttendanceMonth: (month: string) => void;
+  /** 이번 달 근무내역을 관리자에게 보낸다. */
+  submitTimesheet: (note?: string) => Promise<void>;
+  /** 제출된 근무내역 (관리자만 채워진다). */
+  timesheetSubmissions: TimesheetSubmission[];
+  reviewTimesheet: (id: string) => Promise<void>;
 
   toast: string | null;
   showToast: (msg: string) => void;
@@ -225,9 +242,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [financeDailyCloses, setFinanceDailyCloses] = useState<FinanceDailyClose[]>([]);
   const [financeMatches, setFinanceMatches] = useState<FinanceMatch[]>([]);
 
-  const [punchStatus, setPunchStatus] = useState<PunchStatus>("before");
-  const [punchInAt, setPunchInAt] = useState<string | null>(null);
-  const [punchOutAt, setPunchOutAt] = useState<string | null>(null);
+  const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
+  const [attendanceMonth, setAttendanceMonth] = useState(() => TODAY_STR.slice(0, 7));
+  const [timesheetSubmissions, setTimesheetSubmissions] = useState<TimesheetSubmission[]>([]);
+  // 근무중 표시를 1분마다 새로 그린다 (경과 시간이 멈춰 보이지 않게).
+  const [clock, setClock] = useState(() => nowHHMM());
   const [toast, setToast] = useState<string | null>(null);
   const [demoPayrollPassword, setDemoPayrollPassword] = useState(() =>
     window.localStorage.getItem("haneulttang.payrollPassword") ?? DEFAULT_PAYROLL_PASSWORD
@@ -436,6 +455,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ]
         : []),
       ...(canUserProfileData ? [subscribeUserProfiles(setUserProfiles, onErr)] : []),
+      // 내 출퇴근 기록. 직원 문서와 연결된 계정만 구독한다 (Rules 도 본인 것만 허용).
+      subscribeAttendanceLogs(profile.employeeId, attendanceMonth, setAttendanceLogs, onErr),
+      // 제출된 근무내역은 관리자·매니저만 본다.
+      ...(isAdminRole || managerCan("scheduleManage")
+        ? [subscribeTimesheetSubmissions(setTimesheetSubmissions, onErr)]
+        : []),
       ...(canVendorData ? [subscribeVendors(setVendors, onErr)] : []),
       ...(canInventoryData
         ? [
@@ -479,7 +504,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         : []),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [profile, managerPermissions]);
+    // attendanceMonth 가 바뀌면 그 달 기록을 다시 받아야 한다.
+  }, [profile, managerPermissions, attendanceMonth]);
 
   const currentEmployee = useMemo<Employee | null>(() => {
     const targetId =
@@ -1197,29 +1223,87 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setHandovers((prev) => [n, ...prev]);
   }, [fail, profile]);
 
-  const punchIn = useCallback(() => {
-    const t = nowHHMM();
-    setPunchStatus("working");
-    setPunchInAt(t);
-    if (APP_MODE === "live" && currentEmployee) {
-      fsAddAttendanceLog({
-        empId: currentEmployee.id, date: TODAY_STR, type: "in", time: t,
-      }).catch(fail("출근 기록"));
-    }
-    showToast(`출근 처리되었습니다 (${t})`);
-  }, [showToast, fail, currentEmployee]);
+  /**
+   * 출퇴근·휴게 한 번.
+   *
+   * 화면 상태를 따로 들고 있지 않고 기록만 남긴다. 상태는 `today` 가 기록에서
+   * 계산한다 — 그래서 새로고침해도, 휴대폰과 PC 를 오가도 같은 값이 보인다.
+   * 데모 모드에서는 저장할 곳이 없어 화면 안에서만 기록을 쌓는다.
+   */
+  // 근무중일 때 경과 시간이 멈춰 보이지 않게 1분마다 다시 그린다.
+  useEffect(() => {
+    const id = window.setInterval(() => setClock(nowHHMM()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
-  const punchOut = useCallback(() => {
-    const t = nowHHMM();
-    setPunchStatus("done");
-    setPunchOutAt(t);
-    if (APP_MODE === "live" && currentEmployee) {
-      fsAddAttendanceLog({
-        empId: currentEmployee.id, date: TODAY_STR, type: "out", time: t,
-      }).catch(fail("퇴근 기록"));
+  const attendanceDays = useMemo(
+    () => foldAttendanceMonth(attendanceLogs, currentEmployee?.id ?? 0, clock),
+    [attendanceLogs, currentEmployee, clock]
+  );
+
+  const today = useMemo(
+    () => foldAttendanceDay(attendanceLogs, TODAY_STR, currentEmployee?.id ?? 0, clock),
+    [attendanceLogs, currentEmployee, clock]
+  );
+
+  const punch = useCallback((type: AttendanceType, label: string) => {
+    if (!canPunch(today.status, type)) {
+      showToast("지금은 누를 수 없습니다. 화면을 새로고침해 보세요.");
+      return;
     }
-    showToast(`퇴근 처리되었습니다 (${t})`);
-  }, [showToast, fail, currentEmployee]);
+    const t = nowHHMM();
+    if (APP_MODE === "live") {
+      if (!currentEmployee) {
+        showToast("직원 명부에 연결된 계정이 아니라 기록할 수 없습니다. 관리자에게 문의해주세요.");
+        return;
+      }
+      fsAddAttendanceLog({
+        empId: currentEmployee.id, date: TODAY_STR, type, time: t,
+      }).catch(fail(`${label} 기록`));
+    } else {
+      setAttendanceLogs((prev) => [
+        ...prev,
+        {
+          id: `demo-${Date.now()}-${prev.length}`,
+          empId: currentEmployee?.id ?? 0,
+          date: TODAY_STR,
+          type,
+          time: t,
+          createdAt: Date.now(),
+        },
+      ]);
+    }
+    showToast(`${label} 처리되었습니다 (${t})`);
+  }, [today.status, showToast, fail, currentEmployee]);
+
+  const punchIn = useCallback(() => punch("in", "출근"), [punch]);
+  const punchOut = useCallback(() => punch("out", "퇴근"), [punch]);
+  const breakStart = useCallback(() => punch("breakStart", "휴게 시작"), [punch]);
+  const breakEnd = useCallback(() => punch("breakEnd", "휴게 종료"), [punch]);
+
+  const submitTimesheet = useCallback(async (note?: string) => {
+    if (!currentEmployee) throw new Error("직원 명부에 연결된 계정이 아닙니다.");
+    const totals = monthTotals(attendanceDays);
+    if (totals.workedDays === 0) throw new Error("보낼 근무 기록이 없습니다.");
+    if (APP_MODE !== "live") {
+      showToast("데모 모드에서는 제출할 수 없습니다.");
+      return;
+    }
+    await fsSubmitTimesheet({
+      empId: currentEmployee.id,
+      empName: currentEmployee.name,
+      month: attendanceMonth,
+      workedDays: totals.workedDays,
+      totalMinutes: totals.totalMinutes,
+      breakMinutes: totals.breakMinutes,
+      note: note?.trim() || "",
+    });
+  }, [currentEmployee, attendanceDays, attendanceMonth, showToast]);
+
+  const reviewTimesheet = useCallback(async (id: string) => {
+    if (APP_MODE !== "live") return;
+    await fsReviewTimesheet(id, profile?.name ?? "관리자");
+  }, [profile]);
 
   const setRole = useCallback((r: Role) => {
     if (APP_MODE === "live") return; // 운영 모드에서는 users/{uid}.role이 기준
@@ -1346,7 +1430,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       syncGranterFinance, classifyGranterFinanceItems,
       upsertGranterFinanceCategory, deleteGranterFinanceCategory,
       upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch,
-      punchStatus, punchInAt, punchOutAt, punchIn, punchOut,
+      today,
+      punchStatus: today.status,
+      punchInAt: today.inAt,
+      punchOutAt: today.outAt,
+      punchIn, punchOut, breakStart, breakEnd,
+      attendanceLogs, attendanceMonth, setAttendanceMonth,
+      submitTimesheet, timesheetSubmissions, reviewTimesheet,
       toast, showToast,
     }),
     [demoReason, role, setRole, managerPermissions, updateManagerPermissions, canManagerAccess,
@@ -1355,7 +1445,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns, granterSyncRuns,
      granterCardSales, granterAccountTransactions, granterFinanceCategories,
      financeDailyCloses, financeMatches,
-     punchStatus, punchInAt, punchOutAt, toast,
+     today, attendanceLogs, attendanceMonth, timesheetSubmissions, toast,
      upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
      setShift, deleteShift, addRecord, approveRecord, updatePayroll,
@@ -1370,7 +1460,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      salesDailySummaries, salesMenuReport, syncSales, syncGranterFinance, classifyGranterFinanceItems,
      upsertGranterFinanceCategory, deleteGranterFinanceCategory,
      upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch,
-     punchIn, punchOut, showToast]
+     punchIn, punchOut, breakStart, breakEnd, submitTimesheet, reviewTimesheet, showToast]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
