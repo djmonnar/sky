@@ -70,8 +70,8 @@ export const MANAGER_PERMISSION_OPTIONS: ManagerPermissionOption[] = [
   },
   {
     key: "notices",
-    label: "공지/전달사항",
-    description: "공지사항과 전달사항 등록/수정/삭제",
+    label: "공지사항",
+    description: "체크리스트 화면의 공지사항 올리기/고치기/지우기",
   },
   {
     key: "guide",

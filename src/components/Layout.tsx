@@ -22,7 +22,6 @@ const STAFF_NAV: NavDef[] = [
   { to: "/schedule", icon: "🗓️", label: "근무표", title: "근무표", mobile: true },
   { to: "/worklog", icon: "✍️", label: "근무기록", title: "근무기록 작성", mobile: true },
   { to: "/checklist", icon: "✅", label: "체크리스트", title: "체크리스트", mobile: true, mobileLabel: "체크" },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: false },
 ];
 
 const ADMIN_NAV: NavDef[] = [
@@ -36,7 +35,6 @@ const ADMIN_NAV: NavDef[] = [
   { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: false, mobileLabel: "거래처" },
   { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: false, mobileLabel: "재고" },
   { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: false, mobileLabel: "레시피" },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: false, mobileLabel: "공지" },
   { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false },
 ];
 
@@ -50,7 +48,6 @@ const MANAGER_NAV: NavDef[] = [
   { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: false, mobileLabel: "거래처", managerPermission: "vendors" },
   { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: false, mobileLabel: "재고", managerPermission: "inventory" },
   { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: false, mobileLabel: "레시피", managerPermission: "recipes" },
-  { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: false, managerPermission: "notices" },
   { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false, managerPermission: "guide" },
 ];
 

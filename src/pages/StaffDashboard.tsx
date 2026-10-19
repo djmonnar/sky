@@ -234,7 +234,7 @@ export default function StaffDashboard() {
             <Card
               title="공지사항"
               icon="📢"
-              action={<Link to="/notices" className="card-link">전체 ›</Link>}
+              action={<Link to="/checklist" className="card-link">전체 ›</Link>}
             >
               {notices.slice(0, 4).map((n) => (
                 <div className="notice-item" key={n.id}>
