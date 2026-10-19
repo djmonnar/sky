@@ -103,16 +103,19 @@ function memoryStore({ reservations = [], links = {}, meta = {} } = {}) {
       for (const id of bookingIds) if (state.links.has(id)) found.set(id, clone(state.links.get(id)));
       return found;
     },
-    async applyBooking(bookingId, reservationId, decide) {
-      const key = String(reservationId);
-      const decided = decide({
-        link: state.links.has(bookingId) ? clone(state.links.get(bookingId)) : null,
-        reservation: state.reservations.has(key) ? clone(state.reservations.get(key)) : null,
-      });
+    // 운영 어댑터(functions/index.js)와 같은 순서로 읽는다: 묘비 → 묘비가 가리키는 예약 → (처음 보면) 같은 날.
+    async applyBooking({ bookingId, reservationId, useDate }, decide) {
+      const link = state.links.has(bookingId) ? clone(state.links.get(bookingId)) : null;
+      const key = link && link.reservationId ? String(link.reservationId) : String(reservationId);
+      const reservation = state.reservations.has(key) ? clone(state.reservations.get(key)) : null;
+      const sameDay = !link && !reservation && useDate
+        ? [...state.reservations.entries()].filter(([, row]) => row.date === useDate).map(([id, row]) => ({ id, data: clone(row) }))
+        : [];
+      const decided = decide({ link, reservation, reservationId: Number(key), sameDay });
       for (const op of sync.planWrites(decided, { timestamp: "__ts__" })) {
-        state.ops.push({ ...op, bookingId, reservationId });
+        state.ops.push({ ...op, bookingId, reservationId: op.target === "link" ? reservationId : Number(op.docId) });
         const map = op.target === "link" ? state.links : state.reservations;
-        const docId = op.target === "link" ? bookingId : key;
+        const docId = op.target === "link" ? bookingId : op.docId;
         if (op.kind === "create") {
           if (map.has(docId)) throw new Error("ALREADY_EXISTS");
           map.set(docId, clone(op.data));
@@ -140,12 +143,24 @@ function runner(store, fetchFeed, notifySummary = async () => {}) {
 /** 동기화가 만든 문서 ID. */
 const docIdOf = (bookingId) => String(sync.naverReservationId(bookingId));
 
-/** 직원·카톡·AI 비서가 만든 예약 — 출처 표시도, 네이버 번호도 없다. */
+/**
+ * 직원·카톡·AI 비서가 만든 예약 — 출처 표시도, 네이버 번호도 없다.
+ *
+ * 첫 줄은 네이버 예약 1104567890(김하늘, 10-20, 010-0000-1111)과 **이름·날짜·시각은 같고 전화만
+ * 다르다** — 입양하지 않는다(이름만 같으면 합치지 않는다). 나머지는 그날 네이버에서 취소·변경취소로만
+ * 오는 손님이라 만들 일 자체가 없다.
+ */
 const MANUAL = [
-  { id: 1760836000000, date: "2026-10-20", time: "18:00", name: "김하늘", phone: "010-0000-1111", people: 4, seat: "창가", status: "예약확정", writer: "직원", createdAt: "2026-10-18 10:00" },
+  { id: 1760836000000, date: "2026-10-20", time: "18:00", name: "김하늘", phone: "010-9999-1111", people: 4, seat: "창가", status: "예약확정", writer: "직원", createdAt: "2026-10-18 10:00" },
   { id: 1760836000001, date: "2026-10-22", time: "19:00", name: "취소손님", phone: "010-0000-3333", people: 3, seat: "", status: "예약확정", writer: "카카오", createdAt: "2026-10-18 10:01" },
   { id: 1760836000002, date: "2026-10-23", time: "18:00", name: "변경손님", phone: "", people: 2, seat: "", status: "예약확정", writer: "AI", source: "gemini-chat", createdAt: "2026-10-18 10:02" },
 ];
+
+/** 연동 전에 사장님이 네이버 예약(1104567890, 김하늘 010-0000-1111)을 손으로 옮겨 적어 둔 것. */
+const HAND_COPY = {
+  id: 1760836100000, date: "2026-10-20", time: "18:30", name: "김하늘님", phone: "01000001111", people: 2,
+  seat: "룸2", memo: "단골 · 생일", request: "창가 자리", status: "확인전화필요", writer: "사장님", createdAt: "2026-10-17 20:11",
+};
 
 (async () => {
   await check("피드 픽스처가 오너비스타 검사의 것과 같다 (계약)", () => {
@@ -154,7 +169,7 @@ const MANUAL = [
       같은 지문을 확인한다. 한쪽 픽스처만 고치면 둘 중 하나가 빨개진다.
     */
     const digest = require("node:crypto").createHash("sha256").update(JSON.stringify(fixture)).digest("hex");
-    assert.strictEqual(digest, "60c184602cdf468960c61ed5e91bb7d417dc709c5cfc046f47d942a74a3637d8");
+    assert.strictEqual(digest, "a24054455426e0bc9cceb2e2f366ed7b1064efd36bb4061b1dd275a3abe43627");
   });
 
   /* ── 1. 변환 ───────────────────────────────────────────────────────────── */
@@ -461,16 +476,259 @@ const MANUAL = [
 
   /* ── 6. 손으로 넣은 예약 ──────────────────────────────────────────────── */
 
-  await check("손으로·카톡으로·AI 비서로 넣은 예약은 어떤 경우에도 안 건드린다", async () => {
+  await check("입양(같은 날 같은 전화 한 건)이 아니면 손으로·카톡으로·AI 비서로 넣은 예약은 어떤 경우에도 안 건드린다", async () => {
     const store = memoryStore({ reservations: MANUAL, meta: BOOTSTRAPPED });
     // 같은 이름·날짜·시각의 네이버 예약, 그 손님 이름의 취소·변경취소까지 다 온다.
     await runner(store, okFeed(fixture.bookings)).run();
+    assert.deepStrictEqual(
+      store.state.reservations.get(docIdOf("1104567890")).naver.duplicateOf,
+      [MANUAL[0].id],
+      "이름만 같은 손 예약은 합치지 않고 「중복 확인 필요」로 가리킨다",
+    );
     await runner(store, okFeed(fixture.bookings.map((row) => ({ ...row, status: "cancelled", statusCode: "RC04" })))).run();
     for (const manual of MANUAL) {
       assert.deepStrictEqual(store.state.reservations.get(String(manual.id)), manual, `${manual.name} 이 바뀌면 안 된다`);
     }
     const touched = new Set(store.state.ops.filter((op) => op.target === "reservation").map((op) => String(op.reservationId)));
     for (const manual of MANUAL) assert.ok(!touched.has(String(manual.id)));
+  });
+
+  /* ── 6-1. 연동 전에 손으로 넣어 둔 같은 예약 (입양·중복 확인) ─────────────── */
+
+  await check("전화번호 열쇠: 숫자만, 010 으로 맞춘다", () => {
+    for (const raw of ["010-0000-1111", "01000001111", "+82 10-0000-1111", "0000-1111", "10-0000-1111", "010 0000 1111"]) {
+      assert.strictEqual(sync.phoneKey(raw), "01000001111", raw);
+    }
+    assert.strictEqual(sync.phoneKey("055-123-4567"), "0551234567");
+    for (const raw of ["", null, "없음", "123", "112"]) assert.strictEqual(sync.phoneKey(raw), null, String(raw));
+    assert.strictEqual(sync.nameKey(" 김 하늘님 "), "김하늘");
+  });
+
+  await check("견주기는 그 날짜만 — 다른 날·취소된·네이버와 이어진 예약은 받은 목록에 섞여 와도 후보가 아니다", () => {
+    const values = sync.naverOwnedValues(booking("1104567890"));
+    const row = (id, change) => ({ id: String(id), data: { ...HAND_COPY, id, ...change } });
+    const noise = [
+      row(1, { date: "2026-10-21" }),
+      row(2, { status: "취소" }),
+      row(3, { source: "naver", naver: { bookingId: "1104567000" } }),
+    ];
+    assert.deepStrictEqual(sync.matchManualReservations(values, noise), { adopt: null, suspects: [], reason: null });
+    const picked = sync.matchManualReservations(values, [...noise, row(4, {})]);
+    assert.strictEqual(picked.adopt.id, "4");
+    assert.strictEqual(sync.matchManualReservations(values, [row(4, {})], { phoneSiblings: 2 }).adopt, null);
+
+    // 계획 한 건: 입양은 새 예약이 아니라 알릴 거리도 아니다.
+    const adopted = plan(booking("1104567890"), { sameDay: [row(HAND_COPY.id, {})] });
+    assert.strictEqual(adopted.action, "adopt");
+    assert.strictEqual(adopted.reservationId, HAND_COPY.id);
+    assert.deepStrictEqual([adopted.notifyCandidate, adopted.notify, adopted.reservation], [false, false, null]);
+  });
+
+  await check("입양: 같은 날 전화가 같은 손 예약이 하나면 새로 만들지 않고 네이버 번호를 붙인다", async () => {
+    const summaries = [];
+    const store = memoryStore({ reservations: [HAND_COPY], meta: BOOTSTRAPPED });
+    const result = await runner(store, okFeed([rawBooking("1104567890")]), async (count) => summaries.push(count)).run();
+    assert.strictEqual(result.counts.adopted, 1);
+    assert.strictEqual(result.counts.created, 0);
+    assert.ok(!store.state.reservations.has(docIdOf("1104567890")), "같은 손님 예약이 둘이 되면 안 된다");
+    assert.strictEqual(store.state.reservations.size, 1);
+    const row = store.state.reservations.get(String(HAND_COPY.id));
+    // 네이버가 주인인 칸은 네이버 값으로
+    assert.deepStrictEqual(
+      [row.date, row.time, row.people, row.name, row.phone, row.request],
+      ["2026-10-20", "18:00", 4, "김하늘", "010-0000-1111", "아기의자 1개 부탁드려요"],
+    );
+    // 하늘땅이 주인인 칸은 그대로
+    assert.deepStrictEqual(
+      [row.status, row.seat, row.memo, row.writer, row.createdAt, row.id],
+      ["확인전화필요", "룸2", "단골 · 생일", "사장님", "2026-10-17 20:11", HAND_COPY.id],
+    );
+    assert.strictEqual(row.source, "naver");
+    assert.strictEqual(row.naver.bookingId, "1104567890");
+    assert.strictEqual(row.naver.adopted, true);
+    assert.deepStrictEqual(row.naver.adoptedFrom, { source: null, writer: "사장님" });
+    assert.strictEqual(row.notifyOnCreate, undefined, "새로 만든 예약이 아니라 «새 예약» 푸시와 상관없다");
+    const link = store.state.links.get("1104567890");
+    assert.strictEqual(link.reservationId, HAND_COPY.id, "묘비는 손으로 넣은 예약 번호를 가리킨다");
+    assert.strictEqual(link.adopted, true);
+    assert.deepStrictEqual(summaries, []);
+    assert.match(store.state.meta.message, /손으로 적어 둔 예약과 이은 예약 1건/);
+
+    // 그 뒤로는 네이버 예약이다 — 네이버가 바꾸면 따라간다.
+    await runner(store, okFeed([{ ...rawBooking("1104567890"), useTime: "19:00" }])).run();
+    assert.strictEqual(store.state.reservations.get(String(HAND_COPY.id)).time, "19:00");
+    assert.strictEqual(store.state.reservations.get(String(HAND_COPY.id)).status, "확인전화필요", "직원이 정한 상태는 그대로");
+    assert.ok(!store.state.reservations.has(docIdOf("1104567890")));
+
+    // 네이버가 요청사항을 비워 보냈으면 손으로 적어 둔 요청사항을 지우지 않는다.
+    const quietRequest = { ...rawBooking("1104567890"), customer: { ...rawBooking("1104567890").customer, requestMessage: null } };
+    const store2 = memoryStore({ reservations: [HAND_COPY], meta: BOOTSTRAPPED });
+    await runner(store2, okFeed([quietRequest])).run();
+    assert.strictEqual(store2.state.reservations.get(String(HAND_COPY.id)).request, "창가 자리");
+    assert.strictEqual(store2.state.reservations.get(String(HAND_COPY.id)).naver.bookingId, "1104567890");
+  });
+
+  await check("입양한 예약도 네이버가 취소하면 지워진다 (같은 예약이니까) — 방문완료·노쇼로 마감했으면 남긴다", async () => {
+    const store = memoryStore({ reservations: [HAND_COPY], meta: BOOTSTRAPPED });
+    await runner(store, okFeed([rawBooking("1104567890")])).run();
+    const cancelled = { ...rawBooking("1104567890"), status: "cancelled", statusCode: "RC04" };
+    const result = await runner(store, okFeed([cancelled])).run();
+    assert.strictEqual(result.counts.deleted, 1);
+    assert.ok(!store.state.reservations.has(String(HAND_COPY.id)), "입양된 손 예약이 지워진다");
+    assert.strictEqual(store.state.links.get("1104567890").state, "removed");
+
+    const finished = memoryStore({ reservations: [{ ...HAND_COPY, status: "방문완료" }], meta: BOOTSTRAPPED });
+    await runner(finished, okFeed([rawBooking("1104567890")])).run();
+    await runner(finished, okFeed([cancelled])).run();
+    assert.strictEqual(finished.state.reservations.get(String(HAND_COPY.id)).status, "방문완료");
+  });
+
+  await check("이름만 같으면 합치지 않는다 — 네이버 예약을 만들고 「중복 확인 필요」로 가리킨다", async () => {
+    const sameNameOtherPhone = { ...HAND_COPY, phone: "010-7777-1111" };
+    const store = memoryStore({ reservations: [sameNameOtherPhone], meta: BOOTSTRAPPED });
+    const result = await runner(store, okFeed([rawBooking("1104567890")])).run();
+    assert.strictEqual(result.counts.created, 1);
+    assert.strictEqual(result.counts.flagged, 1);
+    const created = store.state.reservations.get(docIdOf("1104567890"));
+    assert.deepStrictEqual(created.naver.duplicateOf, [HAND_COPY.id]);
+    assert.strictEqual(created.naver.duplicateReason, "same-name");
+    assert.deepStrictEqual(store.state.reservations.get(String(HAND_COPY.id)), sameNameOtherPhone, "손 예약은 그대로");
+    assert.match(store.state.meta.message, /중복 확인 필요/);
+  });
+
+  await check("「중복 확인 필요」 표시와 직원의 「다른 예약입니다」는 네이버가 바뀌어 고칠 때도 남는다", async () => {
+    const sameNameOtherPhone = { ...HAND_COPY, phone: "010-7777-1111" };
+    const store = memoryStore({ reservations: [sameNameOtherPhone], meta: BOOTSTRAPPED });
+    await runner(store, okFeed([rawBooking("1104567890")])).run();
+    const key = docIdOf("1104567890");
+    // 예약 화면의 「다른 예약입니다」: 문서를 통째로 merge 로 다시 쓴다(fsUpsertReservation).
+    const screen = store.state.reservations.get(key);
+    store.state.reservations.set(key, mergeDeep(screen, { naver: { notDuplicateOf: [HAND_COPY.id] } }));
+    await runner(store, okFeed([{ ...rawBooking("1104567890"), useTime: "19:00" }])).run();
+    const row = store.state.reservations.get(key);
+    assert.strictEqual(row.time, "19:00");
+    assert.deepStrictEqual(row.naver.duplicateOf, [HAND_COPY.id]);
+    assert.deepStrictEqual(row.naver.notDuplicateOf, [HAND_COPY.id]);
+    const linkOps = store.state.ops.filter((op) => op.target === "reservation" && op.kind === "merge");
+    for (const op of linkOps) {
+      assert.ok(!("duplicateOf" in (op.data.naver || {})) && !("notDuplicateOf" in (op.data.naver || {})), "고칠 때 그 칸을 쓰지 않는다");
+    }
+  });
+
+  await check("같은 날 같은 전화가 두 건이면 고르지 않는다 — 만들고 둘 다 가리킨다", async () => {
+    const second = { ...HAND_COPY, id: 1760836100001, time: "12:00", name: "김하늘 점심" };
+    const store = memoryStore({ reservations: [HAND_COPY, second], meta: BOOTSTRAPPED });
+    await runner(store, okFeed([rawBooking("1104567890")])).run();
+    const created = store.state.reservations.get(docIdOf("1104567890"));
+    assert.ok(created, "새로 만든다");
+    assert.deepStrictEqual([...created.naver.duplicateOf].sort(), [HAND_COPY.id, second.id].sort());
+    assert.strictEqual(created.naver.duplicateReason, "same-phone-multiple");
+    assert.deepStrictEqual(store.state.reservations.get(String(HAND_COPY.id)), HAND_COPY);
+    assert.deepStrictEqual(store.state.reservations.get(String(second.id)), second);
+  });
+
+  await check("전화가 없으면 합치지 않는다 (네이버 쪽이든 손 예약 쪽이든)", async () => {
+    // 손 예약에 전화가 없다
+    const noPhone = { ...HAND_COPY, phone: "" };
+    const store = memoryStore({ reservations: [noPhone], meta: BOOTSTRAPPED });
+    await runner(store, okFeed([rawBooking("1104567890")])).run();
+    assert.deepStrictEqual(store.state.reservations.get(docIdOf("1104567890")).naver.duplicateOf, [HAND_COPY.id]);
+    assert.deepStrictEqual(store.state.reservations.get(String(HAND_COPY.id)), noPhone);
+    // 네이버 쪽에 전화가 없다
+    const store2 = memoryStore({ reservations: [HAND_COPY], meta: BOOTSTRAPPED });
+    await runner(store2, okFeed([{ ...rawBooking("1104567890"), customer: { ...rawBooking("1104567890").customer, phone: null } }])).run();
+    const created = store2.state.reservations.get(docIdOf("1104567890"));
+    assert.deepStrictEqual(created.naver.duplicateOf, [HAND_COPY.id]);
+    assert.strictEqual(created.naver.duplicateReason, "same-name-no-phone");
+    assert.deepStrictEqual(store2.state.reservations.get(String(HAND_COPY.id)), HAND_COPY);
+  });
+
+  await check("다른 날의 같은 전화·이미 네이버와 이어진 예약·취소된 손 예약은 입양하지 않는다", async () => {
+    const otherDay = { ...HAND_COPY, id: 1760836100002, date: "2026-10-21" };
+    const cancelledCopy = { ...HAND_COPY, id: 1760836100003, status: "취소" };
+    const store = memoryStore({ reservations: [otherDay, cancelledCopy], meta: BOOTSTRAPPED });
+    await runner(store, okFeed([rawBooking("1104567890")])).run();
+    const created = store.state.reservations.get(docIdOf("1104567890"));
+    assert.ok(created);
+    assert.strictEqual(created.naver.duplicateOf, undefined, "다른 날·취소된 예약은 겹침도 아니다");
+    assert.deepStrictEqual(store.state.reservations.get(String(otherDay.id)), otherDay);
+    assert.deepStrictEqual(store.state.reservations.get(String(cancelledCopy.id)), cancelledCopy);
+
+    // 같은 손님이 같은 날 먼저 잡아 이미 들어와 있는 네이버 예약(점심)은 후보가 아니다 —
+    // 그 뒤에 손으로 적은 저녁 예약은 나중에 들어온 저녁 네이버 예약이 입양한다.
+    const lunch = { ...rawBooking("1104567890"), bookingId: "1104567870", useTime: "12:00" };
+    const store2 = memoryStore({ meta: BOOTSTRAPPED });
+    await runner(store2, okFeed([lunch])).run();
+    store2.state.reservations.set(String(HAND_COPY.id), clone(HAND_COPY));
+    const result = await runner(store2, okFeed([lunch, rawBooking("1104567890")])).run();
+    assert.strictEqual(result.counts.adopted, 1);
+    assert.strictEqual(store2.state.reservations.size, 2);
+    assert.strictEqual(store2.state.reservations.get(String(HAND_COPY.id)).naver.bookingId, "1104567890");
+    assert.strictEqual(store2.state.reservations.get(docIdOf("1104567870")).time, "12:00");
+  });
+
+  await check("같은 날 같은 전화의 새 네이버 예약이 한 판에 둘이면(점심·저녁) 손 예약 하나를 고르지 않는다", async () => {
+    const lunch = { ...rawBooking("1104567890"), bookingId: "1104567870", useTime: "12:00" };
+    const store = memoryStore({ reservations: [HAND_COPY], meta: BOOTSTRAPPED });
+    const result = await runner(store, okFeed([lunch, rawBooking("1104567890")])).run();
+    assert.strictEqual(result.counts.adopted, 0);
+    assert.strictEqual(result.counts.created, 2);
+    assert.strictEqual(result.counts.flagged, 2);
+    for (const bookingId of ["1104567870", "1104567890"]) {
+      const created = store.state.reservations.get(docIdOf(bookingId));
+      assert.deepStrictEqual(created.naver.duplicateOf, [HAND_COPY.id], bookingId);
+      assert.strictEqual(created.naver.duplicateReason, "same-phone-multiple-naver");
+    }
+    assert.deepStrictEqual(store.state.reservations.get(String(HAND_COPY.id)), HAND_COPY, "손 예약은 그대로");
+  });
+
+  await check("입양한 예약을 직원이 지우면 되살리지 않는다", async () => {
+    const store = memoryStore({ reservations: [HAND_COPY], meta: BOOTSTRAPPED });
+    await runner(store, okFeed([rawBooking("1104567890")])).run();
+    store.state.reservations.delete(String(HAND_COPY.id));
+    const result = await runner(store, okFeed([{ ...rawBooking("1104567890"), useTime: "19:00" }])).run();
+    assert.strictEqual(result.counts.forgotten, 1);
+    assert.strictEqual(store.state.reservations.size, 0, "계산한 번호로 새로 만들지도 않는다");
+  });
+
+  await check("첫 동기화의 입양도 조용하다", async () => {
+    const summaries = [];
+    const store = memoryStore({ reservations: [HAND_COPY] });
+    const result = await runner(store, okFeed(fixture.bookings), async (count) => summaries.push(count)).run();
+    assert.strictEqual(result.counts.adopted, 1);
+    assert.deepStrictEqual(summaries, []);
+    for (const row of store.state.reservations.values()) assert.notStrictEqual(row.notifyOnCreate, true);
+  });
+
+  /* ── 6-2. 일행 수 ─────────────────────────────────────────────────────── */
+
+  await check("일행 수: 「성인 4」가 있으면 4명, 없을 때만 예약 수량", () => {
+    // 하늘땅 실제 모양: 예약 수량 1, 옵션 「성인 4」 → 오너비스타가 partySize 4 를 준다.
+    const shaped = plan(booking("1104567898"));
+    assert.strictEqual(shaped.reservation.people, 4);
+    // 2026-10-20 11:30 확정 예약(「백년가업 하늘땅 예약」)의 모양: 수량 1 + 옵션 「성인 2」 → 2명.
+    const twoAdults = plan(booking("1104567898", { bookingId: "1104567899", useTime: "11:30", partySize: 2, menuItems: [{ name: "성인", count: 2 }] }));
+    assert.deepStrictEqual([twoAdults.reservation.people, twoAdults.reservation.status], [2, "예약확정"]);
+    assert.strictEqual(plan(booking("1104567890")).reservation.people, 4, "partySize 가 없으면 예약 수량(4)");
+    assert.strictEqual(plan(booking("1104567898", { partySize: 9 })).reservation.status, "단체", "단체 판정도 일행 수로");
+    assert.strictEqual(sync.normalizeFeedBooking({ ...rawBooking("1104567898"), partySize: 0 }).partySize, null, "0 은 모름");
+    assert.strictEqual(sync.normalizeFeedBooking({ ...rawBooking("1104567898"), partySize: "4" }).partySize, null);
+  });
+
+  await check("일행 수가 바뀌면 인원을 고친다 (옵션 「성인 4」→「성인 6」)", () => {
+    const first = booking("1104567898");
+    const reservation = createdReservation(first);
+    const changed = plan(booking("1104567898", { partySize: 6, menuItems: [{ name: "성인", count: 6 }] }), { link: activeLink(first), reservation });
+    assert.deepStrictEqual(changed.changedFields, ["people"]);
+    assert.strictEqual(changed.patch.people, 6);
+  });
+
+  await check("일행 수만 바뀌어도(메뉴 칸은 그대로) 지난번과 다르다고 본다", async () => {
+    const store = memoryStore({ meta: BOOTSTRAPPED });
+    await runner(store, okFeed([rawBooking("1104567898")])).run();
+    const result = await runner(store, okFeed([{ ...rawBooking("1104567898"), partySize: 6 }])).run();
+    assert.strictEqual(result.counts.updated, 1, "지문이 같다고 건너뛰면 안 된다");
+    assert.strictEqual(store.state.reservations.get(docIdOf("1104567898")).people, 6);
   });
 
   await check("번호 자리에 동기화가 만들지 않은 문서가 있으면 손대지 않는다", async () => {
@@ -606,27 +864,31 @@ const MANUAL = [
   /* ── 9. 한 판 전체 ────────────────────────────────────────────────────── */
 
   await check("픽스처 한 판: 무엇을 만들고 무엇을 건너뛰는가", async () => {
+    const summaries = [];
     const store = memoryStore({ meta: BOOTSTRAPPED });
-    const result = await runner(store, okFeed(fixture.bookings)).run();
+    const result = await runner(store, okFeed(fixture.bookings), async (count) => summaries.push(count)).run();
     assert.strictEqual(result.counts.received, fixture.bookings.length);
-    assert.strictEqual(result.counts.created, 4, "내일·모레 확정/신청, 단체, 오늘 지난 시각");
+    assert.strictEqual(result.counts.created, 5, "오늘 지난 시각, 내일 점심(성인 4)·저녁, 모레 신청, 단체");
     assert.deepStrictEqual(result.counts.skipped, { past: 1, unreadable: 1, "cancelled-unseen": 2 });
+    // 알릴 만한 새 예약이 4건(> 3)이라 하나씩 울리지 않고 한 통으로 묶는다.
     assert.deepStrictEqual(
       [...store.state.reservations.values()].map((row) => `${row.date} ${row.time} ${row.name} ${row.people}명 ${row.status} ${row.notifyOnCreate ? "알림" : "조용"}`).sort(),
       [
         "2026-10-19 11:00 오전손님 3명 예약확정 조용",
-        "2026-10-20 18:00 김하늘 4명 예약확정 알림",
-        "2026-10-21 12:30 박땅 2명 예약대기 알림",
-        "2026-10-25 17:00 가상단체 10명 단체 알림",
+        "2026-10-20 13:00 넷이손님 4명 예약확정 조용",
+        "2026-10-20 18:00 김하늘 4명 예약확정 조용",
+        "2026-10-21 12:30 박땅 2명 예약대기 조용",
+        "2026-10-25 17:00 가상단체 10명 단체 조용",
       ],
     );
-    assert.match(store.state.meta.message, /새 예약 4건/);
+    assert.deepStrictEqual(summaries, [4]);
+    assert.match(store.state.meta.message, /새 예약 5건/);
     assert.match(store.state.meta.message, /손님 정보를 못 읽어 미룬 예약 1건/);
     assert.strictEqual(store.state.meta.ownervista.lastSuccessfulSyncAt, fixture.collection.lastSuccessfulSyncAt);
 
     const again = await runner(store, okFeed(fixture.bookings)).run();
-    assert.strictEqual(again.counts.unchanged, 4, "지난번과 같으면 예약 문서를 읽지도 않는다");
-    assert.strictEqual(again.counts.created + again.counts.updated + again.counts.deleted, 0);
+    assert.strictEqual(again.counts.unchanged, 5, "지난번과 같으면 예약 문서를 읽지도 않는다");
+    assert.strictEqual(again.counts.created + again.counts.updated + again.counts.deleted + again.counts.adopted, 0);
   });
 
   await check("오너비스타가 나중에 손님 정보를 풀면 그때 만든다", async () => {
@@ -674,7 +936,7 @@ const MANUAL = [
     const before = store.state.ops.length;
     const result = await runner(store, okFeed(fixture.bookings)).run({ mode: "manual" });
     assert.strictEqual(store.state.ops.length, before, "쓰기가 하나도 없어야 한다");
-    assert.strictEqual(result.counts.unchanged, 4);
+    assert.strictEqual(result.counts.unchanged, 5);
   });
 
   await check("다시 대조해도 직원이 고친 시각·좌석은 그대로다", async () => {
@@ -691,9 +953,9 @@ const MANUAL = [
   await check("한 건 저장이 실패해도 나머지는 들어가고, 첫 동기화는 끝난 것으로 치지 않는다", async () => {
     const store = memoryStore();
     const original = store.applyBooking;
-    store.applyBooking = async (bookingId, ...rest) => {
-      if (bookingId === "1104567891") throw new Error("aborted");
-      return original(bookingId, ...rest);
+    store.applyBooking = async (target, ...rest) => {
+      if (target.bookingId === "1104567891") throw new Error("aborted");
+      return original(target, ...rest);
     };
     const result = await runner(store, okFeed(fixture.bookings)).run();
     assert.strictEqual(result.status, "partial");
@@ -711,6 +973,12 @@ const MANUAL = [
     assert.strictEqual((adapter.match(/\.delete\(/g) || []).length, 1, "지우는 자리는 하나뿐");
     assert.match(adapter, /op\.kind === "delete"\) transaction\.delete\(ref\)/);
     assert.match(adapter, /mergeFields: Object\.keys\(data\)/, "동기화 상태 문서는 윗칸 통째로 바꾼다");
+    // 입양: 묘비가 가리키는 문서를 읽고, 처음 보는 번호일 때만 같은 날 예약을 트랜잭션 안에서 읽는다.
+    assert.match(adapter, /link && link\.reservationId \? String\(link\.reservationId\)/);
+    assert.match(adapter, /if \(!link && !reservationSnap\.exists && useDate\)/);
+    assert.match(adapter, /transaction\.get\(storeCol\("reservations"\)\.where\("date", "==", useDate\)\)/);
+    assert.match(adapter, /reservationId: Number\(docId\),\s*sameDay,/, "같은 날 예약을 계획에 넘긴다");
+    assert.match(adapter, /storeDoc\("reservations", op\.docId\)/, "쓰는 문서는 계획이 고른 번호");
   });
 
   console.log(results.join("\n"));

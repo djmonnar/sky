@@ -238,6 +238,12 @@ function normalizeFeedBooking(raw) {
     useTime: raw.useTime ?? null,
     headcount: wholeNumber(raw.headcount),
     childCount: wholeNumber(raw.childCount),
+    /*
+      일행 수. 오너비스타가 옵션 가운데 사람 종류(성인·아동…) 줄을 더한 값이고, 그런 줄이
+      없으면 null 이다. 하늘땅은 예약 수량이 늘 1이고 「성인 4」가 따로 와서, 수량만 쓰면
+      넷이 오는 예약이 1명이 된다.
+    */
+    partySize: Number.isInteger(raw.partySize) && raw.partySize > 0 ? raw.partySize : null,
     itemName: text(raw.itemName, 200) ?? "",
     menuItems,
     bookedAt: typeof raw.bookedAt === "string" && Number.isFinite(Date.parse(raw.bookedAt)) ? raw.bookedAt : null,
@@ -314,7 +320,8 @@ function parseFeed(body) {
 function naverOwnedValues(booking) {
   const values = {
     date: booking.useDate,
-    people: booking.headcount + booking.childCount,
+    // 일행 수가 있으면 그것, 없을 때만 예약 수량(네이버 bookingCount).
+    people: booking.partySize ?? booking.headcount + booking.childCount,
   };
   if (booking.useTime) values.time = booking.useTime;
   if (booking.customer) {
@@ -334,7 +341,7 @@ function naverOwnedValues(booking) {
 function feedDigest(booking) {
   const material = JSON.stringify([
     booking.status, booking.statusCode, booking.useDate, booking.useTime,
-    booking.headcount, booking.childCount, booking.itemName, menuSummary(booking.menuItems),
+    booking.headcount, booking.childCount, booking.partySize, booking.itemName, menuSummary(booking.menuItems),
     booking.customer
       ? [booking.customer.name, booking.customer.phone, booking.customer.requestMessage]
       : "unreadable",
@@ -349,6 +356,71 @@ function isOwnNaverReservation(reservation, bookingId) {
     && reservation.source === NAVER_SOURCE
     && reservation.naver
     && String(reservation.naver.bookingId) === bookingId;
+}
+
+/** 이미 어떤 네이버 예약과 이어진 하늘땅 예약인가. 이어진 것은 입양·중복 후보가 아니다. */
+function isNaverLinked(reservation) {
+  return Boolean(reservation)
+    && reservation.source === NAVER_SOURCE
+    && Boolean(reservation.naver && reservation.naver.bookingId);
+}
+
+/**
+ * 전화번호를 견주는 열쇠. **숫자만 남기고 010 으로 맞춘다.** 모르는 모양이면 `null` — 견주지 않는다.
+ *
+ * - `010-1234-5678`·`01012345678`·`+82 10-1234-5678` → `01012345678`
+ * - 뒤 8자리만 적은 번호(`1234-5678`) → `010` 을 붙인다. 카톡 빠른 등록이 그렇게 받는다
+ *   (`quickReservation.normalizePhone`).
+ */
+function phoneKey(raw) {
+  let digits = String(raw ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("82") && digits.length >= 10 && digits.length <= 12) digits = `0${digits.slice(2)}`;
+  if (digits.length === 8) digits = `010${digits}`;
+  if (digits.length === 10 && digits.startsWith("10")) digits = `0${digits}`;
+  return /^0\d{8,10}$/.test(digits) ? digits : null;
+}
+
+/** 이름을 견주는 열쇠. 띄어쓰기와 끝의 「님」만 뺀다 — 비슷한 이름을 같다고 우기지 않는다. */
+function nameKey(raw) {
+  return String(raw ?? "").replace(/\s+/g, "").replace(/님$/, "");
+}
+
+/**
+ * 네이버 예약을 새로 만들기 전에, 같은 날 손으로 넣어 둔 예약과 견준다.
+ *
+ * 연동 전에는 사장님이 네이버 예약을 하늘땅에 손으로 옮겨 적었다. 동기화가 켜지면 같은 손님
+ * 예약이 둘이 되면 안 된다. 그래서 (사용자와 정한 규칙)
+ *   - 같은 날, 네이버와 안 이어진 예약 가운데 **전화가 같은 것이 정확히 한 건**이면 새로 만들지
+ *     않고 그 예약에 네이버 번호를 붙인다(입양).
+ *   - 전화가 같은 것이 둘 이상이면 고르지 않는다 — 만들고 「중복 확인 필요」로 표시만 한다.
+ *   - 거꾸로, 이번 판에 **새로 들어온 네이버 예약 가운데 같은 날 같은 전화가 둘 이상**이면(점심·저녁을
+ *     따로 잡은 손님) 손 예약 하나가 어느 쪽 것인지 모른다 — 역시 고르지 않고 표시만 한다.
+ *   - 전화가 없거나 이름만 같으면 합치지 않는다 — 만들고 표시만 한다. 지우는 것은 사람이 한다.
+ * 취소된 예약(상태 「취소」)은 후보가 아니다.
+ *
+ * @param {object} values `naverOwnedValues` 의 결과
+ * @param {{id: string, data: object}[]} sameDay 같은 날 하늘땅 예약들
+ * @param {{ phoneSiblings?: number }} [options] 이번 판의 새 네이버 예약 가운데 같은 날·같은 전화인
+ *   것의 수(자기 포함)
+ * @returns {{ adopt: {id, data} | null, suspects: {id, data}[], reason: string | null }}
+ */
+function matchManualReservations(values, sameDay, { phoneSiblings = 1 } = {}) {
+  const candidates = (sameDay || []).filter(({ data }) =>
+    data && data.date === values.date && !isNaverLinked(data) && data.status !== "취소");
+  const key = phoneKey(values.phone);
+  const phoneMatches = key ? candidates.filter(({ data }) => phoneKey(data.phone) === key) : [];
+  if (phoneMatches.length > 1) return { adopt: null, suspects: phoneMatches, reason: "same-phone-multiple" };
+  if (phoneMatches.length === 1 && phoneSiblings > 1) {
+    return { adopt: null, suspects: phoneMatches, reason: "same-phone-multiple-naver" };
+  }
+  if (phoneMatches.length === 1) return { adopt: phoneMatches[0], suspects: [], reason: null };
+  const name = nameKey(values.name);
+  const nameMatches = name ? candidates.filter(({ data }) => nameKey(data.name) === name) : [];
+  if (nameMatches.length > 0) {
+    return { adopt: null, suspects: nameMatches, reason: key ? "same-name" : "same-name-no-phone" };
+  }
+  return { adopt: null, suspects: [], reason: null };
 }
 
 /**
@@ -395,9 +467,15 @@ function naverMetaKey(meta) {
  * @param {string} input.nowStamp     접수시각을 모를 때 쓸 `YYYY-MM-DD HH:mm`
  * @param {boolean} input.quiet       이번 판은 새 예약을 하나씩 알리지 않는다
  * @param {string|null} [input.businessId] 피드가 밝힌 네이버 매장 번호 (예약에 적어 둔다)
+ * @param {number} [input.reservationId] `reservation` 을 읽은 문서 번호. 입양한 예약은 손으로
+ *   넣을 때의 번호 그대로라 계산한 번호와 다르다(묘비의 `reservationId`). 없으면 계산한 번호
+ * @param {{id: string, data: object}[]} [input.sameDay] 같은 날 예약들. 새로 만들 때만 견준다
+ * @param {number} [input.phoneSiblings] 이번 판의 새 네이버 예약 가운데 같은 날·같은 전화인 것의
+ *   수(자기 포함). 둘 이상이면 손 예약을 입양하지 않는다
  *
  * 돌려주는 `action`:
- *   create  새로 만든다 (`reservation` 전체)
+ *   create  새로 만든다 (`reservation` 전체). 같은 날 겹쳐 보이는 손 예약이 있으면 `naver.duplicateOf`
+ *   adopt   같은 날 전화가 같은 손 예약 한 건에 네이버 번호를 붙인다 (`reservationId` 가 그 예약)
  *   update  네이버가 바꾼 칸만 고친다 (`patch`). `changedFields` 가 비면 네이버 표시만 새로 적는다
  *   delete  네이버가 취소했다. 지운다
  *   keep    네이버는 취소했지만 직원이 방문완료·노쇼로 마감한 기록이라 남긴다 (네이버 표시만)
@@ -406,9 +484,14 @@ function naverMetaKey(meta) {
  *   skip    아무것도 안 쓴다 (`reason` 에 까닭. `unchanged` 는 바뀐 것이 없다는 뜻)
  */
 function planBooking(input) {
-  const { booking, link = null, reservation = null, today, nowTime, nowStamp, quiet, businessId = null } = input;
+  const {
+    booking, link = null, reservation = null, today, nowTime, nowStamp, quiet, businessId = null, sameDay = [],
+    phoneSiblings = 1,
+  } = input;
   const bookingId = booking.bookingId;
-  const reservationId = naverReservationId(bookingId);
+  const computedId = naverReservationId(bookingId);
+  // 이미 이어진 예약은 묘비가 가리키는 문서(입양한 예약이면 손으로 넣을 때의 번호)다.
+  const reservationId = computedId === null ? null : (input.reservationId ?? computedId);
   const digest = feedDigest(booking);
   const result = (action, reason, extra = {}) => ({
     bookingId,
@@ -452,12 +535,55 @@ function planBooking(input) {
     const values = naverOwnedValues(booking);
     const status = skyStatusFor(booking.status, values.people);
     if (!status) return result("skip", "unknown-status");
+
+    /* ── 연동 전에 손으로 넣어 둔 같은 예약이 있는가 ── */
+    const match = matchManualReservations(values, sameDay, { phoneSiblings });
+    if (match.adopt) {
+      /*
+        **입양.** 새로 만들지 않고 그 예약에 네이버 번호를 붙인다. 그 뒤로는 네이버 예약이라
+        네이버가 바꾸면 따라가고, 네이버가 취소하면 지워진다(같은 예약이니까).
+
+        - 네이버가 주인인 칸(시간·인원·이름·연락처·요청)은 네이버 값으로 맞춘다. 단, 네이버가
+          비워 보낸 칸(이름·연락처·요청)은 손으로 적어 둔 값을 지우지 않는다.
+        - 하늘땅이 주인인 칸(상태·좌석·메모·작성자·접수일시)은 그대로 둔다. 상태도 직원이 정한
+          값을 남긴다 — 그 뒤 네이버를 따라갈지는 평소 규칙(직원이 안 건드렸을 때만)대로다.
+        - 새 예약이 아니라서 «새 예약» 푸시도 없다.
+      */
+      const target = match.adopt;
+      const current = target.data;
+      const patch = {};
+      const changedFields = [];
+      for (const field of NAVER_OWNED_FIELDS) {
+        if (!(field in values)) continue;
+        const value = values[field];
+        if ((field === "name" || field === "phone" || field === "request") && !value) continue;
+        if (current[field] !== value) {
+          patch[field] = value;
+          changedFields.push(field);
+        }
+      }
+      patch.source = NAVER_SOURCE;
+      patch.naver = {
+        ...naverMeta(booking, { ...values, status }, businessId),
+        adopted: true,
+        adoptedFrom: { source: current.source ?? null, writer: current.writer ?? null },
+      };
+      const adoptedId = Number(target.id);
+      return result("adopt", "same-phone", {
+        reservationId: adoptedId,
+        patch,
+        changedFields,
+        link: { ...linkWrite({ state: "active", adopted: true }), reservationId: adoptedId },
+      });
+    }
+    const duplicateOf = match.suspects.map(({ id }) => Number(id)).filter((id) => Number.isSafeInteger(id));
+
     const startsLater = values.date > today || (values.date === today && values.time >= nowTime);
     // 이미 다녀갔거나(이용완료) 안 온(노쇼) 예약은 «새 예약» 알림을 받을 일이 아니다.
     const notifyCandidate = (booking.status === "requested" || booking.status === "confirmed") && startsLater;
     const notify = notifyCandidate && !quiet;
     const createdAt = booking.bookedAt ? kstStamp(new Date(booking.bookedAt)) : nowStamp;
-    return result("create", "new", {
+    return result("create", duplicateOf.length > 0 ? "new-duplicate-suspect" : "new", {
       reservation: {
         id: reservationId,
         date: values.date,
@@ -477,7 +603,15 @@ function planBooking(input) {
           표시가 없는 문서(직원·카톡·AI 비서가 만든 예약)는 예전처럼 알린다.
         */
         notifyOnCreate: notify,
-        naver: naverMeta(booking, { ...values, status }, businessId),
+        naver: {
+          ...naverMeta(booking, { ...values, status }, businessId),
+          /*
+            「중복 확인 필요」. 같은 날 손으로 넣은 예약 가운데 이름만 같거나(전화가 없거나 다르다),
+            전화가 같은 것이 둘 이상이라 하나를 고를 수 없었다. **합치지도 지우지도 않는다** — 예약
+            화면이 이 번호들을 보여 주고, 같은 예약이면 사람이 손 예약 쪽을 지운다.
+          */
+          ...(duplicateOf.length > 0 ? { duplicateOf, duplicateReason: match.reason } : {}),
+        },
       },
       link: linkWrite({ state: "active" }),
       notifyCandidate,
@@ -572,18 +706,38 @@ function planBooking(input) {
  * - `merge`: 적은 칸만 고친다(`set(..., { merge: true })`). 직원 칸은 목록에 없으니 안 바뀐다
  * - `delete`: 지운다. **`delete` 계획에서만 나온다**
  *
+ * 예약 쪽 연산에는 `docId` 가 붙는다 — 입양한 예약은 손으로 넣을 때의 번호 그대로라,
+ * 예약번호에서 계산한 번호가 아니다.
+ *
  * @param {object} plan `planBooking` 의 결과
  * @param {{ timestamp: unknown }} options 서버 시각(운영은 serverTimestamp)
  */
 function planWrites(plan, { timestamp }) {
   const linkData = plan.link ? { ...plan.link, updatedAt: timestamp } : null;
+  const docId = plan.reservationId === null || plan.reservationId === undefined ? null : String(plan.reservationId);
   switch (plan.action) {
     case "create":
       return [
         {
           target: "reservation",
+          docId,
           kind: "create",
           data: { ...plan.reservation, updatedAt: timestamp, naver: { ...plan.reservation.naver, syncedAt: timestamp } },
+        },
+        { target: "link", kind: "merge", data: { ...linkData, createdAt: timestamp } },
+      ];
+    case "adopt":
+      return [
+        {
+          target: "reservation",
+          docId,
+          kind: "merge",
+          data: {
+            ...plan.patch,
+            naver: { ...plan.patch.naver, syncedAt: timestamp, adoptedAt: timestamp },
+            updatedAt: timestamp,
+            updatedBy: NAVER_WRITER,
+          },
         },
         { target: "link", kind: "merge", data: { ...linkData, createdAt: timestamp } },
       ];
@@ -593,6 +747,7 @@ function planWrites(plan, { timestamp }) {
       return [
         {
           target: "reservation",
+          docId,
           kind: "merge",
           data: {
             ...plan.patch,
@@ -606,7 +761,7 @@ function planWrites(plan, { timestamp }) {
     }
     case "delete":
       return [
-        { target: "reservation", kind: "delete" },
+        { target: "reservation", docId, kind: "delete" },
         { target: "link", kind: "merge", data: { ...linkData, removedAt: timestamp } },
       ];
     case "forget":
@@ -638,6 +793,8 @@ function emptyCounts() {
   return {
     received: 0,
     created: 0,
+    adopted: 0,
+    flagged: 0,
     updated: 0,
     refreshed: 0,
     deleted: 0,
@@ -650,7 +807,10 @@ function emptyCounts() {
 }
 
 function tally(counts, plan) {
-  if (plan.action === "create") counts.created += 1;
+  if (plan.action === "create") {
+    counts.created += 1;
+    if (plan.reservation && plan.reservation.naver && plan.reservation.naver.duplicateOf) counts.flagged += 1;
+  } else if (plan.action === "adopt") counts.adopted += 1;
   else if (plan.action === "update") counts[plan.changedFields.length > 0 ? "updated" : "refreshed"] += 1;
   else if (plan.action === "touch") counts.refreshed += 1;
   else if (plan.action === "delete") counts.deleted += 1;
@@ -664,6 +824,8 @@ function tally(counts, plan) {
 function describeRun(counts, { bootstrap }) {
   const parts = [];
   if (counts.created) parts.push(`새 예약 ${counts.created}건`);
+  if (counts.adopted) parts.push(`손으로 적어 둔 예약과 이은 예약 ${counts.adopted}건`);
+  if (counts.flagged) parts.push(`손 예약과 겹쳐 보여 「중복 확인 필요」를 단 예약 ${counts.flagged}건`);
   if (counts.updated) parts.push(`바뀐 예약 ${counts.updated}건`);
   if (counts.deleted) parts.push(`취소로 지운 예약 ${counts.deleted}건`);
   if (counts.kept) parts.push(`취소됐지만 방문완료·노쇼라 남긴 예약 ${counts.kept}건`);
@@ -688,9 +850,11 @@ function describeRun(counts, { bootstrap }) {
  *   - loadMeta() → 동기화 상태 문서 (없으면 {})
  *   - saveMeta(patch)
  *   - loadLinks(bookingIds) → Map<예약번호, 묘비>
- *   - applyBooking(bookingId, reservationId, decide) → plan
- *       묘비와 예약 문서를 **트랜잭션 안에서** 다시 읽어 `decide({ link, reservation })` 로
- *       계획을 받고 그대로 쓴다. 직원이 막 바꾼 값을 옛 값으로 덮지 않으려는 것이다.
+ *   - applyBooking({ bookingId, reservationId, useDate }, decide) → plan
+ *       **트랜잭션 안에서** 묘비를 읽고, 묘비가 가리키는 예약 문서(없으면 계산한 번호)를 읽고,
+ *       둘 다 없으면 같은 날 예약들을 읽어 `decide({ link, reservation, reservationId, sameDay })`
+ *       로 계획을 받고 `planWrites` 그대로 쓴다. 직원이 막 바꾼 값을 옛 값으로 덮지 않고, 같은 날
+ *       손 예약을 두 판이 동시에 입양하지 않으려는 것이다.
  * @param {(count: number, runId: string) => Promise<void>} [deps.notifySummary]
  * @param {() => Date} [deps.now]
  */
@@ -749,6 +913,12 @@ function createNaverReservationSync(deps) {
     const base = { today, nowTime, nowStamp, businessId: parsed.ownervista.businessId };
     const work = [];
     let notifiableCount = 0;
+    /** 새로 만들 네이버 예약의 「날짜|전화」별 수. 같은 손님이 같은 날 둘을 잡았으면 입양하지 않는다. */
+    const newPhoneDays = new Map();
+    const phoneDayOf = (booking) => {
+      const key = booking.customer ? phoneKey(booking.customer.phone) : null;
+      return key ? `${booking.useDate}|${key}` : null;
+    };
     for (const booking of parsed.bookings) {
       const link = links.get(booking.bookingId) || null;
       if (link && link.state === "removed") {
@@ -765,7 +935,10 @@ function createNaverReservationSync(deps) {
           tally(counts, preview);
           continue;
         }
+        // 입양으로 끝날 수도 있어 조금 넉넉히 센다 — 넘치면 하나씩 대신 한 통으로 묶일 뿐이다.
         if (preview.notifyCandidate) notifiableCount += 1;
+        const phoneDay = phoneDayOf(booking);
+        if (phoneDay) newPhoneDays.set(phoneDay, (newPhoneDays.get(phoneDay) || 0) + 1);
       }
       work.push({ booking, link });
     }
@@ -781,8 +954,19 @@ function createNaverReservationSync(deps) {
         continue;
       }
       try {
-        const plan = await store.applyBooking(booking.bookingId, reservationId, (current) =>
-          planBooking({ ...base, booking, link: current.link, reservation: current.reservation, quiet: quiet.quiet }));
+        const plan = await store.applyBooking(
+          { bookingId: booking.bookingId, reservationId, useDate: booking.useDate },
+          (current) => planBooking({
+            ...base,
+            booking,
+            link: current.link,
+            reservation: current.reservation,
+            reservationId: current.reservationId,
+            sameDay: current.sameDay,
+            phoneSiblings: newPhoneDays.get(phoneDayOf(booking)) || 1,
+            quiet: quiet.quiet,
+          }),
+        );
         tally(counts, plan);
         if (plan.action === "create" && plan.notifyCandidate) {
           if (plan.notify) notifiedCreations += 1;
@@ -850,6 +1034,9 @@ module.exports = {
   parseFeed,
   naverOwnedValues,
   feedDigest,
+  phoneKey,
+  nameKey,
+  matchManualReservations,
   planBooking,
   planWrites,
   decideQuiet,

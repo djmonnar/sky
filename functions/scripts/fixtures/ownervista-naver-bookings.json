@@ -2,13 +2,19 @@
   "ok": true,
   "version": 1,
   "organizationName": "가상 하늘땅",
-  "range": { "since": "2026-10-12", "until": "2026-11-19" },
+  "range": {
+    "since": "2026-10-12",
+    "until": "2026-11-19"
+  },
   "complete": true,
   "collection": {
     "businessId": "1012304",
     "businessName": "가상 하늘땅 본점",
     "lastSuccessfulSyncAt": "2026-10-19T02:55:00.000Z",
-    "lastSyncedRange": { "since": "2026-10-12", "until": "2026-11-09" },
+    "lastSyncedRange": {
+      "since": "2026-10-12",
+      "until": "2026-11-09"
+    },
     "syncFailed": false
   },
   "bookings": [
@@ -20,11 +26,16 @@
       "useTime": "18:30",
       "headcount": 2,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 홀 예약",
       "menuItems": [],
       "bookedAt": "2026-10-10T09:00:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
-      "customer": { "name": "지난손님", "phone": "01000004444", "requestMessage": null }
+      "customer": {
+        "name": "지난손님",
+        "phone": "01000004444",
+        "requestMessage": null
+      }
     },
     {
       "bookingId": "1104567896",
@@ -34,11 +45,16 @@
       "useTime": "11:00",
       "headcount": 3,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 홀 예약",
       "menuItems": [],
       "bookedAt": "2026-10-18T23:10:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
-      "customer": { "name": "오전손님", "phone": "01000006666", "requestMessage": null }
+      "customer": {
+        "name": "오전손님",
+        "phone": "01000006666",
+        "requestMessage": null
+      }
     },
     {
       "bookingId": "1104567897",
@@ -48,11 +64,36 @@
       "useTime": "19:00",
       "headcount": 2,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 홀 예약",
       "menuItems": [],
       "bookedAt": "2026-10-18T13:00:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
       "customer": null
+    },
+    {
+      "bookingId": "1104567898",
+      "status": "confirmed",
+      "statusCode": "RC03",
+      "useDate": "2026-10-20",
+      "useTime": "13:00",
+      "headcount": 1,
+      "childCount": 0,
+      "partySize": 4,
+      "itemName": "하늘땅 홀 예약",
+      "menuItems": [
+        {
+          "name": "성인",
+          "count": 4
+        }
+      ],
+      "bookedAt": "2026-10-18T03:00:00.000Z",
+      "observedAt": "2026-10-19T02:55:00.000Z",
+      "customer": {
+        "name": "넷이손님",
+        "phone": "01000008888",
+        "requestMessage": null
+      }
     },
     {
       "bookingId": "1104567890",
@@ -62,11 +103,25 @@
       "useTime": "18:00",
       "headcount": 4,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 홀 예약",
-      "menuItems": [{ "name": "돼지갈비", "count": 4 }, { "name": "물냉면", "count": 2 }],
+      "menuItems": [
+        {
+          "name": "돼지갈비",
+          "count": 4
+        },
+        {
+          "name": "물냉면",
+          "count": 2
+        }
+      ],
       "bookedAt": "2026-10-18T12:03:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
-      "customer": { "name": "김하늘", "phone": "01000001111", "requestMessage": "아기의자 1개 부탁드려요" }
+      "customer": {
+        "name": "김하늘",
+        "phone": "01000001111",
+        "requestMessage": "아기의자 1개 부탁드려요"
+      }
     },
     {
       "bookingId": "1104567891",
@@ -76,11 +131,16 @@
       "useTime": "12:30",
       "headcount": 2,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 홀 예약",
       "menuItems": [],
       "bookedAt": "2026-10-19T01:40:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
-      "customer": { "name": "박땅", "phone": "01000002222", "requestMessage": null }
+      "customer": {
+        "name": "박땅",
+        "phone": "01000002222",
+        "requestMessage": null
+      }
     },
     {
       "bookingId": "1104567892",
@@ -90,11 +150,16 @@
       "useTime": "19:00",
       "headcount": 3,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 홀 예약",
       "menuItems": [],
       "bookedAt": "2026-10-17T05:00:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
-      "customer": { "name": "취소손님", "phone": "01000003333", "requestMessage": null }
+      "customer": {
+        "name": "취소손님",
+        "phone": "01000003333",
+        "requestMessage": null
+      }
     },
     {
       "bookingId": "1104567895",
@@ -104,11 +169,16 @@
       "useTime": "18:00",
       "headcount": 2,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 홀 예약",
       "menuItems": [],
       "bookedAt": "2026-10-16T05:00:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
-      "customer": { "name": "변경손님", "phone": "01000005555", "requestMessage": null }
+      "customer": {
+        "name": "변경손님",
+        "phone": "01000005555",
+        "requestMessage": null
+      }
     },
     {
       "bookingId": "1104567894",
@@ -118,11 +188,16 @@
       "useTime": "17:00",
       "headcount": 10,
       "childCount": 0,
+      "partySize": null,
       "itemName": "하늘땅 단체석 예약",
       "menuItems": [],
       "bookedAt": "2026-10-18T08:00:00.000Z",
       "observedAt": "2026-10-19T02:55:00.000Z",
-      "customer": { "name": "가상단체", "phone": "0551234567", "requestMessage": "단체 회식입니다" }
+      "customer": {
+        "name": "가상단체",
+        "phone": "0551234567",
+        "requestMessage": "단체 회식입니다"
+      }
     }
   ]
 }

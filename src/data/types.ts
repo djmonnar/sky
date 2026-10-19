@@ -163,6 +163,21 @@ export interface NaverReservationInfo {
   itemName?: string;
   /** 손님이 고른 메뉴 「돼지갈비 4 · 물냉면 2」. 없으면 빈 문자열. */
   menu?: string;
+  /**
+   * 연동 전에 손으로 넣어 둔 예약에 네이버 번호를 붙였다(입양) — 같은 날 전화가 같은 예약이
+   * 딱 하나였다. 문서 번호·작성자·좌석·메모·상태는 손으로 넣을 때 그대로다. 그 뒤로는 네이버
+   * 예약이라, **네이버에서 취소되면 이 예약도 지워진다**(방문완료·노쇼로 마감했으면 남긴다).
+   */
+  adopted?: boolean;
+  adoptedFrom?: { source: string | null; writer: string | null };
+  /**
+   * 「중복 확인 필요」. 만들 때 같은 날 손 예약과 이름만 같았거나, 하나를 고를 수 없었다.
+   * 그 손 예약 번호들. 합치지도 지우지도 않는다 — 사람이 정한다.
+   */
+  duplicateOf?: number[];
+  duplicateReason?: string;
+  /** 직원이 「다른 예약입니다」라고 한 손 예약 번호들. 다시 가리키지 않는다. 동기화는 안 건드린다. */
+  notDuplicateOf?: number[];
 }
 
 /**

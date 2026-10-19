@@ -4240,18 +4240,35 @@ function firestoreNaverReservationStore() {
       }
       return links;
     },
-    async applyBooking(bookingId, reservationId, decide) {
+    async applyBooking({ bookingId, reservationId, useDate }, decide) {
       const lRef = linkRef(bookingId);
-      const rRef = storeDoc("reservations", String(reservationId));
       return db.runTransaction(async (transaction) => {
-        const [linkSnap, reservationSnap] = await transaction.getAll(lRef, rRef);
+        const linkSnap = await transaction.get(lRef);
+        const link = linkSnap.exists ? linkSnap.data() : null;
+        /*
+          묘비가 있으면 그 예약 문서다. 입양한 예약은 손으로 넣을 때의 번호 그대로라 예약번호에서
+          계산한 번호와 다르다.
+        */
+        const docId = link && link.reservationId ? String(link.reservationId) : String(reservationId);
+        const reservationSnap = await transaction.get(storeDoc("reservations", docId));
+        /*
+          처음 보는 예약일 때만 같은 날 예약을 읽는다(입양·중복 확인 후보). 트랜잭션 안에서 읽어야
+          두 판이 같은 손 예약을 동시에 입양하지 않는다.
+        */
+        let sameDay = [];
+        if (!link && !reservationSnap.exists && useDate) {
+          const day = await transaction.get(storeCol("reservations").where("date", "==", useDate));
+          sameDay = day.docs.map((doc) => ({ id: doc.id, data: doc.data() }));
+        }
         const plan = decide({
-          link: linkSnap.exists ? linkSnap.data() : null,
+          link,
           reservation: reservationSnap.exists ? reservationSnap.data() : null,
+          reservationId: Number(docId),
+          sameDay,
         });
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
         for (const op of naverSync.planWrites(plan, { timestamp })) {
-          const ref = op.target === "link" ? lRef : rRef;
+          const ref = op.target === "link" ? lRef : storeDoc("reservations", op.docId);
           if (op.kind === "create") transaction.create(ref, op.data);
           else if (op.kind === "merge") transaction.set(ref, op.data, { merge: true });
           else if (op.kind === "delete") transaction.delete(ref);

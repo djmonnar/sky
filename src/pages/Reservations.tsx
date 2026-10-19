@@ -6,9 +6,9 @@ import {
   Reservation, ResvStatus, RESV_STATUSES,
   TODAY_STR, DOW_KO, dowIndex, fmtDate,
 } from "../data";
-
-/** 네이버 예약 동기화가 만든 예약인가 (functions/naverReservationSync.js). */
-const isNaver = (r: Pick<Reservation, "source" | "naver">) => r.source === "naver" && Boolean(r.naver?.bookingId);
+import {
+  isNaverReservation as isNaver, naverDuplicateFlags, markNotDuplicate, duplicateReasonText,
+} from "../lib/naverReservations";
 
 /** 네이버가 바꾸면 다시 덮어쓰는 칸. 직원이 고친 값은 네이버가 그 칸을 바꿀 때까지 남는다. */
 const NAVER_OWNED_NOTE =
@@ -22,27 +22,8 @@ const NAVER_OWNED_NOTE =
  */
 const NAVER_DELETE_NOTE = "\n네이버 예약은 여기서 지우면 네이버에서 바뀌어도 다시 들어오지 않습니다.";
 
-const sameName = (value: string) => value.replace(/\s+/g, "");
-const phoneDigits = (value: string) => value.replace(/\D/g, "");
-
-/**
- * 같은 날 같은 손님을 직원이 손으로도 적어 둔 네이버 예약.
- *
- * **표시만 한다. 지우지 않는다.** 이름이 같다고 같은 예약이라는 보장은 없다 — 같은 손님의
- * 다른 예약일 수도, 동명이인일 수도 있다. 동기화를 켜기 전에 직원이 네이버 예약을 손으로
- * 옮겨 적어 둔 것이 겹쳐 보이는 날을 위한 것이다.
- */
-function possibleDuplicateIds(dayReservations: Reservation[]): Set<number> {
-  const manual = dayReservations.filter((r) => !isNaver(r));
-  const names = new Set(manual.map((r) => sameName(r.name)).filter(Boolean));
-  const phones = new Set(manual.map((r) => phoneDigits(r.phone)).filter((digits) => digits.length >= 8));
-  return new Set(
-    dayReservations
-      .filter(isNaver)
-      .filter((r) => names.has(sameName(r.name)) || phones.has(phoneDigits(r.phone)))
-      .map((r) => r.id)
-  );
-}
+/** 「18:30 김하늘 2명」 — 겹쳐 보이는 예약을 짧게 가리킬 때. */
+const shortLabel = (r: Reservation) => `${r.time} ${r.name} ${r.people}명`;
 
 /**
  * 오너비스타에서 예약을 가져오는 네이버 매장을 바꾸기 전에 옮겨 온 예약인가.
@@ -54,12 +35,18 @@ function possibleDuplicateIds(dayReservations: Reservation[]): Set<number> {
 const isFromOtherStore = (r: Reservation, currentBusinessId: string | null) =>
   isNaver(r) && Boolean(currentBusinessId) && Boolean(r.naver?.businessId) && r.naver?.businessId !== currentBusinessId;
 
-function NaverBadges({ r, duplicate, otherStore }: { r: Reservation; duplicate: boolean; otherStore: boolean }) {
-  if (!isNaver(r)) return null;
+/**
+ * 네이버 표시. 「중복 확인 필요」는 네이버 예약과, 그것과 겹쳐 보이는 **손 예약 쪽에도** 단다 —
+ * 같은 날 목록에서 둘 다 눈에 띄어야 사람이 고른다.
+ */
+function NaverBadges({ r, duplicateWith, otherStore }: { r: Reservation; duplicateWith: Reservation[]; otherStore: boolean }) {
+  const naver = isNaver(r);
+  if (!naver && duplicateWith.length === 0) return null;
+  const others = duplicateWith.map(shortLabel).join(", ");
   return (
     <>
-      <span className="badge naver" title={`네이버 예약번호 ${r.naver?.bookingId}`}>네이버</span>
-      {otherStore && (
+      {naver && <span className="badge naver" title={`네이버 예약번호 ${r.naver?.bookingId}`}>네이버</span>}
+      {naver && otherStore && (
         <span
           className="badge naver dup"
           title={`오너비스타에서 예약을 가져오는 매장을 바꾸기 전에 옮겨 온 예약입니다(매장 번호 ${r.naver?.businessId}). 네이버에서 더는 바뀌지 않으니 확인 후 지워 주세요.`}
@@ -67,12 +54,14 @@ function NaverBadges({ r, duplicate, otherStore }: { r: Reservation; duplicate: 
           예전 매장
         </span>
       )}
-      {duplicate && (
+      {duplicateWith.length > 0 && (
         <span
           className="badge naver dup"
-          title="같은 날 같은 손님으로 직접 적은 예약이 있습니다. 같은 예약이면 직접 적은 쪽을 지워 주세요 — 네이버 쪽은 네이버가 바뀔 때 함께 바뀝니다."
+          title={naver
+            ? `같은 날 직접 적은 예약(${others})과 같은 손님일 수 있습니다. 같은 예약이면 직접 적은 쪽을 지워 주세요 — 네이버 쪽은 네이버가 바뀔 때 함께 바뀝니다.`
+            : `같은 날 네이버 예약(${others})과 같은 손님일 수 있습니다. 같은 예약이면 이 예약을 지워 주세요.`}
         >
-          중복 확인
+          중복 확인 필요
         </span>
       )}
     </>
@@ -161,7 +150,9 @@ export default function Reservations() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const dayReservations = reservations.filter((r) => r.date === selectedDate && r.status !== "취소");
-  const duplicateIds = possibleDuplicateIds(dayReservations);
+  const duplicateFlags = naverDuplicateFlags(dayReservations);
+  const duplicateWith = (r: Reservation) =>
+    duplicateFlags.byNaver.get(r.id) ?? duplicateFlags.byManual.get(r.id) ?? [];
   const naverSync = useNaverReservationSync();
   const currentNaverBusinessId = naverSync?.businessId ?? null;
   const list = useMemo(() => {
@@ -318,6 +309,19 @@ export default function Reservations() {
   const saveMemo = (r: Reservation) => {
     upsertReservation({ ...r, memo });
     showToast("메모가 저장되었습니다");
+  };
+
+  /**
+   * 「다른 예약입니다」. 네이버 예약 쪽에 그 손 예약과는 다른 예약이라고 적는다 — 손 예약은
+   * 안 건드린다. 손 예약에서 누르면 그것을 가리키는 네이버 예약들에 적는다.
+   */
+  const dismissDuplicate = (r: Reservation) => {
+    const pairs = isNaver(r)
+      ? [{ target: r, manualIds: (duplicateFlags.byNaver.get(r.id) ?? []).map((m) => m.id) }]
+      : (duplicateFlags.byManual.get(r.id) ?? []).map((n) => ({ target: n, manualIds: [r.id] }));
+    if (pairs.length === 0) return;
+    pairs.forEach(({ target, manualIds }) => upsertReservation(markNotDuplicate(target, manualIds)));
+    showToast("다른 예약으로 표시했습니다");
   };
 
   const submitForm = () => {
@@ -549,7 +553,7 @@ export default function Reservations() {
                     <td className="bold num">{r.time}</td>
                     <td className="bold resv-col-name" title={r.name}>
                       {r.name}{isWarn(r) && " !"}{" "}
-                      <NaverBadges r={r} duplicate={duplicateIds.has(r.id)} otherStore={isFromOtherStore(r, currentNaverBusinessId)} />
+                      <NaverBadges r={r} duplicateWith={duplicateWith(r)} otherStore={isFromOtherStore(r, currentNaverBusinessId)} />
                     </td>
                     <td className="muted num">{r.phone}</td>
                     <td className="num">{r.people}명</td>
@@ -588,7 +592,7 @@ export default function Reservations() {
                     <div className="spread">
                       <span className="list-time" style={{ fontSize: 17 }}>{r.time}</span>
                       <span className="row" style={{ gap: 6 }}>
-                        <NaverBadges r={r} duplicate={duplicateIds.has(r.id)} otherStore={isFromOtherStore(r, currentNaverBusinessId)} />
+                        <NaverBadges r={r} duplicateWith={duplicateWith(r)} otherStore={isFromOtherStore(r, currentNaverBusinessId)} />
                         {r.people >= 6 && r.status !== "단체" && <Badge tone="orange">{r.people}명</Badge>}
                         <StatusBadge status={r.status} />
                       </span>
@@ -609,6 +613,18 @@ export default function Reservations() {
                     </div>
                     <div className="detail-line"><span className="k">요청사항</span><span className="v">{r.request ?? "-"}</span></div>
                     <div className="detail-line"><span className="k">작성자</span><span className="v">{r.writer}</span></div>
+                    {duplicateWith(r).length > 0 && (
+                      <div className="detail-line">
+                        <span className="k">중복 확인</span>
+                        <span className="v naver-text">
+                          {isNaver(r) ? "직접 적은 예약" : "네이버 예약"}({duplicateWith(r).map(shortLabel).join(", ")})과 같은 손님일 수
+                          있습니다. 같은 예약이면 직접 적은 쪽을 지워 주세요.
+                          <button className="btn btn-outline btn-sm" style={{ marginLeft: 6 }} onClick={() => dismissDuplicate(r)}>
+                            다른 예약입니다
+                          </button>
+                        </span>
+                      </div>
+                    )}
                     <div className="resv-actions">
                       {QUICK_STATUS.map((q) => (
                         <button key={q.s} className={`btn ${q.cls}`} onClick={() => changeStatus(r, q.s)}>
@@ -653,7 +669,7 @@ export default function Reservations() {
                   {isFromOtherStore(sel, currentNaverBusinessId) && (
                     <div className="detail-line">
                       <span className="k">네이버 매장</span>
-                      <span className="v">
+                      <span className="v naver-text">
                         예전 매장({sel.naver?.businessId})에서 옮겨 온 예약입니다. 지금 가져오는 매장이 아니라 네이버에서
                         더는 바뀌지 않습니다. 확인 후 지워 주세요.
                       </span>
@@ -662,10 +678,38 @@ export default function Reservations() {
                   {(sel.naver?.status === "cancelled" || sel.naver?.status === "cancelled_by_change") && (
                     <div className="detail-line">
                       <span className="k">네이버</span>
-                      <span className="v">네이버에서는 취소됐습니다. {sel.status}로 마감한 기록이라 지우지 않고 남겨 두었습니다.</span>
+                      <span className="v naver-text">네이버에서는 취소됐습니다. {sel.status}로 마감한 기록이라 지우지 않고 남겨 두었습니다.</span>
+                    </div>
+                  )}
+                  {sel.naver?.adopted && (
+                    <div className="detail-line">
+                      <span className="k">손 예약</span>
+                      <span className="v naver-text">
+                        직접 적어 둔 예약에 네이버 예약을 이었습니다(같은 날 연락처가 같았습니다). 시간·인원·이름·요청사항은
+                        네이버 값으로 맞췄고 좌석·메모·상태는 그대로입니다. 네이버에서 취소되면 이 예약도 지워집니다.
+                      </span>
                     </div>
                   )}
                   <div className="naver-note">{NAVER_OWNED_NOTE}</div>
+                </>
+              )}
+              {duplicateWith(sel).length > 0 && (
+                <>
+                  <div className="detail-line">
+                    <span className="k">중복 확인</span>
+                    <span className="v naver-text">
+                      {isNaver(sel) ? "같은 날 직접 적은 예약" : "같은 날 네이버 예약"}({duplicateWith(sel).map(shortLabel).join(", ")})과
+                      같은 손님일 수 있습니다.
+                      {isNaver(sel) && sel.naver?.duplicateOf?.length ? ` ${duplicateReasonText(sel.naver.duplicateReason) ?? ""}` : ""}
+                    </span>
+                  </div>
+                  <div className="naver-note">
+                    같은 예약이면 직접 적은 예약을 지워 주세요 — 좌석·메모가 있으면 네이버 예약에 옮겨 적고 지우면 됩니다.
+                    네이버 예약은 네이버가 바뀔 때 함께 바뀝니다. 다른 손님이면 「다른 예약입니다」를 누르세요.
+                  </div>
+                  <button className="btn btn-outline btn-block" style={{ marginTop: 8 }} onClick={() => dismissDuplicate(sel)}>
+                    다른 예약입니다
+                  </button>
                 </>
               )}
 
