@@ -178,7 +178,7 @@ stores/{storeId}                      # 기본 storeId: haneulttang
   ├─ handovers/{auto}                 # text, date, createdBy
   ├─ recipes/{id}                     # name, category, kind(menu|side), servings, salePrice,
   │                                   # ingredients[{name, quantity, unit(g|kg|ml|L|박스|ea), unitCost, note?}]
-  ├─ salesDailySummaries/{YYYY-MM-DD} # 네이버 플레이스플러스 일 매출 (오너비스타 피드)
+  ├─ salesDailySummaries/{YYYY-MM-DD} # 네이버 플레이스플러스 일 매출 (오너비스타 피드) + okpos 칸(OK포스 엑셀, 있으면 이게 그날 매출)
   │                                   # netAmount, orderCount(아는 날만), source, syncedAt
   ├─ salesMenuReports/latest          # 매출 내 메뉴 비중 (기간 합계 한 장)
   │                                   # startDate, endDate, overallSales,

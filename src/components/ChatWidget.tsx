@@ -86,14 +86,32 @@ function SalesReportCard({ payload }: { payload: SalesReportPayload }) {
         {payload.elapsedDays}일 중 {payload.dataDays}일 데이터
         {payload.missingDays > 0 ? ` · 없는 날 ${payload.missingDays}일` : ""}
         {payload.futureDays > 0 ? ` · 남은 날 ${payload.futureDays}일` : ""}
+        {payload.okposDays ? ` · OK포스 ${payload.okposDays}일` : ""}
       </div>
+
+      {/* 결제수단은 OK포스 엑셀을 올린 날만 안다 */}
+      {payload.payments && (
+        <div className="chat-report-section">
+          <div className="chat-report-label">결제수단 · OK포스 {payload.payments.days}일</div>
+          {([
+            ["card", "카드"], ["cash", "현금"], ["voucher", "상품권·쿠폰"], ["other", "그 외 수단"], ["unlisted", "엑셀에 칸 없는 결제"],
+          ] as const)
+            .filter(([key]) => key === "card" || key === "cash" || payload.payments!.byMethod[key] > 0)
+            .map(([key, label]) => (
+              <div className="chat-report-row" key={key}>
+                <span>{label}</span>
+                <span>{money(payload.payments!.byMethod[key])}원</span>
+              </div>
+            ))}
+        </div>
+      )}
 
       {dailyRows.length > 1 && (
         <div className="chat-report-section">
           <div className="chat-report-label">일자별</div>
           {dailyRows.map((row) => (
             <div className="chat-report-row" key={row.businessDate}>
-              <span>{row.businessDate.slice(5)} ({row.dow})</span>
+              <span>{row.businessDate.slice(5)} ({row.dow}){row.source === "okpos" && <span className="muted small"> · OK포스</span>}</span>
               <span>{money(row.amount)}원</span>
             </div>
           ))}

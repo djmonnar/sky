@@ -36,6 +36,22 @@ function money(value) {
   return Math.round(Number(value) || 0).toLocaleString("ko-KR");
 }
 
+/**
+ * OK포스 결제수단 칸 → 다섯 묶음. 화면의 src/lib/okposDaily.ts `okposPaymentGroups` 와
+ * **같은 묶음이어야 한다** — 바꾸면 둘 다 바꾼다(함수 쪽은 그 TS 파일을 못 부른다).
+ */
+function okposPaymentGroups(okpos) {
+  const p = okpos.payments || {};
+  const n = (value) => Number(value) || 0;
+  return {
+    card: n(p.card) + n(p.partnerCard) + n(p.employeeCard),
+    cash: n(p.simpleCash) + n(p.cashReceipt),
+    voucher: n(p.voucher) + n(p.eVoucher) + n(p.mealTicket) + n(p.mobileCoupon),
+    other: n(p.credit) + n(p.memberPoint) + n(p.cashbee) + n(p.onlinePay) + n(p.otherPay),
+    unlisted: n(okpos.unlistedPayment),
+  };
+}
+
 function clampText(value, limit = MAX_MESSAGE_LENGTH) {
   const text = String(value ?? "").trim();
   return text.length > limit ? text.slice(0, limit) : text;
@@ -187,9 +203,40 @@ function createGeminiChat(deps) {
   }
 
   /**
-   * POS 매출 보고서 재료. 이 매장의 매출 정본은 네이버 플레이스플러스(오너비스타 수집)
-   * 하나이고, 날짜별로는 순매출(과 아는 날은 결제 건수)만 온다 — 그래서 여기서 주는
-   * 것도 날짜별 금액과 그것을 묶은 합계·평균·최고일·직전 기간 비교다. 결제수단·시간대는 없다.
+   * 저장된 하루치 → 그날 매출. **OK포스 엑셀을 올린 날은 OK포스 숫자다**(`okpos` 칸).
+   * 네이버는 현금·상품권을 다 못 읽어 와서 OK포스가 더 정확하다. 화면(src/lib/okposDaily.ts
+   * `withOkpos`)과 같은 규칙이어야 비서와 화면의 숫자가 같다.
+   *
+   * 숫자가 하나도 없는 문서(OK포스를 되돌렸고 네이버도 없던 날)는 «없는 날»이다 — null.
+   */
+  function dailySalesOf(doc) {
+    const okpos = doc.okpos && typeof doc.okpos.netAmount === "number" ? doc.okpos : null;
+    const naverNetAmount = doc.source === "ownervista" && typeof doc.netAmount === "number" ? doc.netAmount : null;
+    if (okpos) {
+      return {
+        businessDate: doc.businessDate,
+        netAmount: okpos.netAmount,
+        orderCount: Number(okpos.receiptCount) || 0,
+        source: "okpos",
+        naverNetAmount,
+        payments: okposPaymentGroups(okpos),
+      };
+    }
+    if (typeof doc.netAmount !== "number") return null;
+    return {
+      businessDate: doc.businessDate,
+      netAmount: doc.netAmount,
+      ...(typeof doc.orderCount === "number" ? { orderCount: doc.orderCount } : {}),
+      source: "naver",
+      naverNetAmount,
+      syncedAt: doc.syncedAt,
+    };
+  }
+
+  /**
+   * POS 매출 보고서 재료. 날짜별 금액과 그것을 묶은 합계·평균·최고일·직전 기간 비교다.
+   * 네이버 플레이스플러스(오너비스타 수집)는 날짜별 순매출(과 아는 날은 결제 건수)만 준다.
+   * **OK포스 엑셀을 올린 날은 그 숫자를 쓰고 결제수단(카드·현금·상품권)도 안다.** 시간대는 늘 없다.
    *
    * 메뉴 비중은 **기간 합계 한 장**으로 따로 온다(`salesMenuReports/latest`). 물어본
    * 기간과 다를 수 있어 그 기간을 같이 실어 보낸다 — 모델이 «이번 주 메뉴»로 말하면 안 된다.
@@ -218,6 +265,8 @@ function createGeminiChat(deps) {
       .get()).docs
       .map((doc) => doc.data())
       .filter((row) => typeof row.businessDate === "string")
+      .map(dailySalesOf)
+      .filter(Boolean)
       .sort((a, b) => a.businessDate.localeCompare(b.businessDate));
 
     const rows = await readRows(rangeStart, rangeEnd);
@@ -248,6 +297,20 @@ function createGeminiChat(deps) {
       const text = isoOf(row.syncedAt);
       return text > acc ? text : acc;
     }, "");
+
+    // 결제수단은 OK포스를 올린 날만 안다 — 그날들끼리만 묶고, 몇 날인지 같이 준다
+    const okposRows = rows.filter((row) => row.source === "okpos");
+    const payments = okposRows.length === 0 ? null : okposRows.reduce((acc, row) => {
+      Object.keys(acc.byMethod).forEach((key) => { acc.byMethod[key] += row.payments[key]; });
+      acc.total += row.netAmount;
+      return acc;
+    }, { days: okposRows.length, total: 0, byMethod: { card: 0, cash: 0, voucher: 0, other: 0, unlisted: 0 } });
+    const compared = okposRows.filter((row) => typeof row.naverNetAmount === "number");
+    const naverComparison = compared.length === 0 ? null : {
+      days: compared.length,
+      naver: compared.reduce((acc, row) => acc + row.naverNetAmount, 0),
+      okpos: compared.reduce((acc, row) => acc + row.netAmount, 0),
+    };
 
     let menuShare = null;
     try {
@@ -283,7 +346,14 @@ function createGeminiChat(deps) {
     }
 
     return {
-      source: "네이버 플레이스플러스 POS 매출 (오너비스타에서 매일 수집)",
+      source: okposRows.length === 0
+        ? "네이버 플레이스플러스 POS 매출 (오너비스타에서 매일 수집)"
+        : okposRows.length === rows.length
+          ? "OK포스 엑셀 (사장님이 올린 일자별 정산 — 현금·상품권 포함 결제 전체)"
+          : `OK포스 엑셀 ${okposRows.length}일 + 네이버 플레이스플러스 ${rows.length - okposRows.length}일 (OK포스를 올린 날은 OK포스 숫자)`,
+      okposDays: okposRows.length,
+      ...(payments ? { payments } : {}),
+      ...(naverComparison ? { naverComparison } : {}),
       rangeStart,
       rangeEnd,
       dayCount: span,
@@ -310,15 +380,22 @@ function createGeminiChat(deps) {
         businessDate: row.businessDate,
         dow: DOW_LABEL[dayIndexOf(row.businessDate)],
         amount: amountOf(row),
+        source: row.source,
         // 건수는 아는 날만 — 네이버는 보통 안 준다. 0 으로 적으면 사실로 읽힌다.
         ...(typeof row.orderCount === "number" ? { orderCount: row.orderCount } : {}),
       })),
       latestSyncedAt,
       ...(menuShare ? { menuShare } : {}),
       dataNote: rows.length === 0
-        ? "해당 기간에 받아온 POS 매출이 없습니다. 매출·매입 화면의 「지금 동기화」를 눌러보라고 안내하세요."
-        : "카드 매출과 다른 숫자입니다(현금·계좌이체 포함, 아직 정산 안 된 것 포함). 결제수단·시간대별은 네이버가 주지 않아 없습니다."
-          + (menuShare ? " 메뉴 비중(menuShare)은 위 기간과 별개인 기간 합계입니다." : " 메뉴 비중은 아직 받은 것이 없습니다."),
+        ? "해당 기간에 받아온 POS 매출이 없습니다. 매출·매입 화면의 「지금 동기화」를 누르거나 OK포스 「일자별 (일별종합)」 엑셀을 올려 보라고 안내하세요."
+        : [
+          "카드사 정산 금액과는 다른 숫자입니다.",
+          payments
+            ? `결제수단(payments)은 OK포스 엑셀을 올린 ${payments.days}일만 있습니다. unlisted(엑셀에 칸 없는 결제)는 무엇인지 모르는 결제이니 추측하지 말고 그대로 말하세요.`
+            : "결제수단은 OK포스 엑셀을 올린 날만 있는데 이 기간에는 없습니다.",
+          "시간대별은 없습니다.",
+          menuShare ? "메뉴 비중(menuShare)은 위 기간과 별개인 기간 합계입니다." : "메뉴 비중은 아직 받은 것이 없습니다.",
+        ].join(" "),
     };
   }
 
@@ -833,7 +910,7 @@ function createGeminiChat(deps) {
       "- 등록/수정 도구는 즉시 저장되지 않고 사용자 확인 카드로 표시됩니다. 도구를 부른 뒤에는 '확인 카드를 띄웠으니 확인해달라'는 취지로 짧게 안내하세요.",
       "- 등록에 필요한 항목이 빠졌으면 도구를 부르지 말고 먼저 사용자에게 되물으세요.",
       "- 금액은 원 단위로 천 단위 쉼표를 넣어 표기하세요. (예: 1,250,000원)",
-      "- 매출은 네이버 플레이스플러스 POS 일 매출입니다(sales_report). 보고서를 요청받으면 기간 합계 → 직전 기간 대비 증감 → 일평균 → 최고·최저일 → 요일 경향 순으로 짧게 정리하세요. 결제수단·시간대별은 없다고 분명히 말하세요. 데이터 없는 날과 아직 오지 않은 날은 구분해서 말하세요.",
+      "- 매출은 POS 일 매출입니다(sales_report). 사장님이 OK포스 엑셀을 올린 날은 OK포스 숫자(현금·상품권 포함), 아닌 날은 네이버 플레이스플러스 숫자입니다 — 섞여 있으면 source 를 보고 그 사실을 한 줄로 밝히세요. 보고서를 요청받으면 기간 합계 → 직전 기간 대비 증감 → 일평균 → 최고·최저일 → 요일 경향 순으로 짧게 정리하세요. 결제수단(카드·현금·상품권)은 payments 가 있을 때만, 그 일수와 함께 말하고, 없으면 없다고 하세요. 시간대별은 늘 없다고 하세요. 데이터 없는 날과 아직 오지 않은 날은 구분해서 말하세요.",
       "- 메뉴 비중은 sales_report 결과의 menuShare 에만 있습니다. 그것은 물어본 기간이 아니라 menuShare.startDate~endDate 기간의 합계이므로 반드시 그 기간을 밝히고 말하세요. 없으면 아직 받은 메뉴 비중이 없다고 하세요. 비중(%)은 네이버 값 그대로 쓰고 다시 계산하지 마세요.",
       "- 전화번호는 개인정보 보호를 위해 가운데 자리가 가려진 채로 전달됩니다. 가려진 숫자를 임의로 채우지 마세요.",
       "- 목록이 길면 표 대신 핵심만 간추리고, 필요하면 더 볼지 물어보세요. 다만 아래 «오늘 현황» 규칙은 예외입니다.",

@@ -149,7 +149,8 @@ export default function AdminDashboard() {
     return !emp || !isMonthlyEmployee(emp);
   });
 
-  /* ---- POS 매출: 네이버 플레이스플러스 일 합계. 오늘 것은 내일 새벽에 오므로 "가장 최근 날"을 보여준다 ---- */
+  /* ---- POS 매출: 일 합계(OK포스 엑셀을 올린 날은 OK포스, 아니면 네이버 플레이스플러스).
+     네이버 것은 내일 새벽에 오므로 "가장 최근 날"을 보여준다 ---- */
   const posLatest = useMemo(
     () => [...salesDailySummaries]
       .filter((row) => row.businessDate <= todayStr)
@@ -210,7 +211,7 @@ export default function AdminDashboard() {
         {canAccess("sales") && (
           <KpiTile
             to="/finance"
-            label={posLatest ? `POS 매출 · ${shortDate(posLatest.businessDate)}` : "POS 매출"}
+            label={posLatest ? `POS 매출 · ${shortDate(posLatest.businessDate)}${posLatest.okpos ? " · OK포스" : ""}` : "POS 매출"}
             value={posLatest ? Math.round(posLatest.netAmount).toLocaleString("ko-KR") : "—"}
             unit={posLatest ? "원" : undefined}
             sub={!posLatest
