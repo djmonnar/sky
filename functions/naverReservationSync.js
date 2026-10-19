@@ -86,6 +86,14 @@ const FEED_FUTURE_DAYS = 31;
 /** 한 번에 이만큼까지는 한 건씩 알린다. 넘으면 한 통으로 묶는다. */
 const PUSH_BURST_LIMIT = 3;
 
+/**
+ * 손 예약을 입양하려면 시간 차이가 이 안(분)이어야 한다. 같은 손님이 같은 날 점심은 전화로,
+ * 저녁은 네이버로 잡을 수 있다 — 시간을 안 보면 저녁 네이버 예약이 점심 손 예약을 가져가
+ * 그 시간을 저녁으로 바꾼다(점심 예약이 사라진다). 「같은 고객의 다른 시각 예약을 합치지
+ * 않는다」(오너비스타 작업 점검표). 넘으면 만들고 「중복 확인 필요」로 표시만 한다.
+ */
+const ADOPT_WITHIN_MINUTES = 120;
+
 const NAVER_STATUSES = new Set([
   "requested", "confirmed", "cancelled", "noshowed", "cancelled_by_change", "completed", "unknown",
 ]);
@@ -386,13 +394,21 @@ function nameKey(raw) {
   return String(raw ?? "").replace(/\s+/g, "").replace(/님$/, "");
 }
 
+/** `HH:mm` 을 자정부터의 분으로. 모르는 모양이면 `null` — 시간이 가깝다고 치지 않는다. */
+function minutesOfDay(raw) {
+  const match = /^(\d{1,2}):([0-5]\d)$/.exec(String(raw ?? "").trim());
+  if (!match || Number(match[1]) > 23) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
 /**
  * 네이버 예약을 새로 만들기 전에, 같은 날 손으로 넣어 둔 예약과 견준다.
  *
  * 연동 전에는 사장님이 네이버 예약을 하늘땅에 손으로 옮겨 적었다. 동기화가 켜지면 같은 손님
  * 예약이 둘이 되면 안 된다. 그래서 (사용자와 정한 규칙)
- *   - 같은 날, 네이버와 안 이어진 예약 가운데 **전화가 같은 것이 정확히 한 건**이면 새로 만들지
- *     않고 그 예약에 네이버 번호를 붙인다(입양).
+ *   - 같은 날, 네이버와 안 이어진 예약 가운데 **전화가 같은 것이 정확히 한 건**이고 시간 차이가
+ *     `ADOPT_WITHIN_MINUTES`(2시간) 안이면 새로 만들지 않고 그 예약에 네이버 번호를 붙인다(입양).
+ *   - 그 한 건이 시간이 멀거나(점심 전화·저녁 네이버) 시간을 모르면 합치지 않는다 — 만들고 표시만.
  *   - 전화가 같은 것이 둘 이상이면 고르지 않는다 — 만들고 「중복 확인 필요」로 표시만 한다.
  *   - 거꾸로, 이번 판에 **새로 들어온 네이버 예약 가운데 같은 날 같은 전화가 둘 이상**이면(점심·저녁을
  *     따로 잡은 손님) 손 예약 하나가 어느 쪽 것인지 모른다 — 역시 고르지 않고 표시만 한다.
@@ -414,7 +430,14 @@ function matchManualReservations(values, sameDay, { phoneSiblings = 1 } = {}) {
   if (phoneMatches.length === 1 && phoneSiblings > 1) {
     return { adopt: null, suspects: phoneMatches, reason: "same-phone-multiple-naver" };
   }
-  if (phoneMatches.length === 1) return { adopt: phoneMatches[0], suspects: [], reason: null };
+  if (phoneMatches.length === 1) {
+    const naverAt = minutesOfDay(values.time);
+    const manualAt = minutesOfDay(phoneMatches[0].data.time);
+    if (naverAt === null || manualAt === null || Math.abs(naverAt - manualAt) > ADOPT_WITHIN_MINUTES) {
+      return { adopt: null, suspects: phoneMatches, reason: "same-phone-other-time" };
+    }
+    return { adopt: phoneMatches[0], suspects: [], reason: null };
+  }
   const name = nameKey(values.name);
   const nameMatches = name ? candidates.filter(({ data }) => nameKey(data.name) === name) : [];
   if (nameMatches.length > 0) {
@@ -1023,6 +1046,7 @@ module.exports = {
   FEED_PAST_DAYS,
   FEED_FUTURE_DAYS,
   PUSH_BURST_LIMIT,
+  ADOPT_WITHIN_MINUTES,
   NAVER_OWNED_FIELDS,
   kstParts,
   kstStamp,

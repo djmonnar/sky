@@ -627,6 +627,31 @@ const HAND_COPY = {
     assert.deepStrictEqual(store.state.reservations.get(String(second.id)), second);
   });
 
+  await check("전화가 같아도 시간이 2시간 넘게 다르면 입양하지 않는다 — 점심 전화 예약을 저녁 네이버 예약이 가져가지 않는다", async () => {
+    // 네이버 예약은 18:00. 손 예약이 점심(12:00)이면 다른 예약일 수 있다 — 합치면 점심 예약이 사라진다.
+    const lunchByPhone = { ...HAND_COPY, time: "12:00" };
+    const store = memoryStore({ reservations: [lunchByPhone], meta: BOOTSTRAPPED });
+    const result = await runner(store, okFeed([rawBooking("1104567890")])).run();
+    assert.strictEqual(result.counts.adopted, 0);
+    assert.strictEqual(result.counts.created, 1);
+    assert.strictEqual(result.counts.flagged, 1);
+    const created = store.state.reservations.get(docIdOf("1104567890"));
+    assert.deepStrictEqual(created.naver.duplicateOf, [HAND_COPY.id]);
+    assert.strictEqual(created.naver.duplicateReason, "same-phone-other-time");
+    assert.deepStrictEqual(store.state.reservations.get(String(HAND_COPY.id)), lunchByPhone, "점심 손 예약은 그대로");
+
+    // 경계: 정확히 2시간(16:00 ↔ 18:00)은 입양, 2시간 1분(15:59)은 표시만. 시간을 모르면 표시만.
+    const atLimit = memoryStore({ reservations: [{ ...HAND_COPY, time: "16:00" }], meta: BOOTSTRAPPED });
+    assert.strictEqual((await runner(atLimit, okFeed([rawBooking("1104567890")])).run()).counts.adopted, 1);
+    for (const time of ["15:59", "", "저녁"]) {
+      const over = memoryStore({ reservations: [{ ...HAND_COPY, time }], meta: BOOTSTRAPPED });
+      const run = await runner(over, okFeed([rawBooking("1104567890")])).run();
+      assert.strictEqual(run.counts.adopted, 0, `손 예약 시간 ${JSON.stringify(time)}`);
+      assert.strictEqual(over.state.reservations.get(docIdOf("1104567890")).naver.duplicateReason, "same-phone-other-time");
+    }
+    assert.strictEqual(sync.ADOPT_WITHIN_MINUTES, 120);
+  });
+
   await check("전화가 없으면 합치지 않는다 (네이버 쪽이든 손 예약 쪽이든)", async () => {
     // 손 예약에 전화가 없다
     const noPhone = { ...HAND_COPY, phone: "" };

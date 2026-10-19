@@ -4,8 +4,9 @@ import type { Reservation } from "../data/types";
    네이버 예약을 예약 화면에 보일 때 쓰는 계산 (브라우저·Firebase 없이 돈다)
 
    동기화(functions/naverReservationSync.js)는 네이버 예약을 새로 만들 때 같은 날 손으로
-   넣어 둔 예약과 견준다. 전화가 같은 것이 딱 하나면 그 예약에 네이버 번호를 붙이고(입양),
-   이름만 같거나 하나를 고를 수 없으면 만들되 `naver.duplicateOf` 로 그 예약들을 가리킨다.
+   넣어 둔 예약과 견준다. 전화가 같은 것이 딱 하나이고 시간이 2시간 안이면 그 예약에 네이버
+   번호를 붙이고(입양), 이름만 같거나 시간이 멀거나 하나를 고를 수 없으면 만들되
+   `naver.duplicateOf` 로 그 예약들을 가리킨다.
    **합치지도 지우지도 않는다** — 이 화면이 「중복 확인 필요」로 보이고, 사람이 정한다.
 
    동기화 뒤에 직원이 같은 손님을 또 손으로 적는 일도 있다. 그래서 화면은 동기화가 남긴
@@ -97,6 +98,8 @@ export function duplicateReasonText(reason: string | null | undefined): string |
       return "같은 날 같은 연락처의 예약이 여럿이라 어느 것인지 몰라 합치지 않았습니다.";
     case "same-phone-multiple-naver":
       return "같은 손님의 네이버 예약이 같은 날 여럿이라 어느 것인지 몰라 합치지 않았습니다.";
+    case "same-phone-other-time":
+      return "같은 연락처의 예약이 있지만 시간이 2시간 넘게 달라 다른 예약일 수 있어 합치지 않았습니다.";
     default:
       return null;
   }

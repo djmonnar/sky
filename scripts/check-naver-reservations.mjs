@@ -123,7 +123,7 @@ check("입양한 예약(손 예약에 네이버 번호를 붙인 것)은 네이�
 });
 
 check("합치지 않은 까닭을 사람 말로 적는다", () => {
-  for (const reason of ["same-name", "same-name-no-phone", "same-phone-multiple", "same-phone-multiple-naver"]) {
+  for (const reason of ["same-name", "same-name-no-phone", "same-phone-multiple", "same-phone-multiple-naver", "same-phone-other-time"]) {
     assert.ok(lib.duplicateReasonText(reason), reason);
   }
   assert.equal(lib.duplicateReasonText(undefined), null);
