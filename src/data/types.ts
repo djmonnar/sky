@@ -137,6 +137,68 @@ export interface Reservation {
   memo?: string;
   writer: string;
   createdAt: string;
+  /**
+   * 어디서 온 예약인가. `naver` 면 네이버 예약 동기화가 만든 것이다
+   * (functions/naverReservationSync.js). 없으면 직원·카톡이 만든 예약이다.
+   */
+  source?: string;
+  /** 네이버 예약에서 온 예약에만 있다. 동기화만 쓴다. */
+  naver?: NaverReservationInfo;
+}
+
+/**
+ * 네이버 예약 표시. 날짜·시간·인원·이름·연락처·요청사항은 **네이버가 바꾸면** 동기화가 다시
+ * 덮어쓴다. 좌석·메모·상태는 하늘땅 것이라 동기화가 되돌리지 않는다.
+ */
+export interface NaverReservationInfo {
+  /** 네이버 예약번호. 네이버 스마트플레이스에서 찾을 때 쓴다. */
+  bookingId: string;
+  /**
+   * 어느 네이버 매장(예약 업체)에서 온 예약인가. 오너비스타에서 매장을 바꾸면 예전 매장
+   * 예약은 피드에서 사라질 뿐 지워지지 않아서, 화면이 이 번호로 「예전 매장」을 가린다.
+   */
+  businessId?: string | null;
+  /** 네이버 쪽 마지막 상태(requested·confirmed·cancelled·…). 하늘땅 상태와 다를 수 있다. */
+  status?: string;
+  itemName?: string;
+  /** 손님이 고른 메뉴 「돼지갈비 4 · 물냉면 2」. 없으면 빈 문자열. */
+  menu?: string;
+  /**
+   * 연동 전에 손으로 넣어 둔 예약에 네이버 번호를 붙였다(입양) — 같은 날 전화가 같은 예약이
+   * 딱 하나였다. 문서 번호·작성자·좌석·메모·상태는 손으로 넣을 때 그대로다. 그 뒤로는 네이버
+   * 예약이라, **네이버에서 취소되면 이 예약도 지워진다**(방문완료·노쇼로 마감했으면 남긴다).
+   */
+  adopted?: boolean;
+  adoptedFrom?: { source: string | null; writer: string | null };
+  /**
+   * 「중복 확인 필요」. 만들 때 같은 날 손 예약과 이름만 같았거나, 하나를 고를 수 없었다.
+   * 그 손 예약 번호들. 합치지도 지우지도 않는다 — 사람이 정한다.
+   */
+  duplicateOf?: number[];
+  duplicateReason?: string;
+  /** 직원이 「다른 예약입니다」라고 한 손 예약 번호들. 다시 가리키지 않는다. 동기화는 안 건드린다. */
+  notDuplicateOf?: number[];
+}
+
+/**
+ * 네이버 예약 동기화가 마지막으로 돈 기록 (`meta/naverReservationSync`). 손님 정보는 없다.
+ * 「지금」이 아니라 「마지막으로 확인했을 때」를 화면에 말하려고 읽는다.
+ */
+export interface NaverReservationSyncState {
+  status: "success" | "partial" | "failed" | "config_required" | "disabled" | string;
+  message: string;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  bootstrappedAt: string | null;
+  /** 오너비스타가 네이버를 마지막으로 수집한 때. 이보다 새 예약은 아직 모른다. */
+  ownervistaSyncedAt: string | null;
+  ownervistaSyncFailed: boolean;
+  /**
+   * 지금 예약을 가져오는 네이버 매장. 한 계정에 매장이 여럿이고(하늘땅: 본점 둘·진해점 하나)
+   * 같은 이름의 본점이 둘이라 번호까지 보여 줘야 어느 매장인지 갈린다.
+   */
+  businessId: string | null;
+  businessName: string | null;
 }
 
 export interface Employee {

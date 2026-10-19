@@ -278,6 +278,12 @@ service cloud.firestore {
                       // 나챗방 자동 발송(11시 예약·22시 30분 정산)의 마지막 기록 — 쓰기는 함수만
                       isAdmin(storeId)
                       && docId == "kakaoMemoSchedule"
+                    )
+                    // 네이버 예약 동기화 상태(마지막 확인 시각·건수·실패 사유). 손님 정보는 없다.
+                    // 함수가 Admin SDK 로만 쓰고, 예약 화면을 보는 사람은 읽기만 한다.
+                    || (
+                      (isStaff(storeId) || canManageReservations(storeId))
+                      && docId == "naverReservationSync"
                     );
         allow write: if (
                        signedIn()
@@ -413,6 +419,15 @@ service cloud.firestore {
         // 전화예약 입력/상태 변경/메모는 staff도 가능
         allow create, update: if isStaff(storeId) || canManageReservations(storeId);
         allow delete: if canManageReservations(storeId);
+      }
+
+      /*
+        네이버 예약 묘비 — 예약번호마다 «우리가 만든 하늘땅 예약이 무엇이고, 지금 살아 있는지».
+        직원이 지운 네이버 예약을 동기화가 되살리지 않게 하는 장치라 함수만 읽고 쓴다.
+        누가 고치면 지운 예약이 되살아나거나 남의 예약을 지우는 길이 된다.
+      */
+      match /naverReservationLinks/{id} {
+        allow read, write: if false;
       }
 
       match /shifts/{id} {

@@ -1835,6 +1835,32 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   overflow: hidden; word-break: keep-all;
 }
 .resv-card-body { padding: 4px 15px 15px; border-top: 1px dashed var(--border); }
+
+/*
+  네이버 예약 표시. 상태 배지(예약확정=초록 채움)와 헷갈리지 않게 테두리만 둔다.
+  `--green-*` 은 무채색 별칭이라 색을 내려면 `--good-*` 을 쓴다.
+*/
+.badge.naver { background: transparent; color: var(--good-tx); border: 1px solid var(--good-300); }
+.badge.naver.dup { color: var(--amber-tx); border-color: var(--amber-300); }
+.naver-sync {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 10px 0; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-soft); font-size: 12.5px;
+}
+.naver-sync.warn { border-color: var(--amber-300); background: var(--amber-50); }
+.naver-sync-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; word-break: keep-all; }
+.naver-sync-head { font-weight: 700; }
+.naver-sync .nowrap { white-space: nowrap; }
+.naver-sync-message { color: var(--text-muted); }
+.naver-note { margin-top: 10px; color: var(--text-muted); font-size: 12px; line-height: 1.5; word-break: keep-all; }
+/* 네이버 안내 문장(중복 확인·손 예약·예전 매장)은 낱말 중간에서 끊지 않는다. */
+.detail-line .v.naver-text { word-break: keep-all; line-height: 1.5; }
+/*
+  카드 머리의 배지(네이버·예전 매장·중복 확인·인원·상태)가 많으면 좁은 휴대폰에서 서로 끼어든다.
+  넘칠 때만 다음 줄로 내리고 오른쪽에 붙인다 — 배지가 하나둘이면 지금과 같다.
+*/
+.resv-card-head .spread > .row { flex-wrap: wrap; justify-content: flex-end; row-gap: 4px; min-width: 0; }
 .resv-actions {
   display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 8px; margin-top: 13px;

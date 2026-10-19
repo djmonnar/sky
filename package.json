@@ -11,7 +11,8 @@
     "test:attendance": "node scripts/check-attendance.mjs",
     "test:recipe": "node scripts/check-recipe-cost.mjs",
     "test:okpos": "node scripts/check-okpos-daily.mjs",
-    "test:checklist": "node scripts/check-checklist.mjs"
+    "test:checklist": "node scripts/check-checklist.mjs",
+    "test:naver": "node scripts/check-naver-reservations.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",
