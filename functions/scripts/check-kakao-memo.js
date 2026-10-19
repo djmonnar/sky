@@ -10,7 +10,7 @@
  */
 
 const assert = require("node:assert");
-const { createKakaoMemo, buildChecklistMemo, checklistRows, MEMO_TEXT_LIMIT } = require("../kakaoMemo");
+const { createKakaoMemo, buildChecklistMemo, checklistRows, canRun, MEMO_TEXT_LIMIT } = require("../kakaoMemo");
 
 /* ── 가짜 Firestore ─────────────────────────────────────── */
 
@@ -166,6 +166,17 @@ async function check(label, fn) {
     const day = { checks: { gone: { checked: true, text: "옛 항목", section: "close" } } };
     assert.deepStrictEqual(checklistRows(template, day, DATE).map((r) => [r.id, r.removed]), [["o1", false], ["gone", true]]);
     assert.deepStrictEqual(checklistRows(template, null, "2026-10-20").map((r) => r.id), ["o1", "o2"]);
+  });
+
+  /* ── 누가 ── */
+
+  await check("보내기·연결 링크·끊기는 사장님(관리자)만 — 매니저·직원은 안 된다 (2026-10-19 사장님 결정)", async () => {
+    for (const action of ["send", "invite", "unlink"]) {
+      assert.strictEqual(canRun(action, "admin"), true, `${action}: 관리자`);
+      assert.strictEqual(canRun(action, "manager"), false, `${action}: 매니저`);
+      assert.strictEqual(canRun(action, "staff"), false, `${action}: 직원`);
+    }
+    assert.strictEqual(canRun("deleteEverything", "admin"), false, "모르는 일은 아무도");
   });
 
   /* ── 연결 ── */
