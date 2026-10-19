@@ -3,8 +3,10 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret } = require("firebase-functions/params");
+const crypto = require("crypto");
 const admin = require("firebase-admin");
 const { createGeminiChat } = require("./geminiChat");
+const { createKakaoMemo, MemoError } = require("./kakaoMemo");
 const { parseQuickReservation, normalizePhone } = require("./quickReservation");
 
 admin.initializeApp();
@@ -21,6 +23,9 @@ const TZ = "Asia/Seoul";
 const granterApiKey = defineSecret("GRANTER_API_KEY");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const ownervistaFeedToken = defineSecret("OWNERVISTA_FEED_TOKEN");
+// 체크리스트 → 카카오톡 나와의 채팅. 클라이언트 시크릿을 안 쓰는 앱이면 KAKAO_CLIENT_SECRET 에 none 을 넣는다.
+const kakaoRestApiKey = defineSecret("KAKAO_REST_API_KEY");
+const kakaoClientSecret = defineSecret("KAKAO_CLIENT_SECRET");
 let visionClient = null;
 
 const ROLE_LABEL = {
@@ -3700,6 +3705,109 @@ exports.geminiChat = onRequest(
         ? "Gemini 무료 사용량 한도에 걸렸습니다. 잠시 후 다시 시도해주세요."
         : `챗봇 응답을 받지 못했습니다. ${error.message || ""}`.trim();
       res.status(status).json({ ok: false, message });
+    }
+  }
+);
+
+/* ── 체크리스트 → 카카오톡 「나와의 채팅」 ──────────────────────────────── */
+
+/**
+ * 카카오 디벨로퍼스 「카카오 로그인 리다이렉트 URI」에 **이 주소를 그대로** 넣어야 한다.
+ * 인가 요청과 토큰 요청의 redirect_uri 가 글자 하나까지 같아야 카카오가 받아 준다.
+ */
+const KAKAO_MEMO_REDIRECT_URI = process.env.KAKAO_MEMO_REDIRECT_URI
+  || `https://asia-northeast3-${process.env.GCLOUD_PROJECT || "skyearth-84a78"}.cloudfunctions.net/kakaoMemoAuth`;
+
+const kakaoMemo = createKakaoMemo({
+  admin,
+  storeCol,
+  storeDoc,
+  appBaseUrl: APP_BASE_URL,
+  redirectUri: KAKAO_MEMO_REDIRECT_URI,
+  getKeys: () => ({ restApiKey: kakaoRestApiKey.value(), clientSecret: kakaoClientSecret.value() }),
+  randomToken: () => crypto.randomBytes(24).toString("base64url"),
+});
+
+/**
+ * 나챗방 연결 — 공개 주소다(로그인 없이 연다). 대시보드가 만든 일회용 연결 링크(?invite=)가
+ * 있어야 카카오로 보내고, 카카오가 돌려보낼 때(?code=&state=)는 그 링크를 state 로 대조한다.
+ */
+exports.kakaoMemoAuth = onRequest(
+  { timeoutSeconds: 60, memory: "256MiB", secrets: [kakaoRestApiKey, kakaoClientSecret] },
+  async (req, res) => {
+    if (req.method !== "GET") {
+      res.status(405).send("GET 요청만 사용할 수 있습니다.");
+      return;
+    }
+    res.set("Cache-Control", "no-store");
+    try {
+      const result = await kakaoMemo.handleAuthRequest(req.query || {});
+      if (result.kind === "redirect") {
+        res.redirect(302, result.url);
+        return;
+      }
+      res.status(result.status).set("Content-Type", "text/html; charset=utf-8").send(result.html);
+    } catch (error) {
+      console.error("KAKAO_MEMO_AUTH_FAILED", error);
+      const message = error instanceof MemoError ? error.message : "연결 중 문제가 생겼습니다. 잠시 후 링크를 다시 눌러 주세요.";
+      res.status(500).set("Content-Type", "text/html; charset=utf-8")
+        .send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p style="font-family:sans-serif;padding:24px">${message.replace(/[<>&]/g, "")}</p>`);
+    }
+  }
+);
+
+/**
+ * 체크리스트 화면이 부르는 곳.
+ *  - send   : 그날 체크리스트를 연결된 나챗방 모두에 보낸다 — 직원 누구나
+ *  - invite : 나챗방 연결 링크를 만든다 — 관리자만
+ *  - unlink : 나챗방 연결을 끊는다(카카오 쪽 권한도 회수) — 관리자만
+ */
+exports.checklistApi = onRequest(
+  { timeoutSeconds: 60, memory: "256MiB", secrets: [kakaoRestApiKey, kakaoClientSecret] },
+  async (req, res) => {
+    setCors(res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, message: "POST 요청만 사용할 수 있습니다." });
+      return;
+    }
+    const auth = await profileFromRequest(req);
+    if (!auth.ok) {
+      res.status(403).json({ ok: false, message: auth.message });
+      return;
+    }
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const actor = { uid: auth.uid, name: auth.name, role: auth.role };
+    try {
+      if (body.action === "send") {
+        const result = await kakaoMemo.sendChecklist({ date: body.date, actor });
+        res.status(200).json({ ok: true, ...result });
+        return;
+      }
+      if (auth.role !== "admin") {
+        res.status(403).json({ ok: false, message: "관리자만 할 수 있습니다." });
+        return;
+      }
+      if (body.action === "invite") {
+        const result = await kakaoMemo.createInvite({ label: body.label, actor });
+        res.status(200).json({ ok: true, ...result });
+        return;
+      }
+      if (body.action === "unlink") {
+        await kakaoMemo.unlink({ linkId: body.linkId });
+        res.status(200).json({ ok: true });
+        return;
+      }
+      res.status(400).json({ ok: false, message: "알 수 없는 요청입니다." });
+    } catch (error) {
+      if (!(error instanceof MemoError)) console.error("CHECKLIST_API_FAILED", error);
+      const status = error instanceof MemoError
+        ? (error.code === "config" ? 503 : error.code === "bad_request" ? 400 : 502)
+        : 500;
+      res.status(status).json({ ok: false, message: error.message || "처리하지 못했습니다." });
     }
   }
 );

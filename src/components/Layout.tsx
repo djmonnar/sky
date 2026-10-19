@@ -21,6 +21,7 @@ const STAFF_NAV: NavDef[] = [
   { to: "/reservations", icon: "📋", label: "오늘 예약", title: "오늘 예약", mobile: true },
   { to: "/schedule", icon: "🗓️", label: "근무표", title: "근무표", mobile: true },
   { to: "/worklog", icon: "✍️", label: "근무기록", title: "근무기록 작성", mobile: true },
+  { to: "/checklist", icon: "✅", label: "체크리스트", title: "체크리스트", mobile: true, mobileLabel: "체크" },
   { to: "/notices", icon: "📢", label: "공지사항", title: "공지사항", mobile: false },
 ];
 
@@ -28,6 +29,7 @@ const ADMIN_NAV: NavDef[] = [
   { to: "/", icon: "🏠", label: "대시보드", title: "관리자 대시보드", mobile: true, mobileLabel: "홈" },
   { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true, mobileLabel: "예약" },
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표" },
+  { to: "/checklist", icon: "✅", label: "체크리스트", title: "체크리스트", mobile: false, mobileLabel: "체크" },
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원" },
   { to: "/payroll", icon: "🛠️", label: "관리자 모드", title: "관리자 모드", mobile: true, mobileLabel: "관리자" },
   { to: "/finance", icon: "📊", label: "매출·매입", title: "매출·매입 관리", mobile: true, mobileLabel: "재무" },
@@ -42,6 +44,7 @@ const MANAGER_NAV: NavDef[] = [
   { to: "/", icon: "🏠", label: "대시보드", title: "매니저 대시보드", mobile: true },
   { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true, managerPermission: "reservations" },
   { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: true, mobileLabel: "근무표", managerPermission: "scheduleManage" },
+  { to: "/checklist", icon: "✅", label: "체크리스트", title: "체크리스트", mobile: false, mobileLabel: "체크" },
   { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: true, mobileLabel: "직원", managerPermission: "employees" },
   { to: "/finance", icon: "📊", label: "매출·매입", title: "매출·매입 관리", mobile: true, mobileLabel: "재무", managerPermissions: ["sales", "settlements"] },
   { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: false, mobileLabel: "거래처", managerPermission: "vendors" },

@@ -687,6 +687,66 @@ export interface FinanceMatch {
   createdBy?: string;
 }
 
+/* ── 체크리스트 (오픈·마감) ───────────────────────────────── */
+
+export type ChecklistSection = "open" | "close";
+
+/** 사장님이 정해 두는 항목 하나 */
+export interface ChecklistTemplateItem {
+  id: string;
+  section: ChecklistSection;
+  text: string;
+  /**
+   * 어느 요일에 하는가 (월=0 … 일=6). **비면 매일.**
+   * 「매주 화요일 기름 교체」처럼 정해진 요일에만 나오게 한다.
+   */
+  days: number[];
+}
+
+/** stores/{id}/meta/checklistTemplate — 사장님만 고친다 */
+export interface ChecklistTemplate {
+  items: ChecklistTemplateItem[];
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+/** 하루치 체크 한 칸. 글은 체크할 때 그대로 남긴다 — 나중에 항목을 고쳐도 그날 기록은 그대로다. */
+export interface ChecklistCheck {
+  checked: boolean;
+  text: string;
+  section: ChecklistSection;
+  by?: string;
+  at?: string;
+}
+
+/** stores/{id}/checklistDays/{YYYY-MM-DD} */
+export interface ChecklistDay {
+  date: string;
+  /** 항목 id → 체크. 칸마다 따로 쓴다(필드 경로) — 둘이 동시에 눌러도 서로 안 덮는다 */
+  checks: Record<string, ChecklistCheck>;
+  /** 특이사항 */
+  note: string;
+  noteBy?: string;
+  noteAt?: string;
+  /** 마지막으로 나챗방에 보낸 기록 (서버가 쓴다) */
+  sent?: { at: string; by: string; delivered: number; failed: number } | null;
+}
+
+/** 나챗방(카카오톡 「나와의 채팅」) 받는 곳 하나. 토큰은 서버 전용 컬렉션에 따로 있다. */
+export interface KakaoMemoLink {
+  id: string;
+  /** 사장님이 붙인 이름 — 「사장님」, 「실장님」 */
+  label: string;
+  /** 카카오 닉네임 (동의했을 때만) */
+  nickname?: string | null;
+  linkedAt: string;
+  linkedBy?: string;
+  active: boolean;
+  /** 마지막으로 못 보낸 이유 — 연결 만료 등 */
+  lastError?: string | null;
+  lastSentAt?: string | null;
+}
+
 export const RESV_STATUSES: ResvStatus[] = [
   "예약확정", "방문완료", "취소", "노쇼", "단체", "확인전화필요", "예약대기",
 ];
