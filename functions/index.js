@@ -9,6 +9,7 @@ const { createGeminiChat } = require("./geminiChat");
 const { createKakaoMemo, MemoError, canRun: canRunChecklistAction } = require("./kakaoMemo");
 const { createDailyReports } = require("./dailyReports");
 const { parseQuickReservation, normalizePhone } = require("./quickReservation");
+const naverSync = require("./naverReservationSync");
 
 admin.initializeApp();
 
@@ -27,6 +28,11 @@ const ownervistaFeedToken = defineSecret("OWNERVISTA_FEED_TOKEN");
 // 체크리스트 → 카카오톡 나와의 채팅. 클라이언트 시크릿을 안 쓰는 앱이면 KAKAO_CLIENT_SECRET 에 none 을 넣는다.
 const kakaoRestApiKey = defineSecret("KAKAO_REST_API_KEY");
 const kakaoClientSecret = defineSecret("KAKAO_CLIENT_SECRET");
+/**
+ * 오너비스타 「예약 넘기기」 연결 키. 매출 주소(`OWNERVISTA_FEED_TOKEN`)와 **따로 둔다** —
+ * 이쪽으로는 손님 이름·번호가 나가므로, 매출만 보던 열쇠로 예약까지 열리면 안 된다.
+ */
+const ownervistaBookingFeedToken = defineSecret("OWNERVISTA_BOOKING_FEED_TOKEN");
 let visionClient = null;
 
 const ROLE_LABEL = {
@@ -2481,6 +2487,14 @@ function reservationPushBody(reservation) {
 
 async function sendReservationCreatedPush(reservationId, reservation) {
   if (!isActiveReservation(reservation)) return;
+  /*
+    네이버 예약 동기화가 «알리지 말라»고 적어 둔 문서다. 첫 동기화(지난 몇 주치가 한꺼번에
+    들어온다), 한 번에 여러 건이 들어온 판(한 통으로 묶어 따로 보낸다), 시각이 이미 지난
+    예약이 그렇다 — 하나씩 울리면 푸시 폭탄이 된다.
+
+    **표시가 없는 문서는 예전처럼 알린다.** 직원·카톡·AI 비서가 만든 예약에는 이 칸이 없다.
+  */
+  if (reservation.notifyOnCreate === false) return;
   const settings = await loadNotificationSettings();
   if (settings.reservationCreatedEnabled === false) return;
   await sendNotificationEvent(`reservationCreated_${reservationId}`, {
@@ -4134,5 +4148,188 @@ exports.syncOwnervistaSalesScheduled = onSchedule(
   async () => {
     if (!ownervistaFeedConfigured()) return;
     await syncOwnervistaSalesCore("scheduled", "scheduler");
+  }
+);
+
+/* ── 오너비스타 네이버 예약 받아오기 ─────────────────────────────────────── */
+
+/**
+ * 오너비스타가 수집한 이 매장의 **네이버 예약**을 받아 `reservations` 에 옮긴다.
+ *
+ * 무엇을 만들고·고치고·지우는지는 `naverReservationSync.js` 가 정한다(순수 함수,
+ * `npm run test:naver`). 여기는 피드를 받고 Firestore 에 쓰는 일만 한다.
+ *
+ * **매출 피드와 모양이 같다** — 오너비스타가 내주고 우리가 읽어 간다. 다른 점은 셋.
+ *   - 열쇠를 주소가 아니라 `Authorization` 머리에 싣는다. 손님 이름·번호가 오가는
+ *     창구라 주소가 로그·기록에 남는 길을 막는다.
+ *   - 5분마다 돈다. 오너비스타가 네이버를 5분마다 모으므로(「예약은 5분 고정」) 그 박자에 맞춘다.
+ *     예약은 오늘 저녁 손님이 걸린 일이다.
+ *   - 실패하면 **아무것도 지우지 않는다.** 피드에 안 보이는 것은 지울 이유가 아니다.
+ */
+const OWNERVISTA_BOOKING_FEED_URL = "https://ownervista.co.kr/api/partners/naver-bookings";
+
+async function fetchOwnervistaNaverBookings(range) {
+  const token = process.env.OWNERVISTA_BOOKING_FEED_TOKEN;
+  if (!token) {
+    return { status: "config_required", message: "오너비스타 예약 연결 키가 설정되지 않았습니다." };
+  }
+  const url = `${OWNERVISTA_BOOKING_FEED_URL}?since=${range.since}&until=${range.until}`;
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { accept: "application/json", authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    return { status: "failed", message: "오너비스타에 연결하지 못했습니다. 다음 동기화 때 다시 받습니다." };
+  }
+  if (response.status === 401) {
+    /*
+      **401 하나에 원인이 셋이다.** 키를 안 만들었거나, 키가 틀렸거나, 넘기기를 꺼 뒀다.
+      오너비스타는 남이 두드리며 좁혀 가지 못하게 이 셋을 가르지 않는다 — 그러니 여기서도
+      하나로 단정하지 않고 확인할 순서를 말한다(매출 피드의 404 와 같은 이유).
+    */
+    return {
+      status: "config_required",
+      message: "오너비스타가 연결 키를 못 알아봅니다. ①오너비스타 네이버 리포트 → 설정의 "
+        + "「다른 프로그램에 예약 넘기기」에서 키를 만들고 켜 두었는지 ②시크릿에 키만 들어갔는지 "
+        + "③키를 바꾼 뒤 함수를 다시 배포했는지 확인해 주세요.",
+    };
+  }
+  if (response.status === 403) {
+    return { status: "disabled", message: "오너비스타의 네이버예약 연동이 꺼져 있습니다. 예약을 바꾸지 않았습니다." };
+  }
+  if (!response.ok) {
+    return { status: "failed", message: `오너비스타 예약을 받지 못했습니다 (HTTP ${response.status}). 예약은 그대로 둡니다.` };
+  }
+  try {
+    return { status: "ok", body: await response.json() };
+  } catch {
+    return { status: "failed", message: "오너비스타 예약 응답을 읽지 못했습니다. 예약은 그대로 둡니다." };
+  }
+}
+
+/**
+ * 동기화가 쓰는 저장소. 무엇을 쓸지는 `planWrites` 가 정하고, 여기는 그 목록을 실행한다.
+ *
+ * **예약 한 건마다 트랜잭션이다.** 묘비와 예약 문서를 그 안에서 다시 읽고 판단한다 —
+ * 직원이 방금 방문완료로 바꾼 것을 몇 초 전에 읽어 둔 «예약확정»으로 덮지 않으려는 것이다.
+ */
+function firestoreNaverReservationStore() {
+  const metaRef = storeDoc("meta", "naverReservationSync");
+  const linkRef = (bookingId) => storeDoc("naverReservationLinks", bookingId);
+  return {
+    async loadMeta() {
+      const snap = await metaRef.get();
+      return snap.exists ? snap.data() : {};
+    },
+    async saveMeta(patch) {
+      const data = { ...patch, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+      // 윗칸을 통째로 바꾼다. 깊게 합치면 지난 판의 건수가 이번 판에 섞여 남는다.
+      await metaRef.set(data, { mergeFields: Object.keys(data) });
+    },
+    async loadLinks(bookingIds) {
+      const links = new Map();
+      for (let start = 0; start < bookingIds.length; start += 200) {
+        const refs = bookingIds.slice(start, start + 200).map(linkRef);
+        if (refs.length === 0) continue;
+        const snaps = await db.getAll(...refs);
+        snaps.forEach((snap) => {
+          if (snap.exists) links.set(snap.id, snap.data());
+        });
+      }
+      return links;
+    },
+    async applyBooking(bookingId, reservationId, decide) {
+      const lRef = linkRef(bookingId);
+      const rRef = storeDoc("reservations", String(reservationId));
+      return db.runTransaction(async (transaction) => {
+        const [linkSnap, reservationSnap] = await transaction.getAll(lRef, rRef);
+        const plan = decide({
+          link: linkSnap.exists ? linkSnap.data() : null,
+          reservation: reservationSnap.exists ? reservationSnap.data() : null,
+        });
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        for (const op of naverSync.planWrites(plan, { timestamp })) {
+          const ref = op.target === "link" ? lRef : rRef;
+          if (op.kind === "create") transaction.create(ref, op.data);
+          else if (op.kind === "merge") transaction.set(ref, op.data, { merge: true });
+          else if (op.kind === "delete") transaction.delete(ref);
+        }
+        return plan;
+      });
+    },
+  };
+}
+
+/** 한 번에 여러 건이 새로 들어온 판의 묶음 알림. 하나씩 울리지 않고 한 통만 보낸다. */
+async function sendNaverReservationSummaryPush(count, runId) {
+  const settings = await loadNotificationSettings();
+  if (settings.reservationCreatedEnabled === false) return;
+  await sendNotificationEvent(`naverReservationBurst_${runId}`, {
+    type: "reservation.created",
+    sourceId: runId,
+    title: `네이버 예약 ${count}건이 새로 들어왔습니다`,
+    body: "예약 관리에서 날짜별로 확인해 주세요.",
+    url: "/reservations",
+    targetRoles: ["admin", "manager"],
+  });
+}
+
+const naverReservationSync = naverSync.createNaverReservationSync({
+  fetchFeed: fetchOwnervistaNaverBookings,
+  store: firestoreNaverReservationStore(),
+  notifySummary: sendNaverReservationSummaryPush,
+});
+
+exports.syncNaverReservations = onRequest(
+  { timeoutSeconds: 300, memory: "256MiB", secrets: [ownervistaBookingFeedToken] },
+  async (req, res) => {
+    setCors(res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, message: "POST 요청만 사용할 수 있습니다." });
+      return;
+    }
+    const auth = await adminFromRequest(req);
+    if (!auth.ok) {
+      res.status(403).json({ ok: false, message: auth.message });
+      return;
+    }
+    try {
+      const result = await naverReservationSync.run({ mode: "manual" });
+      res.status(result.ok ? 200 : 409).json({ ok: result.ok, message: result.message, counts: result.counts ?? null });
+    } catch (error) {
+      console.error("NAVER_RESERVATION_SYNC_FAILED", error);
+      res.status(500).json({ ok: false, message: "네이버 예약 동기화 중 오류가 났습니다. 예약은 그대로 둡니다." });
+    }
+  }
+);
+
+/**
+ * 5분마다. 오너비스타가 네이버를 5분마다 모으므로 손님이 예약한 뒤 늦어도 10분 안팎
+ * (오너비스타 수집 5분 + 여기서 당기기 5분)에 예약 화면에 뜬다. 연결 키가 없으면 아무것도
+ * 안 한다(매출 피드와 같다).
+ *
+ * 한 판의 제한 시간(240초)을 박자(5분)보다 짧게 둔다. 판이 겹쳐도 같은 예약은 같은 문서·
+ * 트랜잭션이라 둘이 생기지 않지만, 겹칠 일 자체를 줄인다.
+ *
+ * 매시 첫 판(0~4분)은 지문이 같아도 예약 문서를 다시 대조한다(`fullCheck`). 오래 오프라인이던
+ * 휴대폰이 옛 값을 통째로 되써 넣은 것을 한 시간 안에 바로잡는다. 바뀐 게 없으면 안 쓴다.
+ */
+exports.syncNaverReservationsScheduled = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    timeZone: TZ,
+    timeoutSeconds: 240,
+    memory: "256MiB",
+    secrets: [ownervistaBookingFeedToken],
+  },
+  async () => {
+    if (!process.env.OWNERVISTA_BOOKING_FEED_TOKEN) return;
+    await naverReservationSync.run({ mode: "scheduled", fullCheck: new Date().getUTCMinutes() < 5 });
   }
 );

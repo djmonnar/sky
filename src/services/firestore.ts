@@ -28,6 +28,7 @@ import type {
   SettlementMethod, SettlementStatus, ManagerPermissions, ChatbotUser,
   AttendanceLog, TimesheetSubmission, ChatbotMemory, ChatConversation,
   OkposDailyReport, OkposPayments,
+  NaverReservationSyncState,
 } from "../data/types";
 import { OKPOS_PAYMENT_KEYS, withOkpos } from "../lib/okposDaily";
 import type { AttendanceLogDoc, TimesheetSubmissionDoc, UserProfileDoc } from "../types/firestore";
@@ -139,6 +140,42 @@ export function subscribeReservations(cb: (v: Reservation[]) => void, onError: E
     }),
     (items) => cb(items.sort((a, b) => a.time.localeCompare(b.time))),
     onError
+  );
+}
+
+/**
+ * 네이버 예약 동기화 상태 한 장. 규칙을 아직 배포하지 않았으면 읽기가 거절된다 —
+ * 그때는 예약 화면 전체를 오류로 만들지 않고 이 줄만 안 보이게 한다(onError 는 조용히).
+ */
+export function subscribeNaverReservationSync(
+  cb: (v: NaverReservationSyncState | null) => void,
+  onError: ErrCb
+): Unsub {
+  const text = (value: unknown) => (typeof value === "string" && value ? value : null);
+  return onSnapshot(
+    metaDoc("naverReservationSync"),
+    (snap) => {
+      if (!snap.exists()) {
+        cb(null);
+        return;
+      }
+      const d = snap.data();
+      const ownervista = (d.ownervista ?? {}) as {
+        lastSuccessfulSyncAt?: unknown; syncFailed?: unknown; businessId?: unknown; businessName?: unknown;
+      };
+      cb({
+        status: typeof d.status === "string" ? d.status : "unknown",
+        message: typeof d.message === "string" ? d.message : "",
+        lastRunAt: text(d.lastRunAt),
+        lastSuccessAt: text(d.lastSuccessAt),
+        bootstrappedAt: text(d.bootstrappedAt),
+        ownervistaSyncedAt: text(ownervista.lastSuccessfulSyncAt),
+        ownervistaSyncFailed: ownervista.syncFailed === true,
+        businessId: text(ownervista.businessId),
+        businessName: text(ownervista.businessName),
+      });
+    },
+    (e) => onError(new Error(`naverReservationSync: ${e.message}`))
   );
 }
 
@@ -1510,6 +1547,26 @@ export async function fsSyncOwnervistaSales(): Promise<{ ok: boolean; message: s
     message: String(json.message ?? "매출 동기화 요청이 완료되었습니다."),
     runId: json.runId,
   };
+}
+
+/**
+ * 오너비스타에서 네이버 예약을 지금 받아 온다(관리자). 평소에는 5분마다 저절로 돈다.
+ * 무엇을 만들고·고치고·지우는지는 함수가 정한다 — 화면은 결과 문장만 보여 준다.
+ */
+export async function fsSyncNaverReservations(): Promise<{ ok: boolean; message: string }> {
+  const user = requireAuth().currentUser;
+  if (!user) throw new Error("로그인이 필요합니다.");
+  const token = await user.getIdToken();
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const url = `https://asia-northeast3-${projectId}.cloudfunctions.net/syncNaverReservations`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ mode: "manual" }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || "네이버 예약을 받아 오지 못했습니다.");
+  return { ok: !!json.ok, message: String(json.message ?? "네이버 예약을 확인했습니다.") };
 }
 
 export async function fsSyncGranterFinance(): Promise<{ ok: boolean; message: string; runId?: string }> {

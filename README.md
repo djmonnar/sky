@@ -156,6 +156,58 @@ firebase deploy --only functions:geminiChat
 cd functions && npm run test:chat
 ```
 
+## 네이버 예약 동기화 (오너비스타)
+
+오너비스타가 이 매장의 네이버 예약을 5분마다 모은다(「예약은 5분 고정」). 하늘땅 함수 `syncNaverReservationsScheduled` 가
+같은 박자로 5분마다 오너비스타의 「예약 넘기기」 창구(`GET https://ownervista.co.kr/api/partners/naver-bookings`,
+`Authorization: Bearer <키>`)에서 지난 7일 ~ 앞으로 31일을 받아 `reservations` 에 옮긴다. 손님이 예약한 뒤 화면에
+뜨기까지 길어야 10분 안팎이다(수집 5분 + 당기기 5분). 판단은 `functions/naverReservationSync.js`(순수 함수),
+저장은 `functions/index.js` 의 어댑터가 한다. 매시 첫 판과 「지금 받기」는 바뀐 표시가 없어도 예약 문서를 다시 대조한다.
+
+### 설정
+
+0. **먼저 오너비스타가 맞는 매장을 모으는지 본다.** 이 매장 네이버 계정에는 예약 업체가 여럿(본점 둘·진해점 하나)이고,
+   2026-10-19 까지 진해점이 잡혀 「성공·0건」이었다. 오너비스타 → 네이버 리포트 → 설정 → 「예약을 가져올 매장」에서
+   본점(번호로 고른다 — 같은 이름이 둘)을 골라 두고, 예약 달력에 본점 예약이 뜨는지 확인한 뒤에 넘어간다.
+1. **푸시 함수부터 올린다.** `firebase deploy --only functions:onReservationCreatedPush`
+   — 동기화가 단 「알리지 말라」 표시(`notifyOnCreate: false`)를 읽는 판이 먼저 떠 있어야 한다. 동기화와 한 명령으로
+   올리면 첫 판이 옛 푸시 함수에 걸려 지난 몇 주치 예약이 한 건씩 울릴 수 있다.
+2. `firebase deploy --only firestore:rules` (예약 화면의 「네이버」 줄이 상태 문서를 읽는다)
+3. 오너비스타 → 네이버 리포트 → 설정 → **다른 프로그램에 예약 넘기기** → 「연결 키 만들기」. 키는 그때 한 번만 보인다.
+4. `firebase functions:secrets:set OWNERVISTA_BOOKING_FEED_TOKEN` 에 그 키만 넣는다. (매출 주소의 `OWNERVISTA_FEED_TOKEN` 과 **다른 키**다)
+5. `firebase deploy --only functions:syncNaverReservations,functions:syncNaverReservationsScheduled`
+6. 예약 화면 맨 위의 「네이버」 줄에서 마지막 확인 시각과 **가져오는 매장(이름·번호)** 을 본다. 관리자는 「지금 받기」로 바로 돌릴 수 있다.
+
+> 이 시크릿이 없으면 `firebase deploy --only functions`(전체)가 이 두 함수에서 값을 묻거나 실패한다. 전체 배포 전에 시크릿부터 만든다.
+
+### 칸마다 주인이 있다
+
+| 칸 | 주인 | 동기화가 하는 일 |
+|---|---|---|
+| 날짜·시간·인원·이름·연락처·요청사항 | 네이버 | 네이버 값이 **지난번에 옮긴 값과 달라졌을 때만** 덮어쓴다. 직원이 고친 값은 네이버가 그 칸을 다시 바꿀 때까지 남는다 |
+| 상태 | 하늘땅 | 처음엔 네이버 상태로(신청→예약대기, 확정→예약확정·8명 이상 단체, 이용완료→방문완료, 노쇼→노쇼). 그 뒤엔 직원이 안 건드렸을 때만 네이버를 따라간다 |
+| 좌석·메모·작성자·접수일시 | 하늘땅 | 쓰지 않는다 |
+
+### 지우는 것과 안 지우는 것
+
+- **지운다**: 네이버가 그 예약번호에 `취소`(RC04)·`변경취소`(RC06)를 돌려줬을 때. 단, 직원이 방문완료·노쇼로 마감한 예약은 남긴다.
+- **안 지운다**: 피드에서 안 보이는 예약, 빈 목록·실패·반쪽 응답, 상태를 모르는 예약, 직원·카톡·AI 비서가 만든 예약(`source` 가 `naver` 가 아니다).
+- **네이버 변경**은 새 번호 + 이전 번호 변경취소로 온다. 이전 것은 지워지고 새 것이 만들어진다(새 예약에는 직원이 적은 좌석·메모가 따라가지 않는다).
+- **직원이 지운 네이버 예약은 되살리지 않는다** — `naverReservationLinks/{예약번호}` 묘비가 막는다.
+- **지난 날짜 예약은 새로 만들지 않는다.** 이미 옮긴 예약이 지난 뒤 취소·노쇼로 바뀌는 것은 따라간다.
+- **오너비스타에서 매장을 바꾸면** 예전 매장 예약은 피드에서 사라질 뿐 여기서 지우지 않는다. 예약마다 어느 매장에서 왔는지
+  (`naver.businessId`) 적어 두었다가 예약 화면에 「예전 매장」으로 표시한다 — 직원이 확인하고 지운다.
+
+### 푸시
+
+첫 동기화는 하나도 알리지 않는다. 그 뒤로는 새 예약 3건까지 한 건씩, 그보다 많으면 「네이버 예약 N건이 새로 들어왔습니다」 한 통.
+시각이 이미 지난 예약·이용완료·노쇼는 알리지 않는다. 동기화가 만든 문서의 `notifyOnCreate: false` 를 `onReservationCreatedPush` 가 본다.
+30분 전 알림은 네이버 예약에도 그대로 간다.
+
+```bash
+cd functions && npm run test:naver   # 생성·수정·취소 삭제·사라짐·변경·손 예약·직원 값·푸시
+```
+
 ## Firestore 컬렉션 구조
 
 ```
@@ -165,6 +217,10 @@ stores/{storeId}                      # 기본 storeId: haneulttang
   │                                   # monthlySalary, slotRate, active
   ├─ reservations/{id}                # date, time, name, phone, people, seat,
   │                                   # request, status, memo, writer
+  │                                   # 네이버 예약이면 id = 9000000000000000 + 예약번호,
+  │                                   # source:"naver", naver{bookingId, status, synced…}
+  ├─ naverReservationLinks/{예약번호}  # 네이버 예약 묘비 (함수 전용) — 지운 예약을 되살리지 않는다
+  ├─ meta/naverReservationSync        # 네이버 예약 동기화 상태 (마지막 확인·건수·실패 사유)
   ├─ shifts/{date_period_department_employeeId_order}
   │                                   # date, dayIndex(0=월), period(morning|afternoon),
   │                                   # department(hall|kitchen), employeeId, employeeName,
@@ -237,6 +293,7 @@ src/
 functions/
   index.js               카카오 스킬, 푸시, OK포스·그랜터 동기화, geminiChat 엔드포인트
   geminiChat.js          Gemini 도구 레이어 (조회 즉시 실행 / 쓰기는 확인 후 저장)
+  naverReservationSync.js 네이버 예약 → 하늘땅 예약 판단 (순수 함수, Firebase 모름)
   scripts/               배포 없이 도는 점검 스크립트
 ```
 
@@ -251,6 +308,7 @@ GOOGLE_APPLICATION_CREDENTIALS=<서비스계정.json> node scripts/check-granter
 #   그랜터가 받아온 계좌 거래에 어느 은행이 들어 있는지 센다. --샘플 로 원본 한 건을 본다.
 cd functions && npm run test:chat   # Gemini 챗봇 도구 레이어
 cd functions && npm run test:kakao  # 카카오 빠른 예약 파서 (9/5 18시 3명 박현제 45184312)
+cd functions && npm run test:naver  # 네이버 예약 동기화 (무엇을 지우고 무엇을 절대 안 지우는가)
 ```
 
 ## 역할
