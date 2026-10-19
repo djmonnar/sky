@@ -138,11 +138,21 @@ export async function callChecklistApi<T = Record<string, unknown>>(body: Record
   if (!user) throw new Error("로그인이 필요합니다.");
   const token = await user.getIdToken();
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-  const res = await fetch(`https://asia-northeast3-${projectId}.cloudfunctions.net/checklistApi`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`https://asia-northeast3-${projectId}.cloudfunctions.net/checklistApi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    /*
+      응답을 읽기도 전에 실패한 것 — 함수가 아직 배포되지 않았으면 없는 주소가 CORS 머리글 없이
+      404 를 돌려줘 브라우저가 «Failed to fetch» 로 막는다. 인터넷이 끊겨도 같다. 영어 그대로 보이면
+      사장님은 무엇을 해야 할지 모른다.
+    */
+    throw new Error("나챗방 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고, 계속되면 아직 배포 전인지 확인해 주세요.");
+  }
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json.ok) {
     throw new Error(json.message || (res.status === 404 ? "나챗방 기능이 아직 배포되지 않았습니다." : "요청을 처리하지 못했습니다."));
