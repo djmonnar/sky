@@ -52,6 +52,7 @@ import {
 import { sortShifts } from "./lib/shifts";
 import { DEFAULT_MANAGER_PERMISSIONS, normalizeManagerPermissions } from "./config/managerPermissions";
 import { canPunch, foldAttendanceDay, foldAttendanceMonth, monthTotals } from "./lib/attendance";
+import { BATCH_UNIT, isSubRecipeRow } from "./lib/recipeCost";
 
 export type AppMode = "demo" | "live";
 
@@ -939,7 +940,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return {
           ...rest,
           name: ingredient.name.trim(),
-          unit: normalizeUnit(ingredient.unit),
+          // «회분»은 하위 레시피 줄에만 있는 단위라 단위표에 없다 — 표로 맞추면 ea 가 돼 버린다
+          unit: isSubRecipeRow(ingredient) && ingredient.unit === BATCH_UNIT ? BATCH_UNIT : normalizeUnit(ingredient.unit),
           quantity: Number(ingredient.quantity) || 0,
           unitCost: Number(ingredient.unitCost) || 0,
           ...(vendorId ? { vendorId } : {}),
