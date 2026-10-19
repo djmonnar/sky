@@ -19,6 +19,7 @@ import Inventory from "./pages/Inventory";
 import Recipes from "./pages/Recipes";
 import Settlements from "./pages/Settlements";
 import MyProfile from "./pages/MyProfile";
+import Checklist from "./pages/Checklist";
 import type { ManagerPermissionKey } from "./data/types";
 
 function Splash({ text }: { text: string }) {
@@ -59,6 +60,8 @@ export default function App() {
         <Route path="/" element={canUseManagerDashboard ? <AdminDashboard /> : <StaffDashboard />} />
         <Route path="/reservations" element={canUseReservations ? <Reservations /> : <Navigate to="/" replace />} />
         <Route path="/worklog" element={role === "staff" ? <WorkLog /> : <Navigate to="/" replace />} />
+        {/* 체크리스트는 모두가 쓴다 — 직원이 체크하고 사장님이 항목을 정한다 */}
+        <Route path="/checklist" element={<Checklist />} />
         <Route path="/schedule" element={role === "staff" ? <SchedulePage /> : <Navigate to={canAdminOrManager("scheduleManage") ? "/schedule-manage" : "/"} replace />} />
         <Route path="/schedule-manage" element={canAdminOrManager("scheduleManage") ? <ScheduleManage /> : <Navigate to="/" replace />} />
         <Route path="/payroll" element={role === "admin" ? <Payroll /> : <Navigate to="/" replace />} />

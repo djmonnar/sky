@@ -268,6 +268,11 @@ service cloud.firestore {
                     || (
                       (isAdmin(storeId) || isManager(storeId))
                       && docId == "managerPermissions"
+                    )
+                    || (
+                      // 체크리스트 항목 — 직원 모두 읽고 체크한다
+                      inStore(storeId)
+                      && docId == "checklistTemplate"
                     );
         allow write: if (
                        signedIn()
@@ -291,7 +296,39 @@ service cloud.firestore {
                        isAdmin(storeId)
                        && docId == "managerPermissions"
                        && validManagerPermissions()
+                     )
+                     || (
+                       // 체크리스트 항목은 사장님(관리자)만 고친다
+                       isAdmin(storeId)
+                       && docId == "checklistTemplate"
+                       && request.resource.data.keys().hasOnly(["items", "updatedAt", "updatedBy"])
+                       && request.resource.data.items is list
+                       && request.resource.data.items.size() <= 100
                      );
+      }
+
+      // 체크리스트 하루치 — 직원 누구나 체크하고 특이사항을 적는다. 지우는 건 관리자만.
+      // sent(나챗방으로 보낸 기록)는 함수가 Admin SDK 로 쓴다.
+      match /checklistDays/{date} {
+        allow read: if inStore(storeId);
+        allow create, update: if inStore(storeId)
+                              && request.resource.data.date == date
+                              && request.resource.data.keys().hasOnly(["date", "checks", "note", "noteBy", "noteAt", "updatedAt", "sent"]);
+        allow delete: if isAdmin(storeId);
+      }
+
+      // 나챗방 받는 곳 — 화면은 이름·연결 시각만 본다(관리자). 쓰기는 함수만.
+      match /kakaoMemoLinks/{id} {
+        allow read: if isAdmin(storeId);
+        allow write: if false;
+      }
+
+      // 카카오 토큰·연결 링크 — 화면은 읽지도 쓰지도 못한다. 함수(Admin SDK)만.
+      match /kakaoMemoTokens/{id} {
+        allow read, write: if false;
+      }
+      match /kakaoMemoInvites/{id} {
+        allow read, write: if false;
       }
 
       match /pushTokens/{id} {

@@ -179,6 +179,11 @@ stores/{storeId}                      # 기본 storeId: haneulttang
   ├─ recipes/{id}                     # name, category, kind(menu|side), servings, salePrice,
   │                                   # ingredients[{name, quantity, unit(g|kg|ml|L|박스|ea), unitCost, note?}]
   ├─ salesDailySummaries/{YYYY-MM-DD} # 네이버 플레이스플러스 일 매출 (오너비스타 피드) + okpos 칸(OK포스 엑셀, 있으면 이게 그날 매출)
+  ├─ meta/checklistTemplate          # 체크리스트 항목 (오픈·마감, 매일/매주 요일) — 관리자만 고침
+  ├─ checklistDays/{YYYY-MM-DD}      # 그날 체크(checks.{항목id})·특이사항·나챗방 보낸 기록
+  ├─ kakaoMemoLinks/{카카오id}        # 나챗방 받는 곳 (관리자만 읽음, 쓰기는 함수)
+  ├─ kakaoMemoTokens/{카카오id}       # 카카오 토큰 — 화면 접근 불가, 함수 전용
+  ├─ kakaoMemoInvites/{토큰}          # 나챗방 연결 링크 (일회용, 24시간) — 함수 전용
   │                                   # netAmount, orderCount(아는 날만), source, syncedAt
   ├─ salesMenuReports/latest          # 매출 내 메뉴 비중 (기간 합계 한 장)
   │                                   # startDate, endDate, overallSales,

@@ -1,0 +1,165 @@
+import { useCallback, useEffect, useState } from "react";
+import { APP_MODE, useStore } from "../store";
+import type {
+  ChecklistDay, ChecklistSection, ChecklistTemplate, ChecklistTemplateItem, KakaoMemoLink,
+} from "../data/types";
+import { exampleTemplate } from "../lib/checklist";
+import {
+  callChecklistApi, fsSaveChecklistNote, fsSaveChecklistTemplate, fsSetChecklistCheck,
+  subscribeChecklistDay, subscribeChecklistTemplate, subscribeKakaoMemoLinks,
+} from "../services/checklist";
+
+/*
+  체크리스트 화면이 쓰는 것 한 묶음. 운영은 Firestore·함수, 데모는 메모리.
+
+  전역 store 에 넣지 않았다 — 체크리스트는 이 화면에서만 쓰고, 날짜를 바꿀 때마다
+  그 하루치만 구독하면 된다(지난 기록을 전부 들고 있을 이유가 없다).
+*/
+
+export interface ChecklistSendResult {
+  text: string;
+  delivered: string[];
+  failed: { label: string; message: string }[];
+}
+
+export interface ChecklistInvite {
+  url: string;
+  expiresAtMs: number;
+  label: string;
+}
+
+type RowRef = { id: string; text: string; section: ChecklistSection };
+
+function makeId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function nowText(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* ── 데모: 메모리에 두고 바뀌면 알린다 ── */
+
+const demo = {
+  template: {
+    items: [
+      ...exampleTemplate(makeId),
+      { id: "demo-weekly", section: "close" as const, text: "튀김기 기름 교체", days: [1] },
+    ],
+  } as ChecklistTemplate | null,
+  days: new Map<string, ChecklistDay>(),
+  links: [
+    { id: "demo-1", label: "사장님", nickname: "데모", linkedAt: "2026-06-01 10:00", active: true, lastError: null, lastSentAt: null },
+  ] as KakaoMemoLink[],
+  listeners: new Set<() => void>(),
+};
+const notifyDemo = () => demo.listeners.forEach((fn) => fn());
+const demoDay = (date: string): ChecklistDay => demo.days.get(date) ?? { date, checks: {}, note: "" };
+
+export function useChecklist(date: string) {
+  const { role, profile, authUser, currentEmployee } = useStore();
+  const isAdmin = role === "admin";
+  const actorName = APP_MODE === "live"
+    ? profile?.name ?? authUser?.email ?? "사용자"
+    : role === "admin" ? "김지현" : currentEmployee?.name ?? "직원";
+
+  const [template, setTemplate] = useState<ChecklistTemplate | null>(null);
+  const [day, setDay] = useState<ChecklistDay | null>(null);
+  const [links, setLinks] = useState<KakaoMemoLink[]>([]);
+  const [loaded, setLoaded] = useState({ template: false, day: false });
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoaded({ template: false, day: false });
+    if (APP_MODE !== "live") {
+      const sync = () => {
+        setTemplate(demo.template);
+        setDay(demo.days.get(date) ?? null);
+        setLinks([...demo.links]);
+        setLoaded({ template: true, day: true });
+      };
+      sync();
+      demo.listeners.add(sync);
+      return () => { demo.listeners.delete(sync); };
+    }
+    const onError = (e: Error) => setError(e.message);
+    const offTemplate = subscribeChecklistTemplate((v) => { setTemplate(v); setLoaded((s) => ({ ...s, template: true })); }, onError);
+    const offDay = subscribeChecklistDay(date, (v) => { setDay(v); setLoaded((s) => ({ ...s, day: true })); }, onError);
+    // 받는 곳 목록은 관리자만 읽을 수 있다(규칙) — 직원 화면은 구독하지 않는다
+    const offLinks = isAdmin ? subscribeKakaoMemoLinks(setLinks, onError) : () => undefined;
+    return () => { offTemplate(); offDay(); offLinks(); };
+  }, [date, isAdmin]);
+
+  const setChecked = useCallback(async (row: RowRef, checked: boolean) => {
+    if (APP_MODE === "live") {
+      await fsSetChecklistCheck(date, row, checked, actorName);
+      return;
+    }
+    const current = demoDay(date);
+    demo.days.set(date, {
+      ...current,
+      checks: { ...current.checks, [row.id]: { checked, text: row.text, section: row.section, by: actorName, at: nowText() } },
+    });
+    notifyDemo();
+  }, [actorName, date]);
+
+  const saveNote = useCallback(async (note: string) => {
+    if (APP_MODE === "live") {
+      await fsSaveChecklistNote(date, note, actorName);
+      return;
+    }
+    demo.days.set(date, { ...demoDay(date), note, noteBy: actorName, noteAt: nowText() });
+    notifyDemo();
+  }, [actorName, date]);
+
+  const saveTemplate = useCallback(async (items: ChecklistTemplateItem[]) => {
+    if (APP_MODE === "live") {
+      await fsSaveChecklistTemplate(items, actorName);
+      return;
+    }
+    demo.template = { items, updatedBy: actorName, updatedAt: nowText() };
+    notifyDemo();
+  }, [actorName]);
+
+  const send = useCallback(async (): Promise<ChecklistSendResult> => {
+    if (APP_MODE === "live") return callChecklistApi<ChecklistSendResult>({ action: "send", date });
+    const active = demo.links.filter((link) => link.active);
+    demo.days.set(date, { ...demoDay(date), sent: { at: nowText(), by: actorName, delivered: active.length, failed: 0 } });
+    notifyDemo();
+    return { text: "(데모 모드 — 실제로 보내지 않았습니다)", delivered: active.map((link) => link.label), failed: [] };
+  }, [actorName, date]);
+
+  const createInvite = useCallback(async (label: string): Promise<ChecklistInvite> => {
+    if (APP_MODE === "live") return callChecklistApi<ChecklistInvite>({ action: "invite", label });
+    return { url: "https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoMemoAuth?invite=demo", expiresAtMs: Date.now() + 86_400_000, label };
+  }, []);
+
+  const unlink = useCallback(async (linkId: string) => {
+    if (APP_MODE === "live") {
+      await callChecklistApi({ action: "unlink", linkId });
+      return;
+    }
+    demo.links = demo.links.filter((link) => link.id !== linkId);
+    notifyDemo();
+  }, []);
+
+  return {
+    isAdmin,
+    actorName,
+    loading: !loaded.template || !loaded.day,
+    error,
+    template,
+    day,
+    links,
+    setChecked,
+    saveNote,
+    saveTemplate,
+    send,
+    createInvite,
+    unlink,
+  };
+}
