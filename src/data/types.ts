@@ -747,6 +747,23 @@ export interface KakaoMemoLink {
   lastSentAt?: string | null;
 }
 
+/** 나챗방 자동 발송 한 종류의 마지막 기록 (meta/kakaoMemoSchedule, 함수가 쓴다) */
+export interface KakaoMemoScheduleEntry {
+  date: string;
+  /** sent: 한 곳 이상 받음 / failed: 모두 실패 / no_links: 받는 곳 없음 */
+  status: "sent" | "failed" | "no_links";
+  /** scheduled: 정한 시각 / test: 화면의 시험으로 보내기 */
+  trigger: "scheduled" | "test";
+  by?: string;
+  delivered: number;
+  failed: number;
+  at?: string;
+}
+
+export type KakaoMemoReportType = "reservations" | "settlement";
+
+export type KakaoMemoSchedule = Partial<Record<KakaoMemoReportType, KakaoMemoScheduleEntry>>;
+
 export const RESV_STATUSES: ResvStatus[] = [
   "예약확정", "방문완료", "취소", "노쇼", "단체", "확인전화필요", "예약대기",
 ];

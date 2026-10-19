@@ -13,6 +13,7 @@ import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/f
 import { requireAuth, requireDb, STORE_ID } from "../lib/firebase";
 import type {
   ChecklistCheck, ChecklistDay, ChecklistSection, ChecklistTemplate, ChecklistTemplateItem, KakaoMemoLink,
+  KakaoMemoSchedule, KakaoMemoScheduleEntry,
 } from "../data/types";
 
 type ErrCb = (error: Error) => void;
@@ -103,6 +104,27 @@ export function subscribeKakaoMemoLinks(cb: (v: KakaoMemoLink[]) => void, onErro
       };
     }).sort((a, b) => a.linkedAt.localeCompare(b.linkedAt)));
   }, (e) => onError(new Error(`kakaoMemoLinks: ${e.message}`)));
+}
+
+/** 나챗방 자동 발송(11시 예약·22시 정산)의 마지막 기록 — 관리자만 읽는다 */
+export function subscribeKakaoMemoSchedule(cb: (v: KakaoMemoSchedule) => void, onError: ErrCb): () => void {
+  return onSnapshot(storeDoc("meta", "kakaoMemoSchedule"), (snap) => {
+    const d = snap.exists() ? snap.data() : {};
+    const entryOf = (raw: unknown): KakaoMemoScheduleEntry | undefined => {
+      const e = raw as Record<string, unknown> | undefined;
+      if (!e || typeof e.date !== "string") return undefined;
+      return {
+        date: e.date,
+        status: e.status === "sent" || e.status === "no_links" ? e.status : "failed",
+        trigger: e.trigger === "scheduled" ? "scheduled" : "test",
+        by: typeof e.by === "string" ? e.by : undefined,
+        delivered: Number(e.delivered ?? 0),
+        failed: Number(e.failed ?? 0),
+        at: timeText(e.at),
+      };
+    };
+    cb({ reservations: entryOf(d.reservations), settlement: entryOf(d.settlement) });
+  }, (e) => onError(new Error(`kakaoMemoSchedule: ${e.message}`)));
 }
 
 export async function fsSaveChecklistTemplate(items: ChecklistTemplateItem[], updatedBy: string): Promise<void> {

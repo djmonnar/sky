@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { APP_MODE, useStore } from "../store";
 import type {
   ChecklistDay, ChecklistSection, ChecklistTemplate, ChecklistTemplateItem, KakaoMemoLink,
+  KakaoMemoReportType, KakaoMemoSchedule,
 } from "../data/types";
 import { exampleTemplate } from "../lib/checklist";
 import {
   callChecklistApi, fsSaveChecklistNote, fsSaveChecklistTemplate, fsSetChecklistCheck,
-  subscribeChecklistDay, subscribeChecklistTemplate, subscribeKakaoMemoLinks,
+  subscribeChecklistDay, subscribeChecklistTemplate, subscribeKakaoMemoLinks, subscribeKakaoMemoSchedule,
 } from "../services/checklist";
 
 /*
@@ -55,6 +56,7 @@ const demo = {
   links: [
     { id: "demo-1", label: "사장님", nickname: "데모", linkedAt: "2026-06-01 10:00", active: true, lastError: null, lastSentAt: null },
   ] as KakaoMemoLink[],
+  schedule: {} as KakaoMemoSchedule,
   listeners: new Set<() => void>(),
 };
 const notifyDemo = () => demo.listeners.forEach((fn) => fn());
@@ -70,6 +72,7 @@ export function useChecklist(date: string) {
   const [template, setTemplate] = useState<ChecklistTemplate | null>(null);
   const [day, setDay] = useState<ChecklistDay | null>(null);
   const [links, setLinks] = useState<KakaoMemoLink[]>([]);
+  const [schedule, setSchedule] = useState<KakaoMemoSchedule>({});
   const [loaded, setLoaded] = useState({ template: false, day: false });
   const [error, setError] = useState<string | null>(null);
 
@@ -80,6 +83,7 @@ export function useChecklist(date: string) {
         setTemplate(demo.template);
         setDay(demo.days.get(date) ?? null);
         setLinks([...demo.links]);
+        setSchedule({ ...demo.schedule });
         setLoaded({ template: true, day: true });
       };
       sync();
@@ -91,7 +95,8 @@ export function useChecklist(date: string) {
     const offDay = subscribeChecklistDay(date, (v) => { setDay(v); setLoaded((s) => ({ ...s, day: true })); }, onError);
     // 받는 곳 목록은 관리자만 읽을 수 있다(규칙) — 직원 화면은 구독하지 않는다
     const offLinks = isAdmin ? subscribeKakaoMemoLinks(setLinks, onError) : () => undefined;
-    return () => { offTemplate(); offDay(); offLinks(); };
+    const offSchedule = isAdmin ? subscribeKakaoMemoSchedule(setSchedule, onError) : () => undefined;
+    return () => { offTemplate(); offDay(); offLinks(); offSchedule(); };
   }, [date, isAdmin]);
 
   const setChecked = useCallback(async (row: RowRef, checked: boolean) => {
@@ -138,6 +143,26 @@ export function useChecklist(date: string) {
     return { url: "https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoMemoAuth?invite=demo", expiresAtMs: Date.now() + 86_400_000, label };
   }, []);
 
+  /** 매일 자동으로 가는 것(11시 오늘 예약·22시 30분 일일 정산)을 지금 시험으로 보낸다 */
+  const sendReport = useCallback(async (type: KakaoMemoReportType): Promise<ChecklistSendResult> => {
+    if (APP_MODE === "live") {
+      return callChecklistApi<ChecklistSendResult>({ action: type === "reservations" ? "sendReservations" : "sendSettlement" });
+    }
+    const active = demo.links.filter((link) => link.active);
+    demo.schedule = {
+      ...demo.schedule,
+      [type]: { date: date, status: active.length ? "sent" : "no_links", trigger: "test", by: actorName, delivered: active.length, failed: 0, at: nowText() },
+    };
+    notifyDemo();
+    return {
+      text: type === "reservations"
+        ? "(데모 — 실제로 보내지 않았습니다)\n[하늘땅] 오늘 예약 3팀 · 11명\n11:50 최미선 3명\n12:00 정미자 4명\n18:00 김하늘 4명 창가"
+        : "(데모 — 실제로 보내지 않았습니다)\n[하늘땅] 일일 정산\n매출 7,503,100원 (네이버)\n이번 달 110,214,800원 · 18일\n매입 90,000원 · 1건\n예약 5팀 22명\n체크리스트 오픈 4/4 · 마감 3/4",
+      delivered: active.map((link) => link.label),
+      failed: [],
+    };
+  }, [actorName, date]);
+
   const unlink = useCallback(async (linkId: string) => {
     if (APP_MODE === "live") {
       await callChecklistApi({ action: "unlink", linkId });
@@ -155,6 +180,8 @@ export function useChecklist(date: string) {
     template,
     day,
     links,
+    schedule,
+    sendReport,
     setChecked,
     saveNote,
     saveTemplate,

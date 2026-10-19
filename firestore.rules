@@ -273,6 +273,11 @@ service cloud.firestore {
                       // 체크리스트 항목 — 직원 모두 읽고 체크한다
                       inStore(storeId)
                       && docId == "checklistTemplate"
+                    )
+                    || (
+                      // 나챗방 자동 발송(11시 예약·22시 30분 정산)의 마지막 기록 — 쓰기는 함수만
+                      isAdmin(storeId)
+                      && docId == "kakaoMemoSchedule"
                     );
         allow write: if (
                        signedIn()
@@ -328,6 +333,10 @@ service cloud.firestore {
         allow read, write: if false;
       }
       match /kakaoMemoInvites/{id} {
+        allow read, write: if false;
+      }
+      // 자동 발송을 하루 한 번만 — 함수 전용
+      match /kakaoMemoReports/{id} {
         allow read, write: if false;
       }
 
