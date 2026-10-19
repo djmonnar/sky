@@ -11,9 +11,11 @@
  * 그날 자동 발송을 막지 않는다(밤 9시 50분에 시험해도 10시 정산은 나간다).
  *
  * **매출은 보내기 직전에 오너비스타에서 다시 받아 온다.** 평소 받아 오는 것은 새벽 6시 5분 한 번이라,
- * 그냥 보내면 그날 매출이 비어 있다. 오너비스타의 네이버 매출 수집은 매장 설정 시각(기본 12·17·21시)이라
- * 밤 10시 정산에는 마지막 수집 이후 결제가 빠질 수 있다 — 그래서 출처를 글에 같이 적는다.
- * OK포스 엑셀을 올린 날은 OK포스 숫자가 먼저다(화면·AI 비서와 같은 규칙).
+ * 그냥 보내면 그날 매출이 비어 있다. 오너비스타의 네이버 매출 수집은 매장 설정 시각(하늘땅 12·17·21·22시)에
+ * 매장·기기마다 정해진 0~59분 늦게 돈다(하늘땅은 10분쯤 — 2026-10-19 17시 수집이 17:11). 수집하는 PC 가
+ * 그 전에 꺼지면 그날 정산은 앞 수집까지의 숫자다 — 그런 날은 매출 밑에
+ * «※ 22시 수집 전 숫자 · 마지막 수집 21:11» 을 붙인다(2026-10-19 요청).
+ * OK포스 엑셀을 올린 날은 OK포스 숫자가 먼저다(화면·AI 비서와 같은 규칙) — 그날은 붙이지 않는다.
  *
  * **같은 날 두 번 나가지 않게.** 자동 발송은 kakaoMemoReports/{날짜}_{종류} 에 남기고, 이미
  * 보냈으면 건너뛴다(스케줄러가 다시 불러도).
@@ -57,6 +59,38 @@ function effectiveSales(doc) {
 
 const SOURCE_LABEL = { okpos: "OK포스", naver: "네이버", other: "POS" };
 
+/** 매장이 22시에 마친다. 오너비스타가 이 시각 뒤에 모은 숫자여야 그날 마감 매출이다. */
+const SALES_CUTOFF_HOUR = 22;
+
+/** ISO 시각 → KST 날짜·시:분. 못 읽으면 null */
+function kstOf(iso) {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const k = new Date(ms + 9 * 3_600_000);
+  const p = (n) => String(n).padStart(2, "0");
+  return {
+    date: `${k.getUTCFullYear()}-${p(k.getUTCMonth() + 1)}-${p(k.getUTCDate())}`,
+    time: `${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`,
+  };
+}
+
+/**
+ * 정산 매출 밑에 붙일 한 줄. 22시 수집이 들어온 숫자면 null — 아무것도 안 붙인다.
+ *
+ * 네이버(오너비스타) 숫자일 때만 본다. OK포스를 올린 날은 그 숫자가 마감 숫자고, 매출이 아예
+ * 없으면 이미 «아직 안 들어옴»이다. collection 은 보내기 직전 받아 오기의 결과 { ok, collectedAt }.
+ * **모르면 단정하지 않는다** — 못 받아 왔으면 그렇다고, 수집 시각이 없으면 모른다고 적는다.
+ */
+function salesFreshnessNote({ date, sales, collection }) {
+  if (!collection || !sales || sales.source !== "naver") return null;
+  if (!collection.ok) return "※ 오너비스타 연결 실패 · 이전에 받은 숫자";
+  const at = collection.collectedAt ? kstOf(collection.collectedAt) : null;
+  if (!at) return "※ 오너비스타 수집 시각 모름";
+  if (Date.parse(collection.collectedAt) >= Date.parse(`${date}T${SALES_CUTOFF_HOUR}:00:00+09:00`)) return null;
+  const when = at.date === date ? at.time : `${md(at.date)} ${at.time}`;
+  return `※ ${SALES_CUTOFF_HOUR}시 수집 전 숫자 · 마지막 수집 ${when}`;
+}
+
 /* ── 글 ─────────────────────────────────────────────────── */
 
 /**
@@ -85,10 +119,15 @@ function buildReservationsMemo({ date, reservations }) {
   return text;
 }
 
-/** 일일 정산. 모르는 칸은 «아직 안 들어옴»·«없음»으로 적는다 — 0원으로 채우지 않는다. */
-function buildSettlementMemo({ date, sales, month, purchases, manualSales, reservations, checklist }) {
+/**
+ * 일일 정산. 모르는 칸은 «아직 안 들어옴»·«없음»으로 적는다 — 0원으로 채우지 않는다.
+ * 22시 수집 전 숫자면 매출 바로 밑에 밝힌다(넘쳐 잘려도 맨 끝 줄이 잘리게).
+ */
+function buildSettlementMemo({ date, sales, collection, month, purchases, manualSales, reservations, checklist }) {
   const lines = [`[하늘땅] ${md(date)} 일일 정산`];
   lines.push(sales ? `매출 ${won(sales.amount)} (${SOURCE_LABEL[sales.source] || "POS"})` : "매출 아직 안 들어옴");
+  const note = salesFreshnessNote({ date, sales, collection });
+  if (note) lines.push(note);
   if (month && month.days > 0) lines.push(`이번 달 ${won(month.total)} · ${month.days}일`);
   lines.push(purchases && purchases.count > 0 ? `매입 ${won(purchases.total)} · ${purchases.count}건` : "매입 없음");
   if (manualSales > 0) lines.push(`직접 입력 매출 ${won(manualSales)}`);
@@ -122,7 +161,7 @@ function createDailyReports(deps) {
   const {
     admin, storeCol, storeDoc, formatDate,
     kakaoMemo,
-    /** 일일 정산 직전에 오너비스타 매출을 다시 받아 온다. 실패해도 정산은 나간다. */
+    /** 일일 정산 직전에 오너비스타 매출을 다시 받아 온다 → { ok, collectedAt }. 실패해도 정산은 나간다. */
     syncSales = async () => undefined,
     appBaseUrl,
     now = () => Date.now(),
@@ -130,6 +169,23 @@ function createDailyReports(deps) {
 
   const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
   const urlOf = (path) => new URL(path, appBaseUrl).toString();
+
+  /**
+   * 정산 직전 받아 오기 → { ok, collectedAt }(오너비스타가 마지막으로 모은 때).
+   * 결과를 안 알려 주는 받아 오기면 null — 글에 아무것도 안 붙인다.
+   * 못 받아 와도 정산은 나간다 — 있는 숫자로, 없으면 «아직 안 들어옴».
+   */
+  async function refreshSales() {
+    try {
+      const result = await syncSales();
+      if (!result || typeof result.ok !== "boolean") return null;
+      if (!result.ok) console.warn("DAILY_SETTLEMENT_SYNC_FAILED", result.message || "");
+      return { ok: result.ok, collectedAt: result.ok && typeof result.collectedAt === "string" ? result.collectedAt : null };
+    } catch (error) {
+      console.warn("DAILY_SETTLEMENT_SYNC_FAILED", error.message);
+      return { ok: false, collectedAt: null };
+    }
+  }
 
   async function reservationsOf(date) {
     const snap = await storeCol("reservations").where("date", "==", date).get();
@@ -182,13 +238,8 @@ function createDailyReports(deps) {
 
     let text;
     if (type === "settlement") {
-      try {
-        await syncSales();
-      } catch (error) {
-        // 받아 오지 못해도 정산은 나간다 — 있는 숫자로, 없으면 «아직 안 들어옴»
-        console.warn("DAILY_SETTLEMENT_SYNC_FAILED", error.message);
-      }
-      text = buildSettlementMemo(await gatherSettlement(date));
+      const collection = await refreshSales();
+      text = buildSettlementMemo({ ...(await gatherSettlement(date)), collection });
     } else {
       text = buildReservationsMemo({ date, reservations: await reservationsOf(date) });
     }
@@ -220,6 +271,7 @@ module.exports = {
   createDailyReports,
   buildReservationsMemo,
   buildSettlementMemo,
+  salesFreshnessNote,
   checklistSummary,
   effectiveSales,
   REPORTS,

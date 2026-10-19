@@ -4068,6 +4068,8 @@ async function syncOwnervistaSalesCore(mode = "scheduled", requestedBy = "system
       수집도 아직이라 모자라다. 그것을 «매출 급감»으로 읽으면 안 된다.
     */
     const through = typeof body.dataThroughDate === "string" ? body.dataThroughDate : null;
+    // 오너비스타가 네이버에서 마지막으로 모은 때 — 일일 정산이 «22시 수집 전 숫자»를 가른다
+    const collectedAt = typeof body.lastSyncedAt === "string" ? body.lastSyncedAt : null;
     const message = `${written}일치를 받았습니다${through ? ` (${through}까지 확정)` : ""}`
       + (menuReport ? ` · 메뉴 비중 ${menuReport.menus.length}개 (${menuReport.startDate}~${menuReport.endDate})` : "")
       + ".";
@@ -4077,10 +4079,11 @@ async function syncOwnervistaSalesCore(mode = "scheduled", requestedBy = "system
       importedCount: written,
       updatedCount: 0,
       dataThroughDate: through,
+      ownervistaCollectedAt: collectedAt,
       menuCount: menuReport ? menuReport.menus.length : 0,
       message,
     }, { merge: true });
-    return { ok: true, runId, message };
+    return { ok: true, runId, message, collectedAt };
   } catch (error) {
     const message = error instanceof Error ? error.message : "오너비스타 매출 동기화에 실패했습니다.";
     await runRef.set({

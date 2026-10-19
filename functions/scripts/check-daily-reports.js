@@ -1,17 +1,18 @@
 "use strict";
 
 /**
- * 나챗방 매일 보내기(오전 11시 오늘 예약 · 오후 10시 일일 정산) 점검 — 배포·네트워크 없이
+ * 나챗방 매일 보내기(오전 11시 오늘 예약 · 오후 10시 30분 일일 정산) 점검 — 배포·네트워크 없이
  *
  *   npm run test:daily
  *
  * Firestore 와 카카오 보내기를 가짜로 바꿔, 글 모양(200자·취소/노쇼 제외·모르는 칸은 «아직 안 들어옴»),
- * 정산 직전에 매출을 먼저 받아 오는지, 하루 한 번만 나가는지, 시험 발송이 자동 발송을 막지 않는지 본다.
+ * 정산 직전에 매출을 먼저 받아 오는지, 22시 수집 전 숫자에 표시가 붙는지, 하루 한 번만 나가는지,
+ * 시험 발송이 자동 발송을 막지 않는지 본다.
  */
 
 const assert = require("node:assert");
 const {
-  createDailyReports, buildReservationsMemo, buildSettlementMemo, effectiveSales, checklistSummary,
+  createDailyReports, buildReservationsMemo, buildSettlementMemo, salesFreshnessNote, effectiveSales, checklistSummary,
 } = require("../dailyReports");
 const { canRun, MEMO_TEXT_LIMIT } = require("../kakaoMemo");
 
@@ -62,7 +63,10 @@ const kakaoMemo = {
 };
 
 const DATE = "2026-10-19"; // 월
+/** 오너비스타가 22시 수집을 마친 때(22:08 KST) — 평소 */
+const AFTER_22 = "2026-10-19T13:08:00.000Z";
 let syncShouldFail;
+let syncResult;
 const reports = createDailyReports({
   admin, storeCol, storeDoc,
   formatDate: () => DATE,
@@ -70,6 +74,7 @@ const reports = createDailyReports({
   syncSales: async () => {
     events.push("sync");
     if (syncShouldFail) throw new Error("오너비스타 응답 없음");
+    return syncResult;
   },
   appBaseUrl: "https://sky.example.app",
   now: () => 1_800_000_000_000,
@@ -81,6 +86,7 @@ function seed() {
   events = [];
   linkCount = 2;
   syncShouldFail = false;
+  syncResult = { ok: true, runId: "r1", message: "14일치를 받았습니다.", collectedAt: AFTER_22 };
   const put = (col, id, value) => db.set(`${col}/${id}`, value);
   put("reservations", "1", { date: DATE, time: "18:00", name: "김하늘", people: 4, seat: "창가", status: "예약확정", phone: "010-1111-2222" });
   put("reservations", "2", { date: DATE, time: "11:50", name: "최미선", people: 3, status: "방문완료" });
@@ -200,11 +206,73 @@ async function check(label, fn) {
     assert.strictEqual(meta.delivered, 2);
   });
 
-  await check("정산 보내기: 오너비스타에서 못 받아 와도 있는 숫자로 나간다", async () => {
+  await check("정산 보내기: 오너비스타에서 못 받아 와도 있는 숫자로 나간다 — 못 받아 왔다고 밝히고", async () => {
     syncShouldFail = true;
     const result = await reports.send("settlement", { trigger: "test" });
     assert.strictEqual(result.status, "sent");
-    assert.match(result.text, /매출 5,000,000원/);
+    assert.match(result.text, /매출 5,000,000원 \(네이버\)\n※ 오너비스타 연결 실패 · 이전에 받은 숫자\n/);
+  });
+
+  /* ── 22시 수집 전 표시 ── */
+
+  await check("정산: 22시 수집 전 숫자면 매출 바로 밑에 «22시 수집 전 숫자 · 마지막 수집 21:11»", async () => {
+    syncResult = { ok: true, collectedAt: "2026-10-19T12:11:40.000Z" }; // 21:11 KST
+    const result = await reports.send("settlement", { trigger: "scheduled" });
+    const lines = result.text.split("\n");
+    assert.strictEqual(lines[1], "매출 5,000,000원 (네이버)");
+    assert.strictEqual(lines[2], "※ 22시 수집 전 숫자 · 마지막 수집 21:11");
+    assert.strictEqual(lines[3], "이번 달 12,503,100원 · 2일");
+  });
+
+  await check("정산: 22시 정각부터는 22시 수집이 들어온 것 — 아무것도 안 붙인다", async () => {
+    const sales = { amount: 1, source: "naver" };
+    assert.strictEqual(salesFreshnessNote({ date: DATE, sales, collection: { ok: true, collectedAt: "2026-10-19T13:00:00.000Z" } }), null);
+    assert.strictEqual(
+      salesFreshnessNote({ date: DATE, sales, collection: { ok: true, collectedAt: "2026-10-19T12:59:59.000Z" } }),
+      "※ 22시 수집 전 숫자 · 마지막 수집 21:59",
+    );
+    const result = await reports.send("settlement", { trigger: "scheduled" });
+    assert.ok(!result.text.includes("※"), result.text);
+  });
+
+  await check("정산: 마지막 수집이 그 전날이면 날짜까지 적는다", async () => {
+    assert.strictEqual(
+      salesFreshnessNote({ date: DATE, sales: { amount: 1, source: "naver" }, collection: { ok: true, collectedAt: "2026-10-18T12:10:00.000Z" } }),
+      "※ 22시 수집 전 숫자 · 마지막 수집 10/18(일) 21:10",
+    );
+  });
+
+  await check("정산: OK포스 숫자인 날·매출이 없는 날·받아 오기 결과를 모르는 날은 안 붙인다", async () => {
+    const early = { ok: true, collectedAt: "2026-10-19T08:11:51.831Z" }; // 17:11 KST
+    assert.strictEqual(salesFreshnessNote({ date: DATE, sales: { amount: 1, source: "okpos" }, collection: early }), null);
+    assert.strictEqual(salesFreshnessNote({ date: DATE, sales: null, collection: early }), null);
+    assert.strictEqual(salesFreshnessNote({ date: DATE, sales: { amount: 1, source: "naver" }, collection: null }), null);
+    syncResult = undefined;
+    const result = await reports.send("settlement", { trigger: "test" });
+    assert.ok(!result.text.includes("※"), result.text);
+  });
+
+  await check("정산: 오너비스타가 거절(설정 없음 등)하면 연결 실패, 수집 시각이 없으면 «모름» — 단정하지 않는다", async () => {
+    syncResult = { ok: false, runId: "r2", message: "오너비스타 매출 주소가 설정되지 않았습니다." };
+    assert.match((await reports.send("settlement", { trigger: "test" })).text, /\n※ 오너비스타 연결 실패 · 이전에 받은 숫자\n/);
+    syncResult = { ok: true, collectedAt: null };
+    assert.match((await reports.send("settlement", { trigger: "test" })).text, /\n※ 오너비스타 수집 시각 모름\n/);
+  });
+
+  await check("정산: 표시가 붙어도 큰 숫자·긴 체크리스트까지 200자 안, 표시 줄은 잘리지 않는다", async () => {
+    const text = buildSettlementMemo({
+      date: DATE,
+      sales: { amount: 12_345_678, source: "naver" },
+      collection: { ok: true, collectedAt: "2026-10-18T12:10:00.000Z" },
+      month: { total: 345_678_901, days: 31 },
+      purchases: { total: 1_234_567, count: 12 },
+      manualSales: 1_234_567,
+      reservations: { teams: 25, people: 123, noShow: 3 },
+      checklist: "오픈 12/12 · 마감 15/15",
+    });
+    assert.ok(text.length <= MEMO_TEXT_LIMIT, `${text.length}자`);
+    assert.ok(text.includes("\n※ 22시 수집 전 숫자 · 마지막 수집 10/18(일) 21:10\n"), text);
+    assert.ok(text.endsWith("체크리스트 오픈 12/12 · 마감 15/15"), text);
   });
 
   await check("예약 보내기: 예약 버튼·예약 화면 링크, 정산처럼 매출을 받아 오지는 않는다", async () => {
