@@ -32,6 +32,7 @@ import type { AttendanceLogDoc, TimesheetSubmissionDoc, UserProfileDoc } from ".
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
 import { normalizeManagerPermissions } from "../config/managerPermissions";
 import { normalizeUnit } from "../data/units";
+import { BATCH_UNIT, isSubRecipeRow } from "../lib/recipeCost";
 
 function col(name: string) {
   return collection(requireDb(), "stores", STORE_ID, name);
@@ -389,10 +390,13 @@ export function subscribeRecipes(cb: (v: Recipe[]) => void, onError: ErrCb): Uns
       // 옛 문서에는 kind 가 없다 — 판매가가 있으면 판매 메뉴, 없으면 기본 상차림으로 본다.
       kind: d.kind === "side" || d.kind === "menu" ? d.kind : (Number(d.salePrice ?? 0) > 0 ? "menu" : "side"),
       servings: Number(d.servings ?? 1),
+      yieldQuantity: Number(d.yieldQuantity ?? 0) || 0,
+      yieldUnit: d.yieldUnit ? normalizeUnit(d.yieldUnit) : "",
       ingredients: Array.isArray(d.ingredients)
         ? (d.ingredients as RecipeIngredient[]).map((ingredient) => ({
           ...ingredient,
-          unit: normalizeUnit(ingredient.unit),
+          // «회분»은 하위 레시피 줄에만 있는 단위라 단위표에 없다 — 표로 맞추면 ea 가 돼 버린다
+          unit: isSubRecipeRow(ingredient) && ingredient.unit === BATCH_UNIT ? BATCH_UNIT : normalizeUnit(ingredient.unit),
         }))
         : [],
       salePrice: Number(d.salePrice ?? 0),
