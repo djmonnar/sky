@@ -9,9 +9,11 @@ import {
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch,
   OwnerSchedule, ManagerPermissions, ManagerPermissionKey,
+  OkposDailyReport,
 } from "./data/types";
+import { withOkpos } from "./lib/okposDaily";
 import { CURRENT_STAFF_ID } from "./data/mock";
-import { TODAY_STR } from "./lib/time";
+import { TODAY_STR, fmtDate } from "./lib/time";
 import { repository } from "./data/repository";
 import { normalizeUnit } from "./data/units";
 import { firebaseConfigured, STORE_ID } from "./lib/firebase";
@@ -41,6 +43,7 @@ import {
   fsUpsertInventoryItem, fsDeleteInventoryItem,
   fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
   subscribeSalesOrders, subscribeSalesSyncRuns, subscribeSalesDailySummaries, subscribeSalesMenuReport, fsSyncOwnervistaSales,
+  fsSaveOkposDays, fsClearOkposDays,
   subscribeGranterSyncRuns, subscribeGranterCardSales, subscribeGranterAccountTransactions,
   subscribeGranterFinanceCategories, fsSyncGranterFinance,
   fsClassifyGranterFinanceItems, fsUpsertGranterFinanceCategory, fsDeleteGranterFinanceCategory,
@@ -161,6 +164,10 @@ interface Store {
   /** 매출 내 메뉴 비중 최신본. 아직 못 받았으면 null. */
   salesMenuReport: SalesMenuReport | null;
   syncSales: () => Promise<void>;
+  /** OK포스 엑셀의 날들을 반영한다 — 그날 매출은 OK포스 숫자가 된다. */
+  saveOkposDays: (days: OkposDailyReport[]) => Promise<void>;
+  /** OK포스 숫자를 뺀다 — 그날은 다시 네이버 숫자가 된다. */
+  clearOkposDays: (dates: string[]) => Promise<void>;
   granterSyncRuns: GranterSyncRun[];
   granterCardSales: GranterFinanceItem[];
   granterAccountTransactions: GranterFinanceItem[];
@@ -300,7 +307,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRecipes(recipeList);
       setSalesOrders(sales);
       setSalesSyncRuns(syncRuns);
-      setSalesDailySummaries(dailySummaries);
+      setSalesDailySummaries(dailySummaries.map(withOkpos));
       setSalesMenuReport(menuReport);
       setLoading(false);
     })();
@@ -996,6 +1003,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     showToast("데모 매출 동기화 로그를 남겼습니다");
   }, [salesOrders.length, showToast]);
 
+  const saveOkposDays = useCallback(async (days: OkposDailyReport[]) => {
+    if (days.length === 0) return;
+    const uploadedBy = profile?.name || authUser?.email || "관리자";
+    if (APP_MODE === "live") {
+      await fsSaveOkposDays(days, uploadedBy);
+      return; // 화면은 onSnapshot 이 바꾼다
+    }
+    const now = new Date();
+    // 화면 시각 — toISOString 은 UTC 라 9시간 어긋난다
+    const uploadedAt = `${fmtDate(now)} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    setSalesDailySummaries((prev) => {
+      const byDate = new Map(prev.map((row) => [row.businessDate, row]));
+      days.forEach((day) => {
+        const base = byDate.get(day.businessDate);
+        // 데모: 네이버 숫자는 naverNetAmount 에 남아 있으니 그걸 바탕으로 다시 계산한다
+        const naver: SalesDailySummary = base
+          ? { ...base, netAmount: base.naverNetAmount ?? base.netAmount, source: base.naverNetAmount != null ? "ownervista" : base.source }
+          : {
+            id: day.businessDate, businessDate: day.businessDate, orderCount: 0, canceledCount: 0, grossAmount: 0,
+            discountAmount: 0, refundAmount: 0, netAmount: 0, averageOrderAmount: 0, paymentTotals: [], hasOrderCount: false,
+          };
+        byDate.set(day.businessDate, withOkpos({ ...naver, okpos: { ...day, uploadedBy, uploadedAt } }));
+      });
+      return [...byDate.values()].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+    });
+  }, [authUser, profile]);
+
+  const clearOkposDays = useCallback(async (dates: string[]) => {
+    if (dates.length === 0) return;
+    if (APP_MODE === "live") {
+      await fsClearOkposDays(dates);
+      return;
+    }
+    const targets = new Set(dates);
+    setSalesDailySummaries((prev) => prev.flatMap((row) => {
+      if (!targets.has(row.businessDate)) return [row];
+      // 네이버 숫자도 없던 날은 «없는 날»로 돌아간다
+      if (row.naverNetAmount == null) return [];
+      return [withOkpos({ ...row, netAmount: row.naverNetAmount, source: "ownervista", okpos: null })];
+    }));
+  }, []);
+
   const classifyGranterFinanceItems = useCallback(async (
     domain: GranterFinanceDomain,
     itemIds: string[],
@@ -1426,7 +1475,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       inventoryItems, upsertInventoryItem, deleteInventoryItem,
       purchaseOrders, upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
       recipes, upsertRecipe, deleteRecipe,
-      salesOrders, salesSyncRuns, salesDailySummaries, salesMenuReport, syncSales,
+      salesOrders, salesSyncRuns, salesDailySummaries, salesMenuReport, syncSales, saveOkposDays, clearOkposDays,
       granterSyncRuns, granterCardSales, granterAccountTransactions, granterFinanceCategories,
       financeDailyCloses, financeMatches,
       syncGranterFinance, classifyGranterFinanceItems,
@@ -1459,7 +1508,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      upsertInventoryItem, deleteInventoryItem,
      upsertPurchaseOrder, deletePurchaseOrder, receivePurchaseOrder,
      upsertRecipe, deleteRecipe,
-     salesDailySummaries, salesMenuReport, syncSales, syncGranterFinance, classifyGranterFinanceItems,
+     salesDailySummaries, salesMenuReport, syncSales, saveOkposDays, clearOkposDays, syncGranterFinance, classifyGranterFinanceItems,
      upsertGranterFinanceCategory, deleteGranterFinanceCategory,
      upsertFinanceDailyClose, upsertFinanceMatch, deleteFinanceMatch,
      punchIn, punchOut, breakStart, breakEnd, submitTimesheet, reviewTimesheet, showToast]

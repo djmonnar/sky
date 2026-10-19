@@ -460,9 +460,92 @@ export interface SalesDailySummary {
    * 0 은 다르다.
    */
   hasOrderCount?: boolean;
-  /** 어디서 온 숫자인가. `ownervista` 면 오너비스타가 넣어 준 것이다. */
+  /** 어디서 온 숫자인가. `ownervista` 면 오너비스타가 넣어 준 것이고, `okpos` 면 OK포스 엑셀이다. */
   source?: string | null;
   sourceLabel?: string | null;
+  /**
+   * 사장님이 올린 OK포스 「일자별(일별종합)」 엑셀의 그날 줄. **있으면 이게 그날 매출이다.**
+   *
+   * 네이버 플레이스플러스는 현금·상품권을 못 읽어 온다. OK포스는 매장에서 받은 결제
+   * 전부라 이게 가장 정확하다. 그래서 불러올 때 netAmount 등을 이 값으로 바꿔 둔다
+   * (src/lib/okposDaily.ts `withOkpos`) — 화면·합계는 따로 신경 쓸 것이 없다.
+   *
+   * 같은 문서의 다른 칸에 둔다. 네이버 동기화는 netAmount 칸을 merge 로 덮어쓰므로,
+   * 거기 쓰면 다음 동기화 때 네이버 숫자로 되돌아간다.
+   */
+  okpos?: OkposDailyReport | null;
+  /** 네이버가 준 그날 숫자. OK포스가 덮어쓴 날에도 비교하려고 남겨 둔다. 없으면 null. */
+  naverNetAmount?: number | null;
+}
+
+/** OK포스 엑셀 「결제수단」 칸들. 엑셀 칸 이름을 그대로 옮겼다. */
+export interface OkposPayments {
+  /** 단순현금 */
+  simpleCash: number;
+  /** 현금영수 (현금영수증 발행한 현금) */
+  cashReceipt: number;
+  /** 신용카드 */
+  card: number;
+  /** 외상 */
+  credit: number;
+  /** 상품권 */
+  voucher: number;
+  /** 식권 */
+  mealTicket: number;
+  /** 회원포인트 */
+  memberPoint: number;
+  /** 제휴카드 */
+  partnerCard: number;
+  /** 사원카드 */
+  employeeCard: number;
+  /** 모바일쿠폰 */
+  mobileCoupon: number;
+  /** 캐시비 */
+  cashbee: number;
+  /** 전자상품권 */
+  eVoucher: number;
+  /** 온라인결제 */
+  onlinePay: number;
+  /** 기타결제 */
+  otherPay: number;
+}
+
+/** OK포스 「일자별(일별종합)」 엑셀의 하루치 줄 */
+export interface OkposDailyReport {
+  businessDate: string;
+  /** 총매출 */
+  grossAmount: number;
+  /** 총할인 */
+  discountAmount: number;
+  /** 실매출 — 그날 매출로 쓰는 숫자 */
+  netAmount: number;
+  /** 가액 (부가세 뺀 금액) */
+  supplyAmount: number;
+  /** 부가세 */
+  vatAmount: number;
+  /** 영수건수 */
+  receiptCount: number;
+  /** 고객수 */
+  customerCount: number;
+  /** 결제합계 */
+  paymentTotal: number;
+  payments: OkposPayments;
+  /**
+   * 결제합계 − 엑셀에 칸이 있는 결제수단 합.
+   *
+   * OK포스 「일자별(일별종합)」에는 결제수단이 14칸 있는데, 그걸 다 더해도 결제합계에
+   * 매일 수십만 원씩 모자란다(2026-10 엑셀: 18일 합계 1,135만 원). 칸이 없는 결제수단이
+   * 있다는 뜻이다. **무엇인지는 엑셀로 알 수 없다** — 지어내지 않고 이 이름으로 둔다.
+   */
+  unlistedPayment: number;
+  /** 할인내역 중 0 이 아닌 것 (일반·서비스·제휴·쿠폰 …) */
+  discounts: Array<{ name: string; amount: number }>;
+  /** 엑셀 파일 이름 — 어느 파일에서 왔는지 */
+  fileName?: string;
+  /** 올린 때 (ISO) */
+  uploadedAt?: string;
+  /** 올린 사람 이름 */
+  uploadedBy?: string;
 }
 
 /** 매출 내 메뉴 한 줄. 네이버 스마트플레이스 「매출 내 메뉴 비중」이 원본이다. */

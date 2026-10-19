@@ -9,14 +9,16 @@
     "preview": "vite preview",
     "test:pos": "node scripts/check-pos-sales.mjs",
     "test:attendance": "node scripts/check-attendance.mjs",
-    "test:recipe": "node scripts/check-recipe-cost.mjs"
+    "test:recipe": "node scripts/check-recipe-cost.mjs",
+    "test:okpos": "node scripts/check-okpos-daily.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

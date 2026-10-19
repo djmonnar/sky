@@ -27,9 +27,22 @@ export interface PendingAction {
   fields: PendingActionField[];
 }
 
-/** 네이버 플레이스플러스 POS 일 매출을 기간으로 묶은 것 — 하루에 금액 하나뿐이라 건수·메뉴는 없다 */
+/**
+ * POS 일 매출을 기간으로 묶은 것. OK포스 엑셀을 올린 날은 OK포스 숫자이고 결제수단도 있다.
+ * 아닌 날은 네이버 플레이스플러스 — 하루에 금액 하나뿐이다.
+ */
 export interface SalesReportPayload {
   source: string;
+  /** 기간 안에서 OK포스 숫자를 쓴 날 수 */
+  okposDays?: number;
+  /** 결제수단 — OK포스를 올린 날들끼리만 묶은 것. 없으면 안 온다 */
+  payments?: {
+    days: number;
+    total: number;
+    byMethod: { card: number; cash: number; voucher: number; other: number; unlisted: number };
+  };
+  /** 네이버 숫자도 있는 OK포스 날끼리 견준 것 */
+  naverComparison?: { days: number; naver: number; okpos: number };
   rangeStart: string;
   rangeEnd: string;
   dayCount: number;
@@ -44,7 +57,7 @@ export interface SalesReportPayload {
   worst: { date: string; amount: number } | null;
   previous: { start: string; end: string; total: number; dataDays: number; changePercent: number | null };
   weekdayAverages: { dow: string; average: number; days: number }[];
-  daily: { businessDate: string; dow: string; amount: number; orderCount?: number }[];
+  daily: { businessDate: string; dow: string; amount: number; orderCount?: number; source?: "okpos" | "naver" }[];
   /** 매출 내 메뉴 비중. 물어본 기간과 무관한 최근 기간 합계 — 있을 때만 */
   menuShare?: {
     startDate: string;

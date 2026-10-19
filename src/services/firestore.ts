@@ -14,7 +14,7 @@
 
 import {
   collection, doc, query, where, onSnapshot,
-  setDoc, updateDoc, addDoc, deleteDoc, getDoc, serverTimestamp, writeBatch,
+  setDoc, updateDoc, addDoc, deleteDoc, deleteField, getDoc, serverTimestamp, writeBatch,
   runTransaction,
   type QueryConstraint, type DocumentData,
 } from "firebase/firestore";
@@ -27,7 +27,9 @@ import type {
   OwnerSchedule,
   SettlementMethod, SettlementStatus, ManagerPermissions, ChatbotUser,
   AttendanceLog, TimesheetSubmission, ChatbotMemory, ChatConversation,
+  OkposDailyReport, OkposPayments,
 } from "../data/types";
+import { OKPOS_PAYMENT_KEYS, withOkpos } from "../lib/okposDaily";
 import type { AttendanceLogDoc, TimesheetSubmissionDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
 import { normalizeManagerPermissions } from "../config/managerPermissions";
@@ -474,12 +476,45 @@ export function subscribeSalesSyncRuns(cb: (v: SalesSyncRun[]) => void, onError:
   );
 }
 
+/** 저장된 OK포스 한 줄을 타입 모양으로. 실매출이 없으면 null — 반쯤 맞는 숫자를 매출로 쓰지 않는다. */
+function okposOf(raw: unknown): OkposDailyReport | null {
+  const d = raw as Record<string, unknown> | null;
+  if (!d || typeof d !== "object" || typeof d.netAmount !== "number" || typeof d.businessDate !== "string") return null;
+  const n = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const p = (d.payments ?? {}) as Record<string, unknown>;
+  return {
+    businessDate: d.businessDate,
+    grossAmount: n(d.grossAmount),
+    discountAmount: n(d.discountAmount),
+    netAmount: n(d.netAmount),
+    supplyAmount: n(d.supplyAmount),
+    vatAmount: n(d.vatAmount),
+    receiptCount: n(d.receiptCount),
+    customerCount: n(d.customerCount),
+    paymentTotal: n(d.paymentTotal),
+    payments: Object.fromEntries(OKPOS_PAYMENT_KEYS.map((key) => [key, n(p[key])])) as unknown as OkposPayments,
+    unlistedPayment: n(d.unlistedPayment),
+    discounts: Array.isArray(d.discounts)
+      ? d.discounts
+        .map((item) => item as Record<string, unknown>)
+        .filter((item) => typeof item?.name === "string")
+        .map((item) => ({ name: String(item.name), amount: n(item.amount) }))
+      : [],
+    fileName: typeof d.fileName === "string" ? d.fileName : undefined,
+    uploadedAt: asDisplayDate(d.uploadedAt) || undefined,
+    uploadedBy: typeof d.uploadedBy === "string" ? d.uploadedBy : undefined,
+  };
+}
+
 /**
  * 하루치 매출 합계.
  *
- * **주문에서 계산하지 않고 저장된 것을 그대로 읽는다.** OK포스가 살아 있을 때는
- * 주문을 다 받아 화면에서 합쳤지만, 지금 매출 정본인 네이버 플레이스플러스는
+ * **주문에서 계산하지 않고 저장된 것을 그대로 읽는다.** 네이버 플레이스플러스는
  * 일 합계만 준다 — 합칠 주문이 없다.
+ *
+ * **OK포스 엑셀을 올린 날은 그 숫자가 그날 매출이다**(`withOkpos`). 네이버는 현금·
+ * 상품권을 못 읽어 와서다. 한 곳에서 바꿔 두면 POS 달력·오늘 마감·손익·대시보드가
+ * 따로 고칠 것 없이 따라온다.
  */
 export function subscribeSalesDailySummaries(
   cb: (v: SalesDailySummary[]) => void,
@@ -487,29 +522,77 @@ export function subscribeSalesDailySummaries(
 ): Unsub {
   return subscribe(
     "salesDailySummaries",
-    (d, id) => ({
-      id,
-      businessDate: String(d.businessDate ?? id),
-      orderCount: Number(d.orderCount ?? 0),
-      canceledCount: Number(d.canceledCount ?? 0),
-      grossAmount: Number(d.grossAmount ?? 0),
-      discountAmount: Number(d.discountAmount ?? 0),
-      refundAmount: Number(d.refundAmount ?? 0),
-      netAmount: Number(d.netAmount ?? 0),
-      averageOrderAmount: Number(d.averageOrderAmount ?? 0),
-      paymentTotals: Array.isArray(d.paymentTotals) ? (d.paymentTotals as SalesPayment[]) : [],
-      syncedAt: asDisplayDate(d.syncedAt) || undefined,
-      /*
-        **건수를 모르는 날이 있다.** 네이버는 주문 건수를 안 준다. 0 으로 읽으면
-        화면이 «0건»이라 적고 사람은 그것을 사실로 믿는다 — 안 적힌 것과 0 은 다르다.
-      */
-      hasOrderCount: typeof d.orderCount === "number",
-      source: typeof d.source === "string" ? d.source : null,
-      sourceLabel: typeof d.sourceLabel === "string" ? d.sourceLabel : null,
-    }),
-    (items) => cb(items.sort((a, b) => b.businessDate.localeCompare(a.businessDate)).slice(0, 120)),
+    (d, id): SalesDailySummary | null => {
+      const okpos = okposOf(d.okpos);
+      // OK포스를 되돌리고 네이버 숫자도 없는 날 문서는 «0원인 날»이 아니라 «없는 날»이다
+      if (!okpos && typeof d.netAmount !== "number") return null;
+      return withOkpos({
+        id,
+        businessDate: String(d.businessDate ?? id),
+        orderCount: Number(d.orderCount ?? 0),
+        canceledCount: Number(d.canceledCount ?? 0),
+        grossAmount: Number(d.grossAmount ?? 0),
+        discountAmount: Number(d.discountAmount ?? 0),
+        refundAmount: Number(d.refundAmount ?? 0),
+        netAmount: Number(d.netAmount ?? 0),
+        averageOrderAmount: Number(d.averageOrderAmount ?? 0),
+        paymentTotals: Array.isArray(d.paymentTotals) ? (d.paymentTotals as SalesPayment[]) : [],
+        syncedAt: asDisplayDate(d.syncedAt) || undefined,
+        /*
+          **건수를 모르는 날이 있다.** 네이버는 주문 건수를 안 준다. 0 으로 읽으면
+          화면이 «0건»이라 적고 사람은 그것을 사실로 믿는다 — 안 적힌 것과 0 은 다르다.
+        */
+        hasOrderCount: typeof d.orderCount === "number",
+        source: typeof d.source === "string" ? d.source : null,
+        sourceLabel: typeof d.sourceLabel === "string" ? d.sourceLabel : null,
+        okpos,
+      });
+    },
+    (items) => cb(
+      items
+        .filter((row): row is SalesDailySummary => row !== null)
+        .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
+        .slice(0, 120)
+    ),
     onError
   );
+}
+
+/**
+ * OK포스 엑셀의 날들을 하루치 문서의 `okpos` 칸에 쓴다.
+ *
+ * **네이버 칸(netAmount 등)은 건드리지 않는다.** 네이버 동기화도 merge 라 이 칸을 안
+ * 건드린다 — 둘이 서로를 덮지 않는다. 같은 날짜를 다시 올리면 OK포스 칸만 덮어쓴다.
+ */
+export async function fsSaveOkposDays(days: OkposDailyReport[], uploadedBy: string): Promise<void> {
+  const db = requireDb();
+  for (let i = 0; i < days.length; i += 400) {
+    const batch = writeBatch(db);
+    days.slice(i, i + 400).forEach((day) => {
+      const { uploadedAt: _ignored, ...rest } = day;
+      batch.set(doc(col("salesDailySummaries"), day.businessDate), {
+        id: day.businessDate,
+        businessDate: day.businessDate,
+        okpos: { ...rest, uploadedBy, uploadedAt: serverTimestamp() },
+      }, { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
+/**
+ * OK포스 숫자를 뺀다 — 그날은 다시 네이버 숫자가 된다. 문서는 지우지 않는다(옛 OK포스
+ * 연동이 남긴 숫자가 있을 수 있다). 숫자가 하나도 안 남은 날은 읽을 때 «없는 날»이 된다.
+ */
+export async function fsClearOkposDays(dates: string[]): Promise<void> {
+  const db = requireDb();
+  for (let i = 0; i < dates.length; i += 400) {
+    const batch = writeBatch(db);
+    dates.slice(i, i + 400).forEach((date) => {
+      batch.update(doc(col("salesDailySummaries"), date), { okpos: deleteField() });
+    });
+    await batch.commit();
+  }
 }
 
 function menuShareOf(raw: unknown): SalesMenuShare | null {

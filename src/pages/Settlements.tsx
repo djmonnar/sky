@@ -89,7 +89,7 @@ function createMatchId(): string {
 export default function Settlements() {
   const {
     role, profile, authUser, managerPermissions, vendors, purchaseOrders, payroll,
-    salesDailySummaries, salesMenuReport, syncSales,
+    salesDailySummaries, salesMenuReport, syncSales, saveOkposDays, clearOkposDays,
     financeDailyCloses,
     upsertPurchaseOrder,
     upsertFinanceDailyClose, showToast,
@@ -158,7 +158,8 @@ export default function Settlements() {
 
   /*
     카드 매출은 그랜터가 채우던 칸이라 지금은 비어 있다. 대신 이 매장의 매출 정본인
-    POS 일 매출(네이버 플레이스플러스)을 참고로 보여 준다. 마감 합계에는 더하지 않는다 —
+    POS 일 매출(OK포스 엑셀을 올린 날은 OK포스, 아니면 네이버 플레이스플러스)을 참고로
+    보여 준다. 마감 합계에는 더하지 않는다 —
     POS 에 이미 카드·현금이 섞여 있어 직접 입력분과 겹칠 수 있다.
   */
   const dayPos = salesDailySummaries.find((row) => row.businessDate === date);
@@ -226,7 +227,8 @@ export default function Settlements() {
 
 
   /*
-    총매출은 POS 일 매출(네이버 플레이스플러스) 합계다. 예전에는 그랜터 카드 승인액에
+    총매출은 POS 일 매출 합계다(OK포스 엑셀을 올린 날은 OK포스 — 네이버는 현금·상품권을
+    다 못 읽어 온다). 예전에는 그랜터 카드 승인액에
     직접 입력분을 더했는데, 그랜터를 보류하면서 카드가 통째로 빠져 손익이 크게 부풀
     수밖에 없다. POS 가 이 매장 매출의 정본이므로 그것을 쓴다.
 
@@ -238,6 +240,7 @@ export default function Settlements() {
     .filter((row) => row.businessDate.startsWith(month))
     .reduce((sum, row) => sum + row.netAmount, 0);
   const monthPosDays = salesDailySummaries.filter((row) => row.businessDate.startsWith(month)).length;
+  const monthOkposDays = salesDailySummaries.filter((row) => row.businessDate.startsWith(month) && row.okpos).length;
   const monthManualSales = financeDailyCloses
     .filter((item) => item.date.startsWith(month))
     .reduce((sum, item) => sum + item.cashSales + item.transferSales + item.otherSales, 0);
@@ -278,7 +281,7 @@ export default function Settlements() {
               label="POS 일 매출"
               value={dayPos ? money.format(dayPos.netAmount) : "-"}
               unit={dayPos ? "원" : ""}
-              trend={dayPos ? "네이버 플레이스플러스" : "아직 안 들어옴"}
+              trend={dayPos ? (dayPos.okpos ? "OK포스 엑셀" : "네이버 플레이스플러스") : "아직 안 들어옴"}
               trendUp={!!dayPos}
               icon="📈"
             />
@@ -321,6 +324,8 @@ export default function Settlements() {
           menuReport={salesMenuReport}
           syncing={posSyncing}
           onSync={() => void runPosSync()}
+          onSaveOkpos={saveOkposDays}
+          onClearOkpos={clearOkposDays}
         />
       )}
 
@@ -386,7 +391,8 @@ export default function Settlements() {
               <div className="finance-profit-formula"><span>총매출 {amount(monthSales)}</span><span>− 매입 {amount(monthPurchaseAmount)}</span><span>− 인건비 {amount(monthPayroll)}</span></div>
             </div>
             <div className="finance-profit-note">
-              총매출은 POS 일 매출(네이버 플레이스플러스) 합계입니다. 직접 입력 마감분은
+              총매출은 POS 일 매출 합계입니다 — OK포스 엑셀을 올린 날은 OK포스 숫자, 아닌 날은 네이버 플레이스플러스 숫자입니다
+              {monthOkposDays > 0 ? ` (이 달 OK포스 ${monthOkposDays}일)` : ""}. 직접 입력 마감분은
               POS 와 겹칠 수 있어 더하지 않았습니다. <strong>고정·운영비(임대료·공과금 등)는
               빠져 있습니다</strong> — 계좌 출금을 분류해 세던 값인데 카드·계좌 연동을 보류해
               지금은 셀 수 없습니다. 카드 수수료와 부가세도 빠진 운영용 추정치입니다.

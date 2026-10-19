@@ -422,7 +422,8 @@ export const SEED_SALES_DAILY_SUMMARIES: SalesDailySummary[] = Array.from({ leng
     paymentTotals: [],
     syncedAt: `${TODAY_STR}T00:28:00+09:00`,
     hasOrderCount: false,
-    source: "mock",
+    // 네이버 피드와 같은 출처로 둔다 — 그래야 데모에서도 OK포스 엑셀과 «네이버 숫자»를 견준다
+    source: "ownervista",
     sourceLabel: "데모",
   };
 }).filter((row): row is SalesDailySummary => row !== null);

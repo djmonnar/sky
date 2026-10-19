@@ -38,6 +38,24 @@ const data = {
     "2026-09-02": { id: "2026-09-02", businessDate: "2026-09-02", netAmount: 4_784_000, orderCount: 41, syncedAt: "2026-09-04T00:28:00+09:00" },
     "2026-09-01": { id: "2026-09-01", businessDate: "2026-09-01", netAmount: 3_868_000, syncedAt: "2026-09-04T00:28:00+09:00" },
     "2026-08-31": { id: "2026-08-31", businessDate: "2026-08-31", netAmount: 2_795_000, syncedAt: "2026-09-01T00:28:00+09:00" },
+    // OK포스 엑셀만 있는 날 (네이버 없음)
+    "2026-08-20": {
+      id: "2026-08-20", businessDate: "2026-08-20",
+      okpos: {
+        businessDate: "2026-08-20", netAmount: 5_000_000, receiptCount: 40, unlistedPayment: 300_000,
+        payments: { card: 4_200_000, simpleCash: 100_000, cashReceipt: 200_000, voucher: 200_000 },
+      },
+    },
+    // 네이버도 있고 OK포스도 올린 날 — OK포스가 그날 매출이다
+    "2026-08-21": {
+      id: "2026-08-21", businessDate: "2026-08-21", netAmount: 3_000_000, source: "ownervista", syncedAt: "2026-08-22T00:28:00+09:00",
+      okpos: {
+        businessDate: "2026-08-21", netAmount: 3_600_000, receiptCount: 30, unlistedPayment: 0,
+        payments: { card: 3_000_000, simpleCash: 600_000 },
+      },
+    },
+    // OK포스를 되돌렸고 네이버도 없던 날 — 문서만 남은 «없는 날»
+    "2026-08-22": { id: "2026-08-22", businessDate: "2026-08-22" },
   },
   notices: { "900": { id: 900, text: "단체 예약 세팅 확인", date: TODAY } },
   handovers: {},
@@ -304,6 +322,28 @@ async function check(label, fn) {
     assert.deepStrictEqual(payload.menuShare.menus.map((menu) => menu.menuName), ["돼지갈비", "점심불고기"], "많이 판 순");
     assert.strictEqual(payload.menuShare.menus[0].sharePercent, 64.5, "비중은 네이버 값 그대로");
     assert.strictEqual(payload.menuShare.unlistedSales, 41_180_000 - 26_554_400 - 3_120_000, "메뉴로 안 잡힌 매출");
+  });
+
+  // 네이버는 현금·상품권을 다 못 읽어 온다. 사장님이 올린 OK포스 엑셀이 있으면 그날은
+  // 그 숫자로 답해야 화면과 비서의 숫자가 같다.
+  await check("매출: OK포스 엑셀을 올린 날은 OK포스 숫자와 결제수단으로 답한다", async () => {
+    stubGemini([{ calls: [{ name: "sales_report", args: { startDate: "2026-08-20", endDate: "2026-08-22" } }] }, { text: "ok" }]);
+    await chat.runConversation({ apiKey: "k", model: "m", actor: ADMIN, messages: [{ role: "user", text: "8월 20일부터 22일 매출" }] });
+    const toolTurn = requests[1].contents.find((entry) => entry.parts.some((part) => part.functionResponse));
+    const payload = toolTurn.parts[0].functionResponse.response;
+    assert.strictEqual(payload.total, 8_600_000, "OK포스 5,000,000 + 3,600,000 (네이버 3,000,000 이 아니라)");
+    assert.strictEqual(payload.dataDays, 2, "숫자 없는 문서(8/22)는 «없는 날»");
+    assert.strictEqual(payload.missingDays, 1);
+    assert.strictEqual(payload.okposDays, 2);
+    assert.match(payload.source, /OK포스/);
+    assert.deepStrictEqual(payload.daily.map((row) => row.source), ["okpos", "okpos"]);
+    assert.strictEqual(payload.daily[0].orderCount, 40, "OK포스 영수건수");
+    assert.deepStrictEqual(payload.payments, {
+      days: 2, total: 8_600_000,
+      byMethod: { card: 7_200_000, cash: 900_000, voucher: 200_000, other: 0, unlisted: 300_000 },
+    });
+    assert.deepStrictEqual(payload.naverComparison, { days: 1, naver: 3_000_000, okpos: 3_600_000 }, "둘 다 있는 날끼리만 견준다");
+    assert.match(payload.dataNote, /결제수단\(payments\)은 OK포스 엑셀을 올린 2일만/);
   });
 
   await check("매출: 이번 달을 3일에 보면 지난 3일만 직전 3일과 비교한다", async () => {
