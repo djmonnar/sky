@@ -366,6 +366,13 @@ export interface RecipeIngredient {
   vendorId?: number;
   /** 엑셀에서 그대로 옮긴 수량 메모 등, 숫자로 못 옮긴 것. */
   note?: string;
+  /**
+   * 다른 레시피를 재료로 넣은 줄이면 그 레시피 id (된장찌개 안의 된장육수).
+   * 이 줄의 단가는 저장값을 믿지 않고 그 레시피 원가 ÷ 산출량으로 매번 다시 계산한다
+   * (src/lib/recipeCost.ts). 저장값은 카톡 챗봇처럼 그 계산을 모르는 곳을 위한 스냅숏이다.
+   * 단위는 산출량 계열(ml·L, g·kg …)이거나 «회분»(한 번 만든 양 전체).
+   */
+  subRecipeId?: number;
 }
 
 /**
@@ -384,6 +391,13 @@ export interface Recipe {
   kind: RecipeKind;
   /** 이 재료 분량으로 몇 인분(제공 회수)이 나오는가. */
   servings: number;
+  /**
+   * 한 번 만들면 얼마가 나오는가 — 육수·소스처럼 다른 레시피에 들어가는 것에 적는다.
+   * 「된장육수 2L」라고 적어 두어야 된장찌개에서 「300ml」로 넣을 수 있다. 0 이면 없음.
+   */
+  yieldQuantity?: number;
+  /** 산출량 단위 (g · kg · ml · L · ea · 박스). 빈 문자열이면 없음. */
+  yieldUnit?: string;
   ingredients: RecipeIngredient[];
   /** 판매가(원). 기본 상차림은 0. */
   salePrice: number;

@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test:pos": "node scripts/check-pos-sales.mjs",
-    "test:attendance": "node scripts/check-attendance.mjs"
+    "test:attendance": "node scripts/check-attendance.mjs",
+    "test:recipe": "node scripts/check-recipe-cost.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",
