@@ -13,7 +13,8 @@ import { useChecklist, type ChecklistInvite, type ChecklistSendResult } from "..
   체크리스트 — 오픈·마감.
 
   사장님이 항목을 정하고(매일 / 매주 정한 요일), 직원이 칸마다 체크하고 특이사항을 적는다.
-  다 하면 「나챗방으로 보내기」 — 사장님 카톡 「나와의 채팅」에 요약과 이 화면 링크가 간다.
+  사장님이 확인하고 「나챗방으로 보내기」 — 카톡 「나와의 채팅」에 요약과 이 화면 링크가 간다.
+  **보내기는 사장님(관리자)만**이다(2026-10-19 결정) — 매니저·직원 화면에는 그 칸이 없고 함수도 막는다.
   링크는 날짜를 달고 가서(?date=) 누르면 그날 체크리스트가 열린다.
 */
 
@@ -452,7 +453,7 @@ export default function Checklist() {
         </div>
       </section>
 
-      <section className="card cl-send">
+      {isAdmin && <section className="card cl-send">
         <div>
           <button className="btn btn-primary cl-send-btn" type="button" disabled={sending || (!hasItems && rows.length === 0)} onClick={() => void send()}>
             {sending ? "보내는 중..." : "나챗방으로 보내기"}
@@ -472,7 +473,7 @@ export default function Checklist() {
           </div>
         )}
         {sendError && <p className="cl-error small" role="alert">{sendError}</p>}
-      </section>
+      </section>}
 
       {isAdmin && <MemoTargets links={links} onInvite={checklist.createInvite} onUnlink={checklist.unlink} />}
 

@@ -6,7 +6,7 @@ const { defineSecret } = require("firebase-functions/params");
 const crypto = require("crypto");
 const admin = require("firebase-admin");
 const { createGeminiChat } = require("./geminiChat");
-const { createKakaoMemo, MemoError } = require("./kakaoMemo");
+const { createKakaoMemo, MemoError, canRun: canRunChecklistAction } = require("./kakaoMemo");
 const { parseQuickReservation, normalizePhone } = require("./quickReservation");
 
 admin.initializeApp();
@@ -3757,10 +3757,10 @@ exports.kakaoMemoAuth = onRequest(
 );
 
 /**
- * 체크리스트 화면이 부르는 곳.
- *  - send   : 그날 체크리스트를 연결된 나챗방 모두에 보낸다 — 직원 누구나
- *  - invite : 나챗방 연결 링크를 만든다 — 관리자만
- *  - unlink : 나챗방 연결을 끊는다(카카오 쪽 권한도 회수) — 관리자만
+ * 체크리스트 화면이 부르는 곳. 셋 다 사장님(관리자)만 — 누가 무엇을 하나는 kakaoMemo.js ACTION_ROLES.
+ *  - send   : 그날 체크리스트를 연결된 나챗방 모두에 보낸다
+ *  - invite : 나챗방 연결 링크를 만든다
+ *  - unlink : 나챗방 연결을 끊는다(카카오 쪽 권한도 회수)
  */
 exports.checklistApi = onRequest(
   { timeoutSeconds: 60, memory: "256MiB", secrets: [kakaoRestApiKey, kakaoClientSecret] },
@@ -3781,14 +3781,18 @@ exports.checklistApi = onRequest(
     }
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const actor = { uid: auth.uid, name: auth.name, role: auth.role };
+    if (!["send", "invite", "unlink"].includes(body.action)) {
+      res.status(400).json({ ok: false, message: "알 수 없는 요청입니다." });
+      return;
+    }
+    if (!canRunChecklistAction(body.action, auth.role)) {
+      res.status(403).json({ ok: false, message: "나챗방 보내기·연결은 사장님(관리자)만 할 수 있습니다." });
+      return;
+    }
     try {
       if (body.action === "send") {
         const result = await kakaoMemo.sendChecklist({ date: body.date, actor });
         res.status(200).json({ ok: true, ...result });
-        return;
-      }
-      if (auth.role !== "admin") {
-        res.status(403).json({ ok: false, message: "관리자만 할 수 있습니다." });
         return;
       }
       if (body.action === "invite") {

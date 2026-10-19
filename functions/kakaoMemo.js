@@ -34,6 +34,20 @@ const SECTIONS = ["open", "close"];
 const SECTION_LABEL = { open: "오픈", close: "마감" };
 const DOW = ["월", "화", "수", "목", "금", "토", "일"];
 
+/**
+ * checklistApi 의 할 일별로 누가 할 수 있나. **보내기도 사장님(관리자)만** — 사장님 카톡으로 가는
+ * 것이라 사장님이 확인하고 보낸다(2026-10-19 사장님 결정). 매니저·직원은 체크·특이사항까지.
+ */
+const ACTION_ROLES = {
+  send: ["admin"],
+  invite: ["admin"],
+  unlink: ["admin"],
+};
+
+function canRun(action, role) {
+  return Boolean(ACTION_ROLES[action] && ACTION_ROLES[action].includes(role));
+}
+
 class MemoError extends Error {
   /** @param {"config"|"expired"|"scope"|"no_token"|"kakao"|"bad_request"} code */
   constructor(code, message) {
@@ -463,6 +477,8 @@ function createKakaoMemo(deps) {
 
 module.exports = {
   createKakaoMemo,
+  canRun,
+  ACTION_ROLES,
   buildChecklistMemo,
   checklistRows,
   weekdayOf,
