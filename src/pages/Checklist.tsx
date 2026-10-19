@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { TODAY_STR } from "../lib/time";
-import type { ChecklistSection, ChecklistTemplateItem } from "../data/types";
+import type {
+  ChecklistSection, ChecklistTemplateItem, KakaoMemoReportType, KakaoMemoSchedule, KakaoMemoScheduleEntry,
+} from "../data/types";
 import {
   DOW_SHORT, SECTIONS, SECTION_LABEL, cleanTemplate, dayRows, daysLabel, exampleTemplate, progressOf, weekdayOf,
   type ChecklistRow,
@@ -214,18 +216,48 @@ function TemplateEditor({
    나챗방 받는 곳 (사장님)
    ============================================================ */
 
+const DAILY_REPORTS: Array<{ type: KakaoMemoReportType; time: string; label: string; what: string }> = [
+  { type: "reservations", time: "오전 11:00", label: "오늘 예약", what: "시간·이름·인원 (취소·노쇼 빼고)" },
+  { type: "settlement", time: "오후 10:30", label: "일일 정산", what: "22시 마감까지의 매출·이번 달 누적·매입·예약·체크리스트" },
+];
+
+/** "10/19 22:00 · 자동 · 2곳" */
+function scheduleText(entry: KakaoMemoScheduleEntry | undefined): string {
+  if (!entry) return "아직 보낸 적 없음";
+  const how = entry.trigger === "scheduled" ? "자동" : `시험${entry.by ? `(${entry.by})` : ""}`;
+  const result = entry.status === "no_links" ? "받는 곳 없음" : `${entry.delivered}곳${entry.failed ? ` · 실패 ${entry.failed}` : ""}`;
+  return `마지막 ${shortTime(entry.at) || entry.date} · ${how} · ${result}`;
+}
+
 function MemoTargets({
-  links, onInvite, onUnlink,
+  links, schedule, onInvite, onUnlink, onSendReport,
 }: {
   links: ReturnType<typeof useChecklist>["links"];
+  schedule: KakaoMemoSchedule;
   onInvite: (label: string) => Promise<ChecklistInvite>;
   onUnlink: (id: string) => Promise<void>;
+  onSendReport: (type: KakaoMemoReportType) => Promise<ChecklistSendResult>;
 }) {
   const { showToast } = useStore();
   const [label, setLabel] = useState("사장님");
   const [invite, setInvite] = useState<ChecklistInvite | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState<KakaoMemoReportType | null>(null);
+  const [testResult, setTestResult] = useState<{ type: KakaoMemoReportType; result: ChecklistSendResult } | null>(null);
+
+  const sendTest = async (type: KakaoMemoReportType) => {
+    setTesting(type);
+    setError(null);
+    setTestResult(null);
+    try {
+      setTestResult({ type, result: await onSendReport(type) });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTesting(null);
+    }
+  };
 
   const create = async () => {
     setBusy(true);
@@ -284,6 +316,44 @@ function MemoTargets({
           ))}
         </ul>
       )}
+
+      {/* 매일 정한 시각에 위 받는 곳 모두에 간다. 시험으로 보내도 그날 자동 발송은 따로 나간다. */}
+      <div className="cl-daily">
+        <div className="field-label">매일 자동으로 보내는 것</div>
+        <ul className="cl-daily-list">
+          {DAILY_REPORTS.map((report) => (
+            <li key={report.type}>
+              <div className="cl-daily-info">
+                <strong><span className="cl-daily-time">{report.time}</span> {report.label}</strong>
+                <span className="muted small">{report.what}</span>
+                <span className="muted small">{scheduleText(schedule[report.type])}</span>
+              </div>
+              <button
+                className="btn btn-outline btn-sm"
+                type="button"
+                disabled={testing !== null || links.length === 0}
+                onClick={() => void sendTest(report.type)}
+              >
+                {testing === report.type ? "보내는 중..." : "시험으로 보내기"}
+              </button>
+            </li>
+          ))}
+        </ul>
+        {links.length === 0 && <p className="muted small cl-daily-note">받는 곳을 먼저 연결해야 보냅니다.</p>}
+        {testResult && (
+          <div className="cl-send-result" role="status">
+            {testResult.result.delivered.length > 0
+              ? <p><b>{testResult.result.delivered.join(" · ")}</b>에게 시험으로 보냈습니다.</p>
+              : <p className="cl-error small">받은 곳이 없습니다.</p>}
+            {testResult.result.failed.map((fail) => <p key={fail.label} className="cl-error small">{fail.label}: {fail.message}</p>)}
+            {testResult.result.text && <pre className="cl-send-text">{testResult.result.text}</pre>}
+          </div>
+        )}
+        <p className="muted small cl-daily-note">
+          일일 정산의 매출은 보내기 직전에 오너비스타에서 다시 받아 온 네이버 숫자입니다. 22시까지 들어가려면 오너비스타의
+          하늘땅 매출 수집 시각에 22시가 있어야 합니다. OK포스 엑셀을 올린 날은 OK포스 숫자를 씁니다.
+        </p>
+      </div>
 
       <div className="cl-invite">
         <label className="field-label" htmlFor="cl-invite-label">누구의 나챗방인가요</label>
@@ -482,7 +552,15 @@ export default function Checklist() {
         {sendError && <p className="cl-error small" role="alert">{sendError}</p>}
       </section>}
 
-      {isAdmin && <MemoTargets links={links} onInvite={checklist.createInvite} onUnlink={checklist.unlink} />}
+      {isAdmin && (
+        <MemoTargets
+          links={links}
+          schedule={checklist.schedule}
+          onInvite={checklist.createInvite}
+          onUnlink={checklist.unlink}
+          onSendReport={checklist.sendReport}
+        />
+      )}
 
       {editing && (
         <TemplateEditor

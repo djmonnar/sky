@@ -7,6 +7,7 @@ const crypto = require("crypto");
 const admin = require("firebase-admin");
 const { createGeminiChat } = require("./geminiChat");
 const { createKakaoMemo, MemoError, canRun: canRunChecklistAction } = require("./kakaoMemo");
+const { createDailyReports } = require("./dailyReports");
 const { parseQuickReservation, normalizePhone } = require("./quickReservation");
 
 admin.initializeApp();
@@ -3763,7 +3764,8 @@ exports.kakaoMemoAuth = onRequest(
  *  - unlink : 나챗방 연결을 끊는다(카카오 쪽 권한도 회수)
  */
 exports.checklistApi = onRequest(
-  { timeoutSeconds: 60, memory: "256MiB", secrets: [kakaoRestApiKey, kakaoClientSecret] },
+  // 오너비스타 토큰은 「일일 정산 시험으로 보내기」가 보내기 직전에 매출을 다시 받아 오느라 필요하다
+  { timeoutSeconds: 120, memory: "256MiB", secrets: [kakaoRestApiKey, kakaoClientSecret, ownervistaFeedToken] },
   async (req, res) => {
     setCors(res);
     if (req.method === "OPTIONS") {
@@ -3781,7 +3783,7 @@ exports.checklistApi = onRequest(
     }
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const actor = { uid: auth.uid, name: auth.name, role: auth.role };
-    if (!["send", "invite", "unlink"].includes(body.action)) {
+    if (!["send", "invite", "unlink", "sendReservations", "sendSettlement"].includes(body.action)) {
       res.status(400).json({ ok: false, message: "알 수 없는 요청입니다." });
       return;
     }
@@ -3805,6 +3807,13 @@ exports.checklistApi = onRequest(
         res.status(200).json({ ok: true });
         return;
       }
+      if (body.action === "sendReservations" || body.action === "sendSettlement") {
+        // 시험으로 보내기 — 그날 정한 시각의 자동 발송은 막지 않는다
+        const type = body.action === "sendReservations" ? "reservations" : "settlement";
+        const result = await dailyReports.send(type, { trigger: "test", by: actor.name });
+        res.status(200).json({ ok: true, ...result });
+        return;
+      }
       res.status(400).json({ ok: false, message: "알 수 없는 요청입니다." });
     } catch (error) {
       if (!(error instanceof MemoError)) console.error("CHECKLIST_API_FAILED", error);
@@ -3813,6 +3822,46 @@ exports.checklistApi = onRequest(
         : 500;
       res.status(status).json({ ok: false, message: error.message || "처리하지 못했습니다." });
     }
+  }
+);
+
+/* ── 매일 정한 시각에 나챗방으로: 오전 11시 오늘 예약, 오후 10시 30분 일일 정산 ─────── */
+
+const dailyReports = createDailyReports({
+  admin,
+  storeCol,
+  storeDoc,
+  formatDate,
+  kakaoMemo,
+  // 평소 매출은 새벽 6시 5분에만 받아 온다 — 밤 10시 정산 전에 한 번 더 받아야 그날 매출이 있다
+  syncSales: () => syncOwnervistaSalesCore("report", "dailySettlement"),
+  appBaseUrl: APP_BASE_URL,
+});
+
+exports.reservationsMemoScheduled = onSchedule(
+  { schedule: "0 11 * * *", timeZone: TZ, timeoutSeconds: 120, memory: "256MiB", secrets: [kakaoRestApiKey, kakaoClientSecret] },
+  async () => {
+    const result = await dailyReports.runScheduled("reservations");
+    console.log("RESERVATIONS_MEMO", result.status, (result.delivered || []).length);
+  }
+);
+
+/*
+  정산은 22:30. 매장이 22시에 마치니 «22시까지»가 그날 매출이다(사장님, 2026-10-19). 오너비스타가
+  하늘땅 네이버 매출을 22시에 모으고, 그 수집이 끝날 30분을 기다렸다가 받아 와서 보낸다.
+  오너비스타의 하늘땅 매출 수집 시각에 22시가 있어야 한다(오너비스타 포털 「네이버 수집 시각」).
+*/
+exports.dailySettlementMemoScheduled = onSchedule(
+  {
+    schedule: "30 22 * * *",
+    timeZone: TZ,
+    timeoutSeconds: 180,
+    memory: "256MiB",
+    secrets: [kakaoRestApiKey, kakaoClientSecret, ownervistaFeedToken],
+  },
+  async () => {
+    const result = await dailyReports.runScheduled("settlement");
+    console.log("SETTLEMENT_MEMO", result.status, (result.delivered || []).length);
   }
 );
 

@@ -42,6 +42,9 @@ const ACTION_ROLES = {
   send: ["admin"],
   invite: ["admin"],
   unlink: ["admin"],
+  // 매일 자동으로 가는 것(오늘 예약 11시, 일일 정산 22시 30분)을 «시험으로 보내기»
+  sendReservations: ["admin"],
+  sendSettlement: ["admin"],
 };
 
 function canRun(action, role) {
@@ -393,12 +396,12 @@ function createKakaoMemo(deps) {
     return res.json.access_token;
   }
 
-  async function sendMemo(linkId, { text, link }) {
+  async function sendMemo(linkId, { text, link, buttonTitle = "체크리스트 열기" }) {
     const templateObject = JSON.stringify({
       object_type: "text",
       text: text.slice(0, MEMO_TEXT_LIMIT),
       link: { web_url: link, mobile_web_url: link },
-      button_title: "체크리스트 열기",
+      button_title: buttonTitle,
     });
     const attempt = async (token) => postForm(`${KAPI}/v2/api/talk/memo/default/send`, { template_object: templateObject }, token);
     let res = await attempt(await accessTokenFor(linkId));
@@ -412,30 +415,24 @@ function createKakaoMemo(deps) {
     throw new MemoError("kakao", `카카오가 메시지를 받지 않았습니다 (${res.json.msg || res.status}).`);
   }
 
-  /* 체크리스트 보내기 */
+  /* 등록된 나챗방 모두에 — 체크리스트·오늘 예약·일일 정산이 같이 쓴다 */
 
-  async function sendChecklist({ date, actor }) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) throw new MemoError("bad_request", "날짜가 올바르지 않습니다.");
-    keys();
-    const [templateSnap, daySnap, linksSnap] = await Promise.all([
-      storeDoc("meta", "checklistTemplate").get(),
-      storeDoc("checklistDays", date).get(),
-      storeCol("kakaoMemoLinks").get(),
-    ]);
-    const links = linksSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })).filter((link) => link.active !== false);
-    if (links.length === 0) {
-      throw new MemoError("bad_request", "연결된 나챗방이 없습니다. 관리자가 체크리스트 화면에서 먼저 연결해 주세요.");
-    }
-    const day = daySnap.exists ? daySnap.data() : null;
-    const rows = checklistRows(templateSnap.exists ? templateSnap.data() : null, day, date);
-    const text = buildChecklistMemo({ date, rows, note: day ? day.note : "" });
-    const link = checklistUrl(date);
+  async function activeLinks() {
+    const snap = await storeCol("kakaoMemoLinks").get();
+    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })).filter((link) => link.active !== false);
+  }
 
+  /**
+   * 한 곳이 실패해도 나머지는 받는다. 연결이 만료됐거나 동의가 빠진 곳은 «끊김»으로 표시해
+   * 화면이 다시 연결하라고 말하게 한다. 받는 곳이 없으면 아무것도 안 하고 빈 결과를 돌려준다.
+   */
+  async function broadcast({ text, link, buttonTitle }) {
+    const links = await activeLinks();
     const delivered = [];
     const failed = [];
     for (const target of links) {
       try {
-        await sendMemo(target.id, { text, link });
+        await sendMemo(target.id, { text, link, buttonTitle });
         delivered.push(target.label);
         await storeDoc("kakaoMemoLinks", target.id).set({ lastSentAt: serverTime(), lastError: null }, { merge: true });
       } catch (error) {
@@ -446,6 +443,26 @@ function createKakaoMemo(deps) {
         }, { merge: true });
       }
     }
+    return { linkCount: links.length, delivered, failed };
+  }
+
+  /* 체크리스트 보내기 */
+
+  async function sendChecklist({ date, actor }) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) throw new MemoError("bad_request", "날짜가 올바르지 않습니다.");
+    keys();
+    const [templateSnap, daySnap, links] = await Promise.all([
+      storeDoc("meta", "checklistTemplate").get(),
+      storeDoc("checklistDays", date).get(),
+      activeLinks(),
+    ]);
+    if (links.length === 0) {
+      throw new MemoError("bad_request", "연결된 나챗방이 없습니다. 관리자가 체크리스트 화면에서 먼저 연결해 주세요.");
+    }
+    const day = daySnap.exists ? daySnap.data() : null;
+    const rows = checklistRows(templateSnap.exists ? templateSnap.data() : null, day, date);
+    const text = buildChecklistMemo({ date, rows, note: day ? day.note : "" });
+    const { delivered, failed } = await broadcast({ text, link: checklistUrl(date), buttonTitle: "체크리스트 열기" });
     await storeDoc("checklistDays", date).set({
       date,
       sent: { at: serverTime(), by: actor.name || "", delivered: delivered.length, failed: failed.length },
@@ -472,7 +489,7 @@ function createKakaoMemo(deps) {
     return { ok: true };
   }
 
-  return { createInvite, handleAuthRequest, sendChecklist, unlink, sendMemo };
+  return { createInvite, handleAuthRequest, sendChecklist, unlink, sendMemo, broadcast, activeLinks, keys };
 }
 
 module.exports = {
