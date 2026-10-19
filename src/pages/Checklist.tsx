@@ -8,6 +8,7 @@ import {
   type ChecklistRow,
 } from "../lib/checklist";
 import { useChecklist, type ChecklistInvite, type ChecklistSendResult } from "../hooks/useChecklist";
+import NoticeBoard from "../components/NoticeBoard";
 
 /*
   체크리스트 — 오픈·마감.
@@ -414,10 +415,13 @@ export default function Checklist() {
             const progress = progressOf(rows, section);
             const complete = progress.total > 0 && progress.done === progress.total;
             return (
-              <section key={section} className={`card cl-section ${complete ? "complete" : ""}`} aria-label={SECTION_LABEL[section]}>
+              <section key={section} className={`card cl-section cl-${section} ${complete ? "complete" : ""}`} aria-label={SECTION_LABEL[section]}>
                 <div className="cl-section-head">
                   <h2>{SECTION_LABEL[section]}</h2>
-                  <span className={`cl-progress ${complete ? "done" : ""}`}>{progress.done}/{progress.total}</span>
+                  <span className={`cl-progress ${complete ? "done" : ""}`}>{complete ? "✓ " : ""}{progress.done}/{progress.total}</span>
+                </div>
+                <div className="cl-bar" aria-hidden="true">
+                  <i style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
                 </div>
                 {sectionRows.length === 0 ? (
                   <p className="muted small">이날 {SECTION_LABEL[section]} 항목이 없습니다.</p>
@@ -452,6 +456,9 @@ export default function Checklist() {
           </button>
         </div>
       </section>
+
+      {/* 공지사항 — 따로 있던 메뉴를 없애고 여기로 옮겼다(2026-10-19). 체크하러 온 김에 본다. */}
+      <NoticeBoard />
 
       {isAdmin && <section className="card cl-send">
         <div>

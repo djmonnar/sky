@@ -4306,3 +4306,61 @@ a.dash-kpi:hover { border-color: var(--ink-400); }
   .cl-date strong { font-size: 17px; min-width: 0; }
   .cl-invite-row { grid-template-columns: minmax(0, 1fr); }
 }
+/* 체크리스트 — 공지사항 (특이사항 아래). 고정 공지는 노란 띠로 */
+.cl-notices { display: flex; flex-direction: column; gap: 10px; }
+.cl-notice-compose { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.cl-notice-compose .textarea { width: 100%; }
+.cl-notice-empty { margin: 0; }
+.cl-notice-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cl-notice { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.cl-notice.pinned { background: var(--amber-bg); border-color: var(--amber-tx); }
+.cl-notice-body { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.cl-notice-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; white-space: pre-wrap; }
+.cl-notice-date { flex: 0 0 auto; }
+.cl-notice-actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.cl-notice-edit { display: flex; flex-direction: column; gap: 6px; }
+.cl-notice-more { align-self: flex-start; }
+/* ── 체크리스트 칸을 또렷하게 (2026-10-19 사장님 요청 «테두리 예쁘게») ──
+   근무표의 색 약속을 그대로 쓴다: 오전 = 파랑 → 오픈, 오후 = 주황 → 마감.
+   다 끝낸 칸은 초록(--good-*). --green-* 은 무채색 별칭이라 쓰지 않는다. */
+.cl-section.card { padding: 0; overflow: hidden; border: 1.5px solid var(--border-strong); border-radius: 16px; gap: 0; }
+.cl-open.card { border-color: var(--blue-300); }
+.cl-close.card { border-color: var(--amber-300); }
+.cl-section > .cl-section-head { padding: 13px 16px 12px; border-bottom: 1.5px solid var(--border-strong); }
+.cl-open > .cl-section-head { background: var(--blue-bg); border-bottom-color: var(--blue-300); }
+.cl-close > .cl-section-head { background: var(--amber-bg); border-bottom-color: var(--amber-300); }
+.cl-open > .cl-section-head h2 { color: var(--blue-tx); }
+.cl-close > .cl-section-head h2 { color: var(--amber-tx); }
+.cl-section > .cl-section-head h2 { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+.cl-section .cl-progress { background: var(--card); border: 1.5px solid currentColor; }
+.cl-open .cl-progress { color: var(--blue-tx); }
+.cl-close .cl-progress { color: var(--amber-tx); }
+
+/* 진행 막대 — 머리띠 바로 아래, 칸을 채울수록 초록이 찬다 */
+.cl-bar { height: 5px; background: var(--ink-50); }
+.cl-bar > i { display: block; height: 100%; background: var(--good-tx); border-radius: 0 3px 3px 0; transition: width 0.3s ease; }
+
+.cl-section > .cl-list { padding: 12px; gap: 8px; }
+.cl-section > p { margin: 0; padding: 16px; }
+
+/* 항목 한 줄 */
+.cl-section .cl-row {
+  padding: 12px 14px; border: 1.5px solid var(--border-strong); border-radius: 12px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03); transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.cl-open .cl-row:hover:not(:disabled) { border-color: var(--blue-300); background: var(--blue-50); }
+.cl-close .cl-row:hover:not(:disabled) { border-color: var(--amber-300); background: var(--amber-50); }
+.cl-section .cl-row:focus-visible { outline: 2px solid var(--ink-900); outline-offset: 2px; }
+.cl-open .cl-mark { border-color: var(--blue-300); }
+.cl-close .cl-mark { border-color: var(--amber-300); }
+.cl-section .cl-mark { width: 28px; height: 28px; }
+.cl-section .cl-row.done { background: var(--good-bg); border-color: var(--good-300); }
+.cl-section .cl-row.done .cl-mark { background: var(--good-tx); border-color: var(--good-tx); }
+
+/* 다 끝낸 칸 — 머리띠까지 초록 */
+.cl-section.complete.card { border-color: var(--good-300); }
+.cl-section.complete > .cl-section-head { background: var(--good-bg); border-bottom-color: var(--good-300); }
+.cl-section.complete > .cl-section-head h2, .cl-section.complete .cl-progress { color: var(--good-tx); }
+
+/* 특이사항·공지사항 카드도 같은 굵기로 맞춘다 */
+.cl-page > .card { border: 1.5px solid var(--border-strong); border-radius: 16px; }

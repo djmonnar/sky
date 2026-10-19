@@ -11,7 +11,6 @@ import WorkLog from "./pages/WorkLog";
 import SchedulePage from "./pages/SchedulePage";
 import ScheduleManage from "./pages/ScheduleManage";
 import Payroll from "./pages/Payroll";
-import Notices from "./pages/Notices";
 import EmployeeList from "./pages/EmployeeList";
 import Guide from "./pages/Guide";
 import Vendors from "./pages/Vendors";
@@ -40,7 +39,6 @@ export default function App() {
   const canAdminOrManager = (key: ManagerPermissionKey) => role === "admin" || canManager(key);
   const canUseManagerDashboard = role === "admin" || role === "manager";
   const canUseReservations = role === "admin" || role === "staff" || canManager("reservations");
-  const canUseNotices = role === "admin" || role === "staff" || canManager("notices");
   const canUseFinance = role === "admin" || canManager("sales") || canManager("settlements");
 
   // 라이브 모드: 인증 게이트
@@ -75,7 +73,8 @@ export default function App() {
         <Route path="/recipes" element={canAdminOrManager("recipes") ? <Recipes /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<MyProfile />} />
         <Route path="/guide" element={canAdminOrManager("guide") ? <Guide /> : <Navigate to="/" replace />} />
-        <Route path="/notices" element={canUseNotices ? <Notices /> : <Navigate to="/" replace />} />
+        {/* 「공지사항」 메뉴는 없앴다 — 공지는 체크리스트 화면 특이사항 아래에 있다(2026-10-19). 옛 링크는 그리로. */}
+        <Route path="/notices" element={<Navigate to="/checklist" replace />} />
         {/* 로그인 상태(또는 데모 모드)에서 /signup 접근 시 홈으로 */}
         <Route path="/signup" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
