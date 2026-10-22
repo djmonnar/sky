@@ -14,6 +14,12 @@
    못 푸는 줄(지워진 레시피, 서로를 품은 레시피, 단위가 안 맞는 줄)은 0원으로 두고
    «확인 필요»로 센다. 원가를 지어내지 않는다 — 빠졌으면 빠졌다고 보여 준다.
 
+   1회(1인분) 원가도 두 가지로 낸다.
+   - 횟수: 「이 재료로 10번 나간다」 → 전체 원가 ÷ 10.
+   - 양: 「한 번에 50g 나간다」 → 전체 원가 × 50g ÷ 산출량(12kg). 소스는 몇 번 나가는지
+     세기보다 한 번 담는 양을 재기가 쉽다. 산출량이 없거나 계열이 다르면(2L 에 50g)
+     나눌 수 없어서 1회 원가를 «모름»으로 둔다.
+
    이 파일은 타입 말고는 아무것도 import 하지 않는다. esbuild 로 이 파일 하나만 떼어
    node 로 검사하기 위해서다(scripts/check-recipe-cost.mjs). 그래서 단위 환산도
    data/units.ts 를 부르지 않고 여기 따로 둔다.
@@ -62,15 +68,26 @@ export interface IngredientCost {
   issue?: RecipeIssue;
 }
 
+export interface ServingPlan {
+  /** 한 번 만든 양으로 몇 번 나가는가. 양으로 적었으면 산출량 ÷ 1회 제공량(소수일 수 있다). */
+  count: number;
+  /** 양으로 적었을 때 1회 제공량 "50g". 횟수로 적었으면 빈 문자열. */
+  amountText: string;
+  /** 양으로 적었는데 1회 원가를 낼 수 없는 까닭. 있으면 1회 원가는 «모름»이다 — 0원이 아니다. */
+  issue: string | null;
+}
+
 export interface RecipeCost {
   totalCost: number;
+  /** 1회(1인분) 원가. `serving.issue` 가 있으면 모르는 값이라 0 으로 둔다 — 화면은 숫자 대신 까닭을 보인다. */
   perServingCost: number;
   salePrice: number;
-  /** 판매가 대비 재료비 %. 판매가가 없으면 null — 0% 가 아니다. */
+  /** 판매가 대비 재료비 %. 판매가가 없거나 1회 원가를 모르면 null — 0% 가 아니다. */
   costRate: number | null;
   /** 수량·단가가 비었거나 하위 레시피를 못 푼 줄 수. 있으면 원가는 «아직 덜 된 것»이다. */
   incomplete: number;
   issues: RecipeIssue[];
+  serving: ServingPlan;
 }
 
 export function isSubRecipeRow(ingredient: RecipeIngredient): boolean {
@@ -96,6 +113,47 @@ export function yieldText(recipe: Pick<Recipe, "yieldQuantity" | "yieldUnit">): 
 export function unitsForSubRecipe(sub: Pick<Recipe, "yieldQuantity" | "yieldUnit"> | undefined): string[] {
   if (!sub || !hasYield(sub)) return [BATCH_UNIT];
   return [...FAMILY_UNITS[MEASURE[String(sub.yieldUnit)].family], BATCH_UNIT];
+}
+
+/** 1회 제공량을 양으로 적을 때 고르는 단위. 이 밖(빈 문자열)이면 `servings` 가 횟수다. */
+export const SERVING_UNITS = ["g", "kg", "ml", "L"];
+
+/** 1회 제공량을 양(g·kg·ml·L)으로 적은 레시피인가 */
+export function servesByAmount(recipe: Pick<Recipe, "servingUnit">): boolean {
+  return SERVING_UNITS.includes(String(recipe.servingUnit ?? ""));
+}
+
+/**
+ * 1회(1인분)가 한 번 만든 양의 얼마인가. 횟수로 적었으면 그 횟수, 양으로 적었으면
+ * 산출량 ÷ 1회 제공량 — 깻잎소스 12kg 를 50g 씩 내면 240번.
+ */
+export function servingPlan(
+  recipe: Pick<Recipe, "servings" | "servingUnit" | "servingAmount" | "yieldQuantity" | "yieldUnit">,
+): ServingPlan {
+  if (!servesByAmount(recipe)) {
+    return { count: Math.max(1, Number(recipe.servings) || 1), amountText: "", issue: null };
+  }
+  const unit = String(recipe.servingUnit);
+  const amount = Number(recipe.servingAmount) || 0;
+  if (!(amount > 0)) return { count: 0, amountText: "", issue: `1회 제공량(${unit})을 적어 주세요.` };
+  const amountText = `${Number(amount.toFixed(3))}${unit}`;
+  if (!hasYield(recipe)) {
+    return {
+      count: 0,
+      amountText,
+      issue: `1회 제공량을 ${unit} 단위로 적으려면 산출량(한 번 만들면 나오는 양)도 적어야 1회 원가가 나옵니다.`,
+    };
+  }
+  const from = MEASURE[unit];
+  const to = MEASURE[String(recipe.yieldUnit)];
+  if (from.family !== to.family) {
+    return {
+      count: 0,
+      amountText,
+      issue: `산출량(${yieldText(recipe)})과 1회 제공량(${unit})은 단위가 달라 나눌 수 없습니다 — 둘 다 무게(g·kg)나 둘 다 부피(ml·L)로 맞춰 주세요.`,
+    };
+  }
+  return { count: (Number(recipe.yieldQuantity) * to.base) / (amount * from.base), amountText, issue: null };
 }
 
 /** 같은 계열 단위끼리 수량을 옮긴다(0.3L → 300ml). 계열이 다르거나 회분이면 숫자 그대로. */
@@ -232,15 +290,16 @@ export function createRecipeCoster(recipes: Recipe[]) {
       if (cost.issue) issues.push(cost.issue);
     }
     const salePrice = recipe.kind === "side" ? 0 : Number(recipe.salePrice) || 0;
-    const servings = Math.max(1, Number(recipe.servings) || 1);
-    const perServingCost = totalCost / servings;
+    const serving = servingPlan(recipe);
+    const perServingCost = serving.issue ? 0 : totalCost / serving.count;
     return {
       totalCost,
       perServingCost,
       salePrice,
-      costRate: salePrice > 0 ? (perServingCost / salePrice) * 100 : null,
+      costRate: salePrice > 0 && !serving.issue ? (perServingCost / salePrice) * 100 : null,
       incomplete,
       issues,
+      serving,
     };
   }
 

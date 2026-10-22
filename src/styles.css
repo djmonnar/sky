@@ -2456,6 +2456,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .ri-head-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 /* 산출량: 수량 + 단위 한 줄 */
 .ri-yield { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 96px); gap: 6px; }
+/* 제공 단위는 「회·인분·g·kg·ml·L」로 짧다 — 휴대폰 반 칸에서 숫자 칸(「예: 50」)이 잘리지 않게 좁힌다 */
+.ri-yield.ri-serving { grid-template-columns: minmax(0, 1fr) minmax(0, 76px); }
 
 /* 하위 레시피 줄 — 다른 레시피를 통째로 넣은 줄. 단가는 손으로 안 적고 계산된다.
    색은 상태 토큰(--blue-*)으로. --green-* 은 무채색 별칭이라 색이 안 난다. */
@@ -2471,6 +2473,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ri-issue { font-size: 12px; font-weight: 700; color: var(--amber-tx); line-height: 1.5; word-break: keep-all; }
+/* 1회 제공량을 g·kg로 적었는데 산출량으로 못 나눌 때 — 1회 원가가 «계산 안 됨»인 까닭 */
+.recipe-serving-issue { color: var(--amber-tx); font-weight: 700; word-break: keep-all; }
 .recipe-used-by {
   margin: 0; padding: 9px 12px; border-radius: 10px;
   background: var(--blue-bg); color: var(--blue-tx); font-size: 12.5px; font-weight: 600; line-height: 1.55; word-break: keep-all;

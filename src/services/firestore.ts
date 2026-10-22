@@ -429,6 +429,9 @@ export function subscribeRecipes(cb: (v: Recipe[]) => void, onError: ErrCb): Uns
       // 옛 문서에는 kind 가 없다 — 판매가가 있으면 판매 메뉴, 없으면 기본 상차림으로 본다.
       kind: d.kind === "side" || d.kind === "menu" ? d.kind : (Number(d.salePrice ?? 0) > 0 ? "menu" : "side"),
       servings: Number(d.servings ?? 1),
+      // 비었거나 모르는 단위면 «횟수로 적은 레시피» — normalizeUnit 은 빈 값을 ea 로 바꾸므로 먼저 거른다
+      servingUnit: d.servingUnit ? normalizeUnit(d.servingUnit) : "",
+      servingAmount: Number(d.servingAmount ?? 0) || 0,
       yieldQuantity: Number(d.yieldQuantity ?? 0) || 0,
       yieldUnit: d.yieldUnit ? normalizeUnit(d.yieldUnit) : "",
       ingredients: Array.isArray(d.ingredients)

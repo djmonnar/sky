@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { Badge, Card } from "../components/ui";
 import type { Recipe, RecipeIngredient, RecipeKind } from "../data/types";
 import { UNITS, UNIT_LABELS, type Unit, convertQuantity, convertUnitCost, normalizeUnit } from "../data/units";
 import {
-  BATCH_UNIT, convertSubQuantity, createRecipeCoster, hasYield, isSubRecipeRow, recipesUsing,
-  unitsForSubRecipe, usableSubRecipes, yieldText, type RecipeCost,
+  BATCH_UNIT, SERVING_UNITS, convertSubQuantity, createRecipeCoster, hasYield, isSubRecipeRow, recipesUsing,
+  servesByAmount, servingPlan, unitsForSubRecipe, usableSubRecipes, yieldText, type RecipeCost,
 } from "../lib/recipeCost";
 
 /*
@@ -94,6 +94,19 @@ function unitWon(value: number): string {
   return `${Number(value.toFixed(2)).toLocaleString("ko-KR")}원`;
 }
 
+/** 「1회 원가」·「1인분(250g) 원가」 — 양으로 적은 레시피는 그 양을 같이 적어야 숫자를 읽을 수 있다 */
+function perServingLabel(isSide: boolean, cost: RecipeCost): string {
+  const head = isSide ? "1회" : "1인분";
+  if (cost.serving.amountText) return `${head}(${cost.serving.amountText}) 원가`;
+  return isSide ? "1회 원가" : "1인분 원가";
+}
+
+/** 산출량 12kg 를 50g 씩 내면 «약 240번» — 작은 수는 소수 한 자리까지 */
+function servingCountText(count: number, isSide: boolean): string {
+  const text = count >= 10 ? money.format(Math.round(count)) : String(Number(count.toFixed(1)));
+  return isSide ? `약 ${text}번` : `약 ${text}인분`;
+}
+
 /** 수량 표기: 0.0633kg → "0.063kg", 3.75kg → "3.75kg" */
 function qtyText(ingredient: RecipeIngredient): string {
   const quantity = Number(ingredient.quantity) || 0;
@@ -126,7 +139,7 @@ function RecipeCard({ recipe, cost, onOpen }: { recipe: Recipe; cost: RecipeCost
         )}
       </div>
       <div className="recipe-card-nums">
-        <span><em>{isSide ? "1회 원가" : "1인분 원가"}</em>{won(cost.perServingCost)}</span>
+        <span><em>{perServingLabel(isSide, cost)}</em>{cost.serving.issue ? "—" : won(cost.perServingCost)}</span>
         {!isSide && <span><em>판매가</em>{cost.salePrice ? won(cost.salePrice) : "—"}</span>}
         <span><em>재료 전체</em>{won(cost.totalCost)}</span>
         {hasYield(recipe) && <span><em>산출량</em>{yieldText(recipe)}</span>}
@@ -136,6 +149,7 @@ function RecipeCard({ recipe, cost, onOpen }: { recipe: Recipe; cost: RecipeCost
           {preview || "재료 없음"}{more > 0 ? ` 외 ${more}` : ""}
         </span>
         {cost.incomplete > 0 && <Badge tone="amber">확인 필요 {cost.incomplete}</Badge>}
+        {cost.incomplete === 0 && cost.serving.issue && <Badge tone="amber">1회 원가 확인</Badge>}
       </div>
     </button>
   );
@@ -163,14 +177,19 @@ function RecipeEditor({
     yieldQuantity: Number(initial.yieldQuantity) || 0,
     // 단위 칸은 늘 무언가 골라져 보인다. 수량이 0 이면 저장할 때 산출량 없음으로 지운다.
     yieldUnit: initial.yieldUnit || "L",
+    servingUnit: servesByAmount(initial) ? String(initial.servingUnit) : "",
+    servingAmount: Number(initial.servingAmount) || 0,
     ingredients: initial.ingredients.map((ingredient) => ({ ...ingredient, unit: rowUnit(ingredient) })),
   }));
   const [customCategory, setCustomCategory] = useState(
     Boolean(initial.category) && !categories.includes(initial.category)
   );
   const [error, setError] = useState<string | null>(null);
+  const lastAmountUnit = useRef(servesByAmount(initial) ? String(initial.servingUnit) : "");
   const isEditing = initial.id > 0;
   const isSide = draft.kind === "side";
+  const byAmount = servesByAmount(draft);
+  const servingLabel = byAmount ? (isSide ? "1회 제공량" : "1인분 양") : (isSide ? "제공 횟수" : "기준 인분");
   const coster = useMemo(() => createRecipeCoster(recipes), [recipes]);
   const totals = useMemo(() => coster.recipe(draft), [coster, draft]);
   const byId = useMemo(() => new Map(recipes.map((recipe) => [recipe.id, recipe])), [recipes]);
@@ -258,6 +277,21 @@ function RecipeEditor({
     }));
   };
 
+  /**
+   * 1회 제공을 횟수(빈 값)로 적을지 양(g·kg·ml·L)으로 적을지. g ↔ kg 처럼 같은 계열이면 양이 따라간다
+   * (50g → 0.05kg). 횟수와 양은 칸이 따로라, 오가도 앞에 적은 값이 남는다 — 「회」에 다녀오면 양이 어느
+   * 단위였는지 단위 칸에서 사라지므로 따로 기억해 둔다(0.05kg → 회 → g 가 0.05g 이 되지 않게).
+   */
+  const changeServingUnit = (next: string) => {
+    const from = String(draft.servingUnit ?? "") || lastAmountUnit.current;
+    setDraft((prev) => {
+      const amount = Number(prev.servingAmount) || 0;
+      const servingAmount = from && next ? Number(convertSubQuantity(amount, from, next).toFixed(4)) : amount;
+      return { ...prev, servingUnit: next, servingAmount };
+    });
+    if (next) lastAmountUnit.current = next;
+  };
+
   const removeIngredient = (id: string) => {
     setDraft((prev) => ({ ...prev, ingredients: prev.ingredients.filter((ingredient) => ingredient.id !== id) }));
   };
@@ -292,15 +326,23 @@ function RecipeEditor({
       .filter((ingredient) => ingredient.name && (!isSubRecipeRow(ingredient) || Number(ingredient.subRecipeId) > 0));
     if (ingredients.length === 0) { setError("재료를 1개 이상 넣어 주세요."); return; }
     const yieldQuantity = Number(draft.yieldQuantity) || 0;
+    const yieldUnit = yieldQuantity > 0 ? normalizeUnit(draft.yieldUnit) : "";
+    // 1회 제공량을 양으로 적었으면 산출량으로 나눌 수 있어야 한다 — 못 나누면 1회 원가를 모르는 채로 저장된다
+    const byAmount = servesByAmount(draft);
+    const serving = servingPlan({ ...draft, yieldQuantity, yieldUnit });
+    if (byAmount && serving.issue) { setError(serving.issue); return; }
     onSave({
       ...draft,
       name,
       category: draft.category.trim(),
       kind: isSide ? "side" : "menu",
-      servings: Math.max(1, Number(draft.servings) || 1),
+      // 양으로 적었으면 횟수는 산출량 ÷ 1회 제공량 — 이 계산을 모르는 곳도 같은 횟수를 본다
+      servings: byAmount ? Number(serving.count.toFixed(2)) : Math.max(1, Number(draft.servings) || 1),
       // 0 과 빈 문자열로 «없음»을 적는다 — merge 저장이라 undefined 로는 예전 값이 안 지워진다
+      servingUnit: byAmount ? String(draft.servingUnit) : "",
+      servingAmount: byAmount ? Number(draft.servingAmount) || 0 : 0,
       yieldQuantity: yieldQuantity > 0 ? yieldQuantity : 0,
-      yieldUnit: yieldQuantity > 0 ? normalizeUnit(draft.yieldUnit) : "",
+      yieldUnit,
       ingredients,
       salePrice: isSide ? 0 : Number(draft.salePrice) || 0,
       memo: draft.memo?.trim(),
@@ -367,9 +409,26 @@ function RecipeEditor({
               )}
             </div>
             <div>
-              <label className="field-label">{isSide ? "제공 횟수" : "기준 인분"}</label>
-              <input className="input" inputMode="numeric" value={draft.servings || ""} onChange={(e) => updateDraft("servings", toNumber(e.target.value))} placeholder="1" />
-              <div className="muted small field-hint">이 재료 분량으로 몇 번 나가는가</div>
+              <label className="field-label">{servingLabel}</label>
+              {/* 횟수로 적거나(빈 값), 한 번 담는 양으로 적는다 — 소스는 «한 번에 50g»이 세기 쉽다 */}
+              <div className="ri-yield ri-serving">
+                {byAmount ? (
+                  <input className="input" inputMode="decimal" value={draft.servingAmount || ""} onChange={(e) => updateDraft("servingAmount", toNumber(e.target.value))} placeholder="예: 50" aria-label={servingLabel} />
+                ) : (
+                  <input className="input" inputMode="numeric" value={draft.servings || ""} onChange={(e) => updateDraft("servings", toNumber(e.target.value))} placeholder="1" aria-label={servingLabel} />
+                )}
+                <select className="select" value={draft.servingUnit ?? ""} onChange={(e) => changeServingUnit(e.target.value)} aria-label="제공 단위">
+                  <option value="">{isSide ? "회" : "인분"}</option>
+                  {SERVING_UNITS.map((option) => <option key={option} value={option}>{UNIT_LABELS[option as Unit]}</option>)}
+                </select>
+              </div>
+              <div className={`small field-hint ${totals.serving.issue ? "recipe-serving-issue" : "muted"}`}>
+                {!byAmount
+                  ? "이 재료 분량으로 몇 번 나가는가 (g·kg를 고르면 한 번 담는 양으로 적습니다)"
+                  : totals.serving.issue
+                    ? totals.serving.issue
+                    : `한 번 담는 양 — 산출량 ${yieldText(draft)} 기준 ${servingCountText(totals.serving.count, isSide)}`}
+              </div>
             </div>
             {!isSide && (
               <div>
@@ -547,8 +606,8 @@ function RecipeEditor({
         <div className="recipe-modal-foot">
           <div className="recipe-summary">
             <div>
-              <span className="muted small">{isSide ? "1회 제공 원가" : "1인분 원가"}</span>
-              <strong>{won(totals.perServingCost)}</strong>
+              <span className="muted small">{byAmount ? perServingLabel(isSide, totals) : isSide ? "1회 제공 원가" : "1인분 원가"}</span>
+              <strong>{totals.serving.issue ? <span className="muted">계산 안 됨</span> : won(totals.perServingCost)}</strong>
             </div>
             <div>
               <span className="muted small">재료 전체</span>
@@ -628,7 +687,7 @@ export default function Recipes() {
   const averageCostRate = pricedRates.length ? pricedRates.reduce((sum, rate) => sum + rate, 0) / pricedRates.length : null;
   const menuCount = recipes.filter((recipe) => recipe.kind !== "side").length;
   const sideCount = recipes.length - menuCount;
-  const incompleteCount = recipes.filter((recipe) => costOf(recipe).incomplete > 0).length;
+  const incompleteCount = recipes.filter((recipe) => costOf(recipe).incomplete > 0 || costOf(recipe).serving.issue).length;
 
   const openNew = () => setEditing({ ...EMPTY_RECIPE, kind });
   const closeEditor = () => setEditing(null);

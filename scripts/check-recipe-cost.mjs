@@ -217,5 +217,74 @@ check("단위를 바꾸면 양이 따라간다 (0.3L → 300ml), 회분은 그�
   near(rc.convertSubQuantity(0.5, rc.BATCH_UNIT, "ml"), 0.5, "회분은 환산 안 함");
 });
 
+/* ── 1회 제공량을 양으로 (g·kg·ml·L) ─────────────────────── */
+
+// 깻잎소스: 재료 60,000원어치로 12kg 가 나오고, 한 번에 50g 씩 담는다 → 240번, 1회 250원
+const sauce = recipe(10, "깻잎소스", [
+  item("설탕", 5, "kg", 2000),
+  item("간장", 10, "L", 5000),
+], { category: "육수·소스", yieldQuantity: 12, yieldUnit: "kg", servingUnit: "g", servingAmount: 50 });
+
+check("1회 제공량을 g 로 적으면 전체 원가 × 50g ÷ 산출량 12kg (240번)", () => {
+  const cost = rc.createRecipeCoster([sauce]).recipe(sauce);
+  near(cost.totalCost, 60000, "총원가");
+  near(cost.perServingCost, 250, "1회 원가");
+  near(cost.serving.count, 240, "나가는 횟수");
+  assert.equal(cost.serving.amountText, "50g");
+  assert.equal(cost.serving.issue, null);
+});
+
+check("kg 로 적어도 같다 (0.05kg), 부피도 된다 (2L 육수를 300ml 씩)", () => {
+  const inKg = { ...sauce, servingUnit: "kg", servingAmount: 0.05 };
+  near(rc.createRecipeCoster([inKg]).recipe(inKg).perServingCost, 250, "0.05kg");
+  const ladle = { ...stock, servingUnit: "ml", servingAmount: 300 };
+  const cost = rc.createRecipeCoster([ladle]).recipe(ladle);
+  near(cost.perServingCost, 1800, "2L 중 300ml");
+  near(cost.serving.count, 2000 / 300, "횟수는 소수일 수 있다");
+});
+
+check("판매 메뉴도 1인분 양으로 — 원가율이 그 양으로 나온다 (갈비 5kg 중 250g)", () => {
+  const ribs = recipe(11, "돼지갈비", [item("돼지갈비", 5, "kg", 14000)], {
+    kind: "menu", salePrice: 14000, yieldQuantity: 5, yieldUnit: "kg", servingUnit: "g", servingAmount: 250,
+  });
+  const cost = rc.createRecipeCoster([ribs]).recipe(ribs);
+  near(cost.perServingCost, 3500, "1인분 원가");
+  near(cost.costRate, 25, "원가율");
+});
+
+check("산출량이 없으면 1회 원가를 모른다 — 0원·0% 가 아니라 까닭을 남긴다", () => {
+  const noYield = { ...sauce, kind: "menu", salePrice: 5000, yieldQuantity: 0, yieldUnit: "" };
+  const cost = rc.createRecipeCoster([noYield]).recipe(noYield);
+  assert.match(cost.serving.issue ?? "", /산출량/);
+  assert.equal(cost.perServingCost, 0);
+  assert.equal(cost.costRate, null, "원가율도 모른다");
+  near(cost.totalCost, 60000, "재료 전체는 그대로 보인다");
+  assert.equal(cost.incomplete, 0, "재료 줄 문제와는 따로 센다");
+});
+
+check("계열이 다르면(2L 에 50g) 나누지 않고, 양을 안 적으면 적으라고 한다", () => {
+  const mismatch = { ...stock, servingUnit: "g", servingAmount: 50 };
+  assert.match(rc.servingPlan(mismatch).issue ?? "", /단위가 달라/);
+  const noAmount = { ...sauce, servingAmount: 0 };
+  assert.match(rc.servingPlan(noAmount).issue ?? "", /1회 제공량\(g\)을 적어/);
+});
+
+check("횟수로 적은 레시피는 예전 그대로 (빈 단위·모르는 단위는 횟수)", () => {
+  const four = { ...sauce, servings: 4, servingUnit: "", servingAmount: 0 };
+  near(rc.createRecipeCoster([four]).recipe(four).perServingCost, 15000, "60,000 ÷ 4");
+  const odd = { ...sauce, servings: 4, servingUnit: "ea", servingAmount: 50 };
+  near(rc.createRecipeCoster([odd]).recipe(odd).perServingCost, 15000, "ea 는 양이 아니다");
+  assert.equal(rc.servingPlan(four).amountText, "");
+  assert.deepEqual(["g", "kg", "ml", "L", "", "ea", "회", undefined].map((servingUnit) => rc.servesByAmount({ servingUnit })),
+    [true, true, true, true, false, false, false, false]);
+});
+
+check("양으로 적은 레시피를 다른 레시피에 넣어도 단가는 산출량 기준 그대로 (12kg 중 100g)", () => {
+  const salad = recipe(12, "샐러드", [sub(10, 100, "g")]);
+  const line = rc.createRecipeCoster([sauce, salad]).ingredient(salad.ingredients[0], salad);
+  near(line.unitCost, 5, "g 당 단가");
+  near(line.subtotal, 500, "100g");
+});
+
 console.log(results.join("\n"));
 console.log(process.exitCode ? "\n실패한 검사가 있습니다." : "\n모든 검사를 통과했습니다.");

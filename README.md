@@ -280,6 +280,10 @@ users/{uid}                           # name, role, storeId, employeeId, active
   단위를 바꾸면 수량과 단가가 같이 환산돼 재료비는 그대로다(0.6kg × 12,000원 = 600g × 12원).
 - **판매 메뉴와 기본 상차림을 가른다**. 김반찬·겉절이·쌈장은 판매가가 없으니 원가만 본다.
   원가율(재료비 ÷ 판매가)은 판매가가 있는 메뉴에서만 나온다. 인건비·운영비 배분은 없다.
+- **1회(1인분) 원가는 횟수나 양으로 낸다**. 「제공 횟수」 옆 단위에서 회(인분)를 고르면 전체 원가 ÷ 횟수,
+  g·kg·ml·L 를 고르면 한 번 담는 양으로 적어 전체 원가 × 1회 제공량 ÷ 산출량(깻잎소스 12kg 중 50g → 240번).
+  산출량이 없거나 계열이 다르면(2L 에 50g) 나눌 수 없어 저장하지 않는다. 저장할 때 `servings` 에는 산출량 ÷ 1회 제공량을
+  다시 적어, 이 계산을 모르는 곳도 같은 횟수를 본다(`servingUnit`·`servingAmount`, `src/lib/recipeCost.ts`).
 - **엑셀에서 옮기기**: `python3 scripts/import-recipes-xlsx.py 원가재고관리.xlsx` 가 `src/data/seed/haneulttang-recipes.json` 을 만들고
   (데모 모드 샘플로도 쓰인다), `GOOGLE_APPLICATION_CREDENTIALS=… node scripts/upload-recipes.mjs` 가 Firestore 에 넣는다.
   이미 있는 이름은 건드리지 않는다. 숫자로 못 옮긴 수량은 재료의 `note` 에 원문을 남긴다.
