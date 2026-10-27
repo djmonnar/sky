@@ -430,6 +430,15 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      /*
+        확정 알림톡 차지 표 — 예약번호마다 «이 예약에 확정 안내를 이미 넘겼는가». 같은 예약에 두 번
+        보내지 않는 장치라 함수만 읽고 쓴다(functions/reservationAlimtalk.js). 화면은 예약 문서의
+        `alimtalk` 칸(결과)만 본다.
+      */
+      match /reservationAlimtalks/{id} {
+        allow read, write: if false;
+      }
+
       match /shifts/{id} {
         // staff는 본인 근무표만 (slot 모델은 employeeId, 기존 문서는 empId)
         allow read: if canManageSchedule(storeId)

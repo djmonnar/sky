@@ -144,6 +144,21 @@ export interface Reservation {
   source?: string;
   /** 네이버 예약에서 온 예약에만 있다. 동기화만 쓴다. */
   naver?: NaverReservationInfo;
+  /**
+   * 「예약 확정 안내」 알림톡 결과 — 함수가 적는다(functions/reservationAlimtalk.js). 하늘땅에서 넣은
+   * 예약이 확정이 되는 순간 한 번 오너비스타에 넘기고 그 답을 여기 남긴다. 네이버 예약에는 없다.
+   */
+  alimtalk?: ReservationAlimtalk;
+}
+
+export interface ReservationAlimtalk {
+  /** sent: 오너비스타가 보내기로 넣었다 · skipped: 보낼 조건이 아니었다 · failed: 넘기지 못했다 */
+  status: "sent" | "skipped" | "failed";
+  reason?: string;
+  /** 안 보낸·못 보낸 까닭(사람이 읽는 말). 보냈으면 null */
+  message?: string | null;
+  /** ISO 시각 */
+  at?: string;
 }
 
 /**

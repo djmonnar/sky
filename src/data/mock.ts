@@ -50,8 +50,8 @@ export const EMPLOYEES: Employee[] = [
 ];
 
 export const SEED_RESERVATIONS: Reservation[] = [
-  { id: 1, date: TODAY_STR, time: "11:30", name: "박지훈", phone: "010-1234-5678", people: 4, seat: "룸1", status: "예약확정", request: "창가 자리 선호", writer: "김현지", createdAt: "2026-06-10 14:25" },
-  { id: 2, date: TODAY_STR, time: "12:00", name: "최수민", phone: "010-2345-6789", people: 12, seat: "단체석", status: "단체", request: "단체 회식, 미리 상차림 요청", writer: "박현제", createdAt: "2026-06-09 11:02", memo: "선결제 완료" },
+  { id: 1, date: TODAY_STR, time: "11:30", name: "박지훈", phone: "010-1234-5678", people: 4, seat: "룸1", status: "예약확정", request: "창가 자리 선호", writer: "김현지", createdAt: "2026-06-10 14:25", alimtalk: { status: "sent", reason: "queued", message: null, at: "2026-06-10T05:25:04.000Z" } },
+  { id: 2, date: TODAY_STR, time: "12:00", name: "최수민", phone: "010-2345-6789", people: 12, seat: "단체석", status: "단체", request: "단체 회식, 미리 상차림 요청", writer: "박현제", createdAt: "2026-06-09 11:02", memo: "선결제 완료", alimtalk: { status: "sent", reason: "queued", message: null, at: "2026-06-09T02:02:05.000Z" } },
   { id: 3, date: TODAY_STR, time: "12:30", name: "김도현", phone: "010-2468-1357", people: 2, seat: "창가", status: "방문완료", request: "성인 2, 아동 0", writer: "김현지", createdAt: "2026-06-10 14:25" },
   { id: 4, date: TODAY_STR, time: "13:00", name: "이서윤", phone: "010-3456-7890", people: 3, seat: "홀A", status: "확인전화필요", request: "유아의자 1개", writer: "박현제", createdAt: "2026-06-11 09:40" },
   { id: 5, date: TODAY_STR, time: "17:30", name: "강민재", phone: "010-4567-8901", people: 5, seat: "홀B", status: "예약확정", writer: "김현지", createdAt: "2026-06-11 18:12" },
@@ -61,7 +61,7 @@ export const SEED_RESERVATIONS: Reservation[] = [
   { id: 9, date: TODAY_STR, time: "19:30", name: "임준호", phone: "010-8901-2345", people: 2, seat: "창가", status: "취소", memo: "개인 사정으로 취소", writer: "김현지", createdAt: "2026-06-10 10:15" },
   { id: 10, date: TODAY_STR, time: "20:00", name: "송예진", phone: "010-9012-3456", people: 6, seat: "룸1", status: "확인전화필요", request: "룸 희망, 인원 변동 가능", writer: "박현제", createdAt: "2026-06-11 20:48" },
   { id: 11, date: TODAY_STR, time: "20:30", name: "백승호", phone: "010-1357-2468", people: 3, seat: "홀B", status: "노쇼", writer: "김현지", createdAt: "2026-06-07 12:00" },
-  { id: 12, date: TODAY_STR, time: "21:00", name: "조은별", phone: "010-2469-1358", people: 2, seat: "홀C", status: "예약확정", writer: "김현지", createdAt: "2026-06-12 08:30" },
+  { id: 12, date: TODAY_STR, time: "21:00", name: "조은별", phone: "010-2469-1358", people: 2, seat: "홀C", status: "예약확정", writer: "김현지", createdAt: "2026-06-12 08:30", alimtalk: { status: "failed", reason: "unreachable", message: "오너비스타에 닿지 못해 확정 알림톡을 보내지 못했습니다.", at: "2026-06-11T23:30:09.000Z" } },
 ];
 
 const EMPLOYEE_BY_ID = new Map(EMPLOYEES.map((e) => [e.id, e]));

@@ -1,6 +1,6 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret } = require("firebase-functions/params");
 const crypto = require("crypto");
@@ -10,6 +10,7 @@ const { createKakaoMemo, MemoError, canRun: canRunChecklistAction } = require(".
 const { createDailyReports } = require("./dailyReports");
 const { parseQuickReservation, normalizePhone } = require("./quickReservation");
 const naverSync = require("./naverReservationSync");
+const { createReservationAlimtalk } = require("./reservationAlimtalk");
 
 admin.initializeApp();
 
@@ -3582,6 +3583,68 @@ exports.onReservationCreatedPush = onDocumentCreated(
   async (event) => {
     if (event.params.storeId !== STORE_ID || !event.data) return;
     await sendReservationCreatedPush(event.params.reservationId, event.data.data() || {});
+  }
+);
+
+/*
+  하늘땅에서 넣은 확정 예약 → 오너비스타가 「예약 확정 안내」 알림톡 (functions/reservationAlimtalk.js).
+  네이버 예약은 오너비스타 자동알림이 따로 보낸다. 예약이 «확정이 되는 순간» 한 번만 넘기고,
+  결과는 예약 문서 `alimtalk` 칸에 적는다(예약 화면 상세에 보인다). 연결 키는 예약 넘기기와 같다 —
+  오너비스타 포털에서 「저쪽에서 넣은 확정 예약에도 예약 확정 알림톡 보내기」를 켜야 실제로 나간다.
+*/
+const OWNERVISTA_BOOKING_ALIMTALK_URL = "https://ownervista.co.kr/api/partners/booking-alimtalk";
+
+const reservationAlimtalk = createReservationAlimtalk({
+  claim: async (id) => {
+    try {
+      await storeDoc("reservationAlimtalks", id).create({ claimedAt: admin.firestore.FieldValue.serverTimestamp() });
+      return true;
+    } catch (error) {
+      // 이미 있다 = 앞선 부름이 이 예약을 차지했다(두 번 저장·재시도가 겹친 것)
+      if (error && (error.code === 6 || error.code === "already-exists")) return false;
+      throw error;
+    }
+  },
+  record: async (id, result, { claimed }) => {
+    const entry = { status: result.status, reason: result.reason, message: result.message ?? null, at: new Date().toISOString() };
+    if (claimed) {
+      await storeDoc("reservationAlimtalks", id).set(
+        { ...entry, finishedAt: admin.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    }
+    // 그새 예약을 지웠으면 적을 곳이 없다 — 차지 표에는 남았다
+    await storeDoc("reservations", id).update({ alimtalk: entry }).catch(() => {});
+  },
+  post: async (payload) => {
+    const token = process.env.OWNERVISTA_BOOKING_FEED_TOKEN;
+    if (!token) return { status: 401, body: null };
+    const response = await fetch(OWNERVISTA_BOOKING_ALIMTALK_URL, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000),
+    });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  },
+});
+
+exports.reservationAlimtalk = onDocumentWritten(
+  {
+    document: "stores/{storeId}/reservations/{reservationId}",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    secrets: [ownervistaBookingFeedToken],
+  },
+  async (event) => {
+    if (event.params.storeId !== STORE_ID || !event.data) return;
+    const before = event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    const outcome = await reservationAlimtalk({ id: event.params.reservationId, before, after });
+    if (outcome.action === "send") {
+      // 손님 번호·이름은 안 남긴다
+      console.log("RESERVATION_ALIMTALK", event.params.reservationId, outcome.result.status, outcome.result.reason);
+    }
   }
 );
 
