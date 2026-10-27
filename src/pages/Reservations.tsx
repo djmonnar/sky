@@ -25,6 +25,36 @@ const NAVER_DELETE_NOTE = "\n네이버 예약은 여기서 지우면 네이버�
 /** 「18:30 김하늘 2명」 — 겹쳐 보이는 예약을 짧게 가리킬 때. */
 const shortLabel = (r: Reservation) => `${r.time} ${r.name} ${r.people}명`;
 
+/** ISO 시각 → 「10/27 14:03」 (한국 시각) */
+function alimtalkWhen(iso?: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.valueOf())) return "";
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${Number(parts.month)}/${Number(parts.day)} ${parts.hour}:${parts.minute}`;
+}
+
+/**
+ * 「예약 확정 안내」 알림톡이 갔는가 — 하늘땅에서 넣은 예약이 확정이 될 때 한 번 오너비스타가 보낸다
+ * (functions/reservationAlimtalk.js). 결과가 없는 예약(네이버 예약·확정 전·이 기능 전에 넣은 것)은 줄을 안 그린다.
+ */
+function AlimtalkLine({ r }: { r: Reservation }) {
+  const result = r.alimtalk;
+  if (!result) return null;
+  const when = alimtalkWhen(result.at);
+  const text = result.status === "sent"
+    ? `오너비스타로 보냄${when ? ` · ${when}` : ""}`
+    : `${result.status === "failed" ? "못 보냄" : "안 보냄"} — ${result.message ?? "까닭을 모릅니다"}`;
+  return (
+    <div className="detail-line">
+      <span className="k">확정 알림톡</span>
+      <span className={`v resv-alimtalk ${result.status}`}>{text}</span>
+    </div>
+  );
+}
+
 /**
  * 오너비스타에서 예약을 가져오는 네이버 매장을 바꾸기 전에 옮겨 온 예약인가.
  *
@@ -613,6 +643,7 @@ export default function Reservations() {
                     </div>
                     <div className="detail-line"><span className="k">요청사항</span><span className="v">{r.request ?? "-"}</span></div>
                     <div className="detail-line"><span className="k">작성자</span><span className="v">{r.writer}</span></div>
+                    <AlimtalkLine r={r} />
                     {duplicateWith(r).length > 0 && (
                       <div className="detail-line">
                         <span className="k">중복 확인</span>
@@ -660,6 +691,7 @@ export default function Reservations() {
               <div className="detail-line"><span className="k">요청사항</span><span className="v">{sel.request ?? "-"}</span></div>
               <div className="detail-line"><span className="k">작성자</span><span className="v">{sel.writer}</span></div>
               <div className="detail-line"><span className="k">접수일시</span><span className="v small">{sel.createdAt}</span></div>
+              <AlimtalkLine r={sel} />
               {isNaver(sel) && (
                 <>
                   <div className="detail-line"><span className="k">네이버 번호</span><span className="v num">{sel.naver?.bookingId}</span></div>

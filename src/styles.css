@@ -1856,6 +1856,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .naver-note { margin-top: 10px; color: var(--text-muted); font-size: 12px; line-height: 1.5; word-break: keep-all; }
 /* 네이버 안내 문장(중복 확인·손 예약·예전 매장)은 낱말 중간에서 끊지 않는다. */
 .detail-line .v.naver-text { word-break: keep-all; line-height: 1.5; }
+/* 확정 알림톡 결과 — 보냄은 초록, 못 보냄은 주황(손님이 안내를 못 받았다), 안 보냄(조건 아님)은 흐리게 */
+.detail-line .v.resv-alimtalk { word-break: keep-all; line-height: 1.5; }
+.resv-alimtalk.sent { color: var(--good-tx); font-weight: 700; }
+.resv-alimtalk.failed { color: var(--amber-tx); font-weight: 700; }
+.resv-alimtalk.skipped { color: var(--text-muted); }
 /*
   카드 머리의 배지(네이버·예전 매장·중복 확인·인원·상태)가 많으면 좁은 휴대폰에서 서로 끼어든다.
   넘칠 때만 다음 줄로 내리고 오른쪽에 붙인다 — 배지가 하나둘이면 지금과 같다.
