@@ -872,7 +872,7 @@ export interface KakaoMemoScheduleEntry {
   at?: string;
 }
 
-export type KakaoMemoReportType = "reservations" | "settlement";
+export type KakaoMemoReportType = "reservations" | "settlement" | "weekly";
 
 export type KakaoMemoSchedule = Partial<Record<KakaoMemoReportType, KakaoMemoScheduleEntry>>;
 

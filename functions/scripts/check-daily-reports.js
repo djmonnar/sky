@@ -14,7 +14,9 @@ const assert = require("node:assert");
 const {
   createDailyReports, buildReservationsMemo, buildSettlementMemo, salesFreshnessNote, effectiveSales, checklistSummary,
   laborCostOf, laborLine, shiftMinutes,
+  buildWeeklyMemo, lastWeekOf, fixedCostShare, weekReservationStats, laborCostOfDates,
 } = require("../dailyReports");
+const { phoneKey } = require("../naverReservationSync");
 const { canRun, MEMO_TEXT_LIMIT } = require("../kakaoMemo");
 
 /* ── 가짜 Firestore ── */
@@ -206,6 +208,120 @@ async function check(label, fn) {
     assert.strictEqual(laborLine({ total: 270_000, unknown: 0 }, { amount: 5_000_000, source: "naver" }), "인건비 270,000원(매출의 5%)");
     assert.strictEqual(laborLine({ total: 270_000, unknown: 2 }, null), "인건비 270,000원 · 2명 모름");
     assert.strictEqual(laborLine(null, { amount: 1 }), null);
+  });
+
+  /* ── 주간 보고 ── */
+
+  await check("주간: «지난주»는 다 끝난 앞 주 월~일 — 월요일에 보내면 바로 앞 주, 다른 요일 시험도 같다", async () => {
+    assert.deepStrictEqual(lastWeekOf("2026-10-26"), { start: "2026-10-19", end: "2026-10-25" }, "월요일");
+    assert.deepStrictEqual(lastWeekOf("2026-10-28"), { start: "2026-10-19", end: "2026-10-25" }, "수요일 시험");
+    assert.deepStrictEqual(lastWeekOf("2026-10-25"), { start: "2026-10-12", end: "2026-10-18" }, "일요일은 그 주가 안 끝났다");
+  });
+
+  await check("주간: 고정비 몫 = 날마다 그달 고정비 ÷ 그달 날수, 걸친 달 하나라도 안 적었으면 «미입력»(null)", async () => {
+    const oct = ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25"];
+    assert.strictEqual(fixedCostShare(oct, new Map([["2026-10", 3_100_000]])), 700_000);
+    const span = ["2026-10-29", "2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
+    assert.strictEqual(fixedCostShare(span, new Map([["2026-10", 3_100_000]])), null, "11월을 안 적었다");
+    assert.strictEqual(fixedCostShare(span, new Map([["2026-10", 3_100_000], ["2026-11", 3_000_000]])), 300_000 + 400_000);
+  });
+
+  await check("주간: 예약 — 취소 빼고 팀·인원, 노쇼, 재방문(그 전에 다녀간 적 있는 번호, 번호 모양 달라도 같은 손님)", async () => {
+    const reservations = [
+      { date: "2026-09-01", status: "방문완료", phone: "010-1111-2222", people: 2 },
+      { date: "2026-10-20", status: "예약확정", phone: "01011112222", people: 4 }, // 재방문
+      { date: "2026-10-21", status: "방문완료", phone: "010-3333-4444", people: 2 }, // 처음
+      { date: "2026-10-22", status: "노쇼", phone: "010-5555-6666", people: 3 },
+      { date: "2026-10-23", status: "취소", phone: "010-1111-2222", people: 9 },
+      { date: "2026-10-26", status: "예약확정", phone: "010-1111-2222", people: 2 }, // 다음 주
+    ];
+    assert.deepStrictEqual(
+      weekReservationStats({ start: "2026-10-19", end: "2026-10-25", reservations, phoneKey }),
+      { teams: 3, people: 9, noShow: 1, revisit: 1 },
+    );
+  });
+
+  await check("주간: 글 — 매출·전주 대비, 매입·인건비(%), 고정비 → 이익 추정, 예약·노쇼율·재방문", async () => {
+    const text = buildWeeklyMemo({
+      start: "2026-10-19", end: "2026-10-25",
+      sales: { total: 52_000_000, days: 7, prevTotal: 48_000_000, prevDays: 7 },
+      purchases: { total: 3_000_000, count: 5 },
+      labor: { total: 10_400_000, unknown: 0 },
+      fixed: 1_400_000,
+      reservations: { teams: 40, people: 150, noShow: 2, revisit: 11 },
+    });
+    assert.strictEqual(text, [
+      "[하늘땅] 주간 보고 10/19(월)~10/25(일)",
+      "매출 52,000,000원 · 전주 대비 +8%",
+      "매입 3,000,000원 · 인건비 10,400,000원(매출의 20%)",
+      "고정비 1,400,000원 → 이익 추정 37,200,000원",
+      "예약 40팀 150명 · 노쇼 2팀(5%) · 재방문 11팀",
+    ].join("\n"));
+  });
+
+  await check("주간: 모르는 칸은 0 이 아니라 — 매출 없음·고정비 미입력·예약 없음, 큰 숫자도 200자 안", async () => {
+    const empty = buildWeeklyMemo({
+      start: "2026-10-19", end: "2026-10-25",
+      sales: { total: 0, days: 0, prevTotal: 0, prevDays: 0 },
+      purchases: { total: 0, count: 0 },
+      labor: null,
+      fixed: null,
+      reservations: { teams: 0, people: 0, noShow: 0, revisit: 0 },
+    });
+    assert.strictEqual(empty, [
+      "[하늘땅] 주간 보고 10/19(월)~10/25(일)",
+      "매출 아직 안 들어옴",
+      "매입 0원",
+      "고정비 미입력(손익 탭에 적으면 이익도 알려 드림)",
+      "예약 없음",
+    ].join("\n"));
+    const big = buildWeeklyMemo({
+      start: "2026-10-19", end: "2026-10-25",
+      sales: { total: 152_345_678, days: 6, prevTotal: 140_000_000, prevDays: 7 },
+      purchases: { total: 13_210_000, count: 40 },
+      labor: { total: 29_876_000, unknown: 2 },
+      fixed: 6_340_000,
+      reservations: { teams: 148, people: 612, noShow: 12, revisit: 42 },
+    });
+    assert.ok(big.length <= MEMO_TEXT_LIMIT, `${big.length}자`);
+    assert.ok(big.endsWith("재방문 42팀"), big);
+    assert.match(big, /매출 152,345,678원 · 6일 · 전주 대비 \+9%/);
+  });
+
+  await check("주간: 모으기 — 그 주 매출(OK포스 우선)·전주, 그 주 매입, 인건비 7일, 고정비 몫, 예약", async () => {
+    const put = (col, id, value) => db.set(`${col}/${id}`, value);
+    // 보내는 날 10/26(월) → 지난주 10/19~10/25
+    put("salesDailySummaries", "2026-10-20", { businessDate: "2026-10-20", netAmount: 4_000_000, source: "ownervista", okpos: { netAmount: 4_500_000 } });
+    put("salesDailySummaries", "2026-10-12", { businessDate: "2026-10-12", netAmount: 9_000_000, source: "ownervista" }); // 전주
+    put("purchaseOrders", "9", { status: "received", totalAmount: 70_000, receivedAt: "2026-10-24T05:00:00.000Z" });
+    put("fixedCosts", "2026-10", { month: "2026-10", items: [{ id: "r", name: "임대료", amount: 3_100_000 }] });
+    put("reservations", "w1", { date: "2026-10-21", time: "12:00", name: "재방문손님", people: 4, status: "방문완료", phone: "010-1111-2222" });
+    const w = await reports.gatherWeekly("2026-10-26");
+    assert.deepStrictEqual([w.start, w.end], ["2026-10-19", "2026-10-25"]);
+    // 10/19 네이버 5,000,000 + 10/20 OK포스 4,500,000 · 전주 10/12 9,000,000(10/18 OK포스는 이번 주 아님)
+    assert.deepStrictEqual(w.sales, { total: 9_500_000, days: 2, prevTotal: 9_000_000 + 7_503_100, prevDays: 2 });
+    assert.deepStrictEqual(w.purchases, { total: 90_000 + 70_000, count: 2 }, "10/19 입고·10/24 입고, 취소·10/18 빠짐");
+    // 월급 하루 몫 100,000 × 7 + 10/19 건별 120,000 + 시급 50,000 (10/20 건별 60,000 은 다른 날 칸도 이번 주라 더함)
+    assert.deepStrictEqual(w.labor, { total: 700_000 + 120_000 + 50_000 + 60_000, unknown: 0 });
+    assert.strictEqual(w.fixed, 700_000);
+    // 10/19 넷(김하늘·최미선·정미자·노쇼손님, 취소 빼고) + 10/20 내일손님 + 10/21 재방문손님(10/19 김하늘과 같은 번호)
+    assert.deepStrictEqual(w.reservations, { teams: 6, people: 22, noShow: 1, revisit: 1 });
+    assert.deepStrictEqual(laborCostOfDates({ dates: [], shifts: [], employees: [] }), null);
+  });
+
+  await check("주간 보내기: 손익 버튼·손익 화면 링크, 매출을 새로 받아 오지 않는다, 같은 월요일엔 한 번", async () => {
+    const result = await reports.send("weekly", { date: "2026-10-26", trigger: "test", by: "김지현" });
+    assert.deepStrictEqual(events, ["broadcast"], "주간은 받아 오기 없이");
+    assert.strictEqual(result.status, "sent");
+    assert.strictEqual(sent[0].buttonTitle, "손익 보기");
+    assert.strictEqual(sent[0].link, "https://sky.example.app/finance?tab=profit");
+    assert.match(sent[0].text, /^\[하늘땅\] 주간 보고 10\/19\(월\)~10\/25\(일\)/);
+    assert.strictEqual(db.get("meta/kakaoMemoSchedule").weekly.trigger, "test");
+    await reports.runScheduled("weekly");
+    await reports.runScheduled("weekly");
+    assert.strictEqual(sent.length, 2, "시험 1 + 자동 1 — 자동은 같은 날 두 번 안 나간다");
+    assert.strictEqual(canRun("sendWeekly", "admin"), true);
+    assert.strictEqual(canRun("sendWeekly", "manager"), false);
   });
 
   /* ── 모으기 ── */

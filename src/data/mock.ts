@@ -289,6 +289,21 @@ export const SEED_PURCHASE_ORDERS: PurchaseOrder[] = [
       { inventoryItemId: 1, name: "김치", qty: 20, unit: "kg", unitPrice: 4500, totalPrice: 90000 },
     ],
   },
+  {
+    // 레시피 「매입 단가가 바뀐 재료」 예시 — 깻잎소스 등의 설탕(레시피 2,083원/kg)이 2,400원/kg 로 들어왔다
+    id: 2,
+    vendorId: 1,
+    vendorName: "하늘식자재",
+    status: "received",
+    createdAt: `${TODAY_STR}T08:00:00+09:00`,
+    receivedAt: `${TODAY_STR}T11:00:00+09:00`,
+    totalAmount: 48000,
+    memo: "데모 입고",
+    settlementStatus: "unsettled",
+    items: [
+      { inventoryItemId: 0, name: "설탕", qty: 20, unit: "kg", unitPrice: 2400, totalPrice: 48000 },
+    ],
+  },
 ];
 
 export const SEED_SALES_ORDERS: SalesOrder[] = [

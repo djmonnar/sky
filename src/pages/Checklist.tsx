@@ -218,7 +218,8 @@ function TemplateEditor({
 
 const DAILY_REPORTS: Array<{ type: KakaoMemoReportType; time: string; label: string; what: string }> = [
   { type: "reservations", time: "오전 11:00", label: "오늘 예약", what: "시간·이름·인원 (취소·노쇼 빼고)" },
-  { type: "settlement", time: "오후 10:30", label: "일일 정산", what: "22시 마감까지의 매출·이번 달 누적·매입·예약·체크리스트" },
+  { type: "settlement", time: "오후 10:30", label: "일일 정산", what: "22시 마감까지의 매출·이번 달 누적·매입·인건비율·예약·체크리스트" },
+  { type: "weekly", time: "월요일 오전 9:00", label: "주간 보고", what: "지난주 매출·전주 대비, 매입·인건비율, 고정비 뺀 이익 추정, 예약·노쇼율·재방문" },
 ];
 
 /** "10/19 22:00 · 자동 · 2곳" */
@@ -317,9 +318,9 @@ function MemoTargets({
         </ul>
       )}
 
-      {/* 매일 정한 시각에 위 받는 곳 모두에 간다. 시험으로 보내도 그날 자동 발송은 따로 나간다. */}
+      {/* 정한 시각에 위 받는 곳 모두에 간다. 시험으로 보내도 그날 자동 발송은 따로 나간다. */}
       <div className="cl-daily">
-        <div className="field-label">매일 자동으로 보내는 것</div>
+        <div className="field-label">자동으로 보내는 것</div>
         <ul className="cl-daily-list">
           {DAILY_REPORTS.map((report) => (
             <li key={report.type}>

@@ -828,6 +828,22 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   background: var(--green-700);
   color: #fff;
 }
+/* 그날 예약 인원 — 사람을 몇 명 넣을지 정할 때 보이게. 예약이 없으면 흐리게 */
+.schedule-day-load {
+  margin: 4px 0 2px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--blue-tx);
+  word-break: keep-all;
+}
+.schedule-day-load.none { color: var(--text-muted); font-weight: 600; }
+.schedule-period-load {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--blue-tx);
+}
 .schedule-period-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2493,6 +2509,19 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ri-issue { font-size: 12px; font-weight: 700; color: var(--amber-tx); line-height: 1.5; word-break: keep-all; }
+/* 매입 단가가 바뀐 재료 (PriceWatchCard) — 오르면 주황, 내리면 파랑 */
+.price-watch-quiet { margin: 0 0 12px; word-break: keep-all; }
+.price-watch-card { margin-bottom: 14px; }
+.price-watch-list { display: grid; gap: 10px; }
+.price-watch-item { padding: 12px; border: 1px solid var(--border); border-left: 4px solid var(--amber-300); border-radius: 10px; }
+.price-watch-item.down { border-left-color: var(--blue-300); }
+.price-watch-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; word-break: keep-all; }
+.price-watch-pct { margin-left: 6px; font-style: normal; font-weight: 800; color: var(--amber-tx); }
+.price-watch-item.down .price-watch-pct { color: var(--blue-tx); }
+.price-watch-recipes { margin: 8px 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
+.price-watch-recipes li { display: flex; justify-content: space-between; gap: 10px; word-break: keep-all; }
+.price-watch-high { color: var(--red-tx); font-weight: 800; }
+
 /* 1회 제공량을 g·kg로 적었는데 산출량으로 못 나눌 때 — 1회 원가가 «계산 안 됨»인 까닭 */
 .recipe-serving-issue { color: var(--amber-tx); font-weight: 700; word-break: keep-all; }
 .recipe-used-by {

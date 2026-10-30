@@ -143,10 +143,11 @@ export function useChecklist(date: string) {
     return { url: "https://asia-northeast3-skyearth-84a78.cloudfunctions.net/kakaoMemoAuth?invite=demo", expiresAtMs: Date.now() + 86_400_000, label };
   }, []);
 
-  /** 매일 자동으로 가는 것(11시 오늘 예약·22시 30분 일일 정산)을 지금 시험으로 보낸다 */
+  /** 자동으로 가는 것(11시 오늘 예약·22시 30분 일일 정산·월요일 9시 주간 보고)을 지금 시험으로 보낸다 */
   const sendReport = useCallback(async (type: KakaoMemoReportType): Promise<ChecklistSendResult> => {
     if (APP_MODE === "live") {
-      return callChecklistApi<ChecklistSendResult>({ action: type === "reservations" ? "sendReservations" : "sendSettlement" });
+      const action = { reservations: "sendReservations", settlement: "sendSettlement", weekly: "sendWeekly" }[type];
+      return callChecklistApi<ChecklistSendResult>({ action });
     }
     const active = demo.links.filter((link) => link.active);
     demo.schedule = {
@@ -154,10 +155,13 @@ export function useChecklist(date: string) {
       [type]: { date: date, status: active.length ? "sent" : "no_links", trigger: "test", by: actorName, delivered: active.length, failed: 0, at: nowText() },
     };
     notifyDemo();
+    const demoText = {
+      reservations: "[하늘땅] 오늘 예약 3팀 · 11명\n11:50 최미선 3명\n12:00 정미자 4명\n18:00 김하늘 4명 창가",
+      settlement: "[하늘땅] 일일 정산\n매출 7,503,100원 (네이버)\n이번 달 110,214,800원 · 18일\n매입 90,000원 · 1건\n인건비 1,350,000원(매출의 18%)\n예약 5팀 22명\n체크리스트 오픈 4/4 · 마감 3/4",
+      weekly: "[하늘땅] 주간 보고 6/1(월)~6/7(일)\n매출 52,000,000원 · 전주 대비 +8%\n매입 3,000,000원 · 인건비 10,400,000원(매출의 20%)\n고정비 1,400,000원 → 이익 추정 37,200,000원\n예약 40팀 150명 · 노쇼 2팀(5%) · 재방문 11팀",
+    }[type];
     return {
-      text: type === "reservations"
-        ? "(데모 — 실제로 보내지 않았습니다)\n[하늘땅] 오늘 예약 3팀 · 11명\n11:50 최미선 3명\n12:00 정미자 4명\n18:00 김하늘 4명 창가"
-        : "(데모 — 실제로 보내지 않았습니다)\n[하늘땅] 일일 정산\n매출 7,503,100원 (네이버)\n이번 달 110,214,800원 · 18일\n매입 90,000원 · 1건\n예약 5팀 22명\n체크리스트 오픈 4/4 · 마감 3/4",
+      text: `(데모 — 실제로 보내지 않았습니다)\n${demoText}`,
       delivered: active.map((link) => link.label),
       failed: [],
     };

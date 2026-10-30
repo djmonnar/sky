@@ -3860,7 +3860,7 @@ exports.checklistApi = onRequest(
     }
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const actor = { uid: auth.uid, name: auth.name, role: auth.role };
-    if (!["send", "invite", "unlink", "sendReservations", "sendSettlement"].includes(body.action)) {
+    if (!["send", "invite", "unlink", "sendReservations", "sendSettlement", "sendWeekly"].includes(body.action)) {
       res.status(400).json({ ok: false, message: "알 수 없는 요청입니다." });
       return;
     }
@@ -3884,9 +3884,9 @@ exports.checklistApi = onRequest(
         res.status(200).json({ ok: true });
         return;
       }
-      if (body.action === "sendReservations" || body.action === "sendSettlement") {
+      if (body.action === "sendReservations" || body.action === "sendSettlement" || body.action === "sendWeekly") {
         // 시험으로 보내기 — 그날 정한 시각의 자동 발송은 막지 않는다
-        const type = body.action === "sendReservations" ? "reservations" : "settlement";
+        const type = { sendReservations: "reservations", sendSettlement: "settlement", sendWeekly: "weekly" }[body.action];
         const result = await dailyReports.send(type, { trigger: "test", by: actor.name });
         res.status(200).json({ ok: true, ...result });
         return;
@@ -3939,6 +3939,25 @@ exports.dailySettlementMemoScheduled = onSchedule(
   async () => {
     const result = await dailyReports.runScheduled("settlement");
     console.log("SETTLEMENT_MEMO", result.status, (result.delivered || []).length);
+  }
+);
+
+/*
+  주간 보고는 매주 월요일 오전 9시 — 지난주(월~일) 매출·전주 대비, 매입·인건비율, 고정비를 뺀 이익 추정,
+  예약·노쇼율·재방문(2026-10-30 사장님 요청). 매출은 일요일 22시까지 이미 받아 둔 것을 쓴다(새로 받아 오지 않는다).
+  같은 월요일에 두 번 나가지 않는다(kakaoMemoReports/{날짜}_weekly).
+*/
+exports.weeklyReportMemoScheduled = onSchedule(
+  {
+    schedule: "0 9 * * 1",
+    timeZone: TZ,
+    timeoutSeconds: 120,
+    memory: "256MiB",
+    secrets: [kakaoRestApiKey, kakaoClientSecret],
+  },
+  async () => {
+    const result = await dailyReports.runScheduled("weekly");
+    console.log("WEEKLY_MEMO", result.status, (result.delivered || []).length);
   }
 );
 

@@ -15,7 +15,9 @@
     "test:naver": "node scripts/check-naver-reservations.mjs",
     "test:permissions": "node scripts/check-permissions.mjs",
     "test:history": "node scripts/check-customer-history.mjs",
-    "test:fixedcost": "node scripts/check-fixed-costs.mjs"
+    "test:fixedcost": "node scripts/check-fixed-costs.mjs",
+    "test:scheduleload": "node scripts/check-schedule-load.mjs",
+    "test:pricewatch": "node scripts/check-price-watch.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",

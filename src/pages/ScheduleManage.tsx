@@ -9,6 +9,7 @@ import {
   countSlots, shiftDateForDay, shiftsForDay, sortShifts,
 } from "../lib/shifts";
 import { employmentLabel } from "../lib/payroll";
+import { loadText, reservationLoadByDate } from "../lib/scheduleLoad";
 
 /** 매트릭스 행: 오전·홀 / 오전·주방 / 오후·홀 / 오후·주방 */
 const ROWS: { period: ShiftPeriod; department: Department }[] = [
@@ -76,9 +77,18 @@ const shiftAssignmentId = (
     : `${date}_${period}_${department}_${employeeId}`;
 
 export default function ScheduleManage() {
-  const { shifts, setShift, deleteShift, showToast, employees, userProfiles, role } = useStore();
+  const { shifts, setShift, deleteShift, showToast, employees, userProfiles, role, reservations, canAccess } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const week = useMemo(() => weekDates(weekBase(weekOffset)), [weekOffset]);
+  /*
+    날짜·시간대마다 예약 인원 — 사람을 몇 명 넣을지 정할 때 보이게(2026-10-30). 예약을 못 읽는 사람
+    (예약 권한 없는 매니저)에게는 «예약 없음»이 거짓말이 되므로 아예 안 그린다.
+  */
+  const canSeeReservations = role === "staff" || canAccess("reservations");
+  const reservationLoads = useMemo(
+    () => reservationLoadByDate(reservations, week.map((_, i) => shiftDateForDay(week, i))),
+    [reservations, week],
+  );
   const [sel, setSel] = useState<SelSlot | null>(null);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
   const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
@@ -664,10 +674,22 @@ export default function ScheduleManage() {
                       <span>{DOW_KO[dayIndex]}</span>
                       <strong>{day.getMonth() + 1}/{day.getDate()}</strong>
                     </div>
+                    {canSeeReservations && (
+                      <div className={`schedule-day-load ${(reservationLoads.get(shiftDateForDay(week, dayIndex))?.teams ?? 0) > 0 ? "" : "none"}`}>
+                        {loadText(reservationLoads.get(shiftDateForDay(week, dayIndex)))}
+                      </div>
+                    )}
                     <div className="schedule-period-grid">
                       {PERIODS.map((period) => (
                         <div className={`schedule-period-card ${period}`} key={period}>
-                          <div className="schedule-period-title">{PERIOD_LABEL[period]}</div>
+                          <div className="schedule-period-title">
+                            {PERIOD_LABEL[period]}
+                            {canSeeReservations && (reservationLoads.get(shiftDateForDay(week, dayIndex))?.[period].people ?? 0) > 0 && (
+                              <span className="schedule-period-load">
+                                예약 {reservationLoads.get(shiftDateForDay(week, dayIndex))?.[period].people}명
+                              </span>
+                            )}
+                          </div>
                           {DEPARTMENTS.map((department) => {
                             const slot = { dayIndex, period, department };
                             return (
