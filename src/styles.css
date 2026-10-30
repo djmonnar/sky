@@ -1873,6 +1873,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .resv-alimtalk.sent { color: var(--good-tx); font-weight: 700; }
 .resv-alimtalk.failed { color: var(--amber-tx); font-weight: 700; }
 .resv-alimtalk.skipped { color: var(--text-muted); }
+/* 손님 이력 — 노쇼 이력이 있으면 빨갛게(예약 받을 때 눈에 띄게) */
+.detail-line .v.resv-history { word-break: keep-all; line-height: 1.5; }
+.resv-history.noshow { color: var(--red-tx); font-weight: 700; }
 /*
   카드 머리의 배지(네이버·예전 매장·중복 확인·인원·상태)가 많으면 좁은 휴대폰에서 서로 끼어든다.
   넘칠 때만 다음 줄로 내리고 오른쪽에 붙인다 — 배지가 하나둘이면 지금과 같다.
@@ -3182,6 +3185,22 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .finance-profit-total > div:first-child strong { font-size: 34px; overflow-wrap: anywhere; }
 .finance-profit-formula { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; color: var(--text-sub); font-size: 13px; }
 .finance-profit-note { margin-top: 14px; color: var(--text-muted); font-size: 13px; line-height: 1.65; }
+.finance-profit-missing { color: var(--amber-tx); font-weight: 800; }
+
+/* 손익 — 고정비 카드 (FixedCostEditor) */
+.fixed-cost-list { display: grid; gap: 8px; margin-top: 10px; }
+.fixed-cost-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 160px) 36px; gap: 8px; align-items: center; }
+.fixed-cost-amount { text-align: right; }
+.fixed-cost-copy { margin-top: 6px; }
+.fixed-cost-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.fixed-cost-presets .chip { cursor: pointer; }
+.fixed-cost-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.fixed-cost-foot strong { font-size: 18px; }
+.fixed-cost-dirty { color: var(--amber-tx); font-style: normal; font-weight: 700; }
+.fixed-cost-error { color: var(--red-tx); font-weight: 700; font-size: 13px; }
+@media (max-width: 520px) {
+  .fixed-cost-row { grid-template-columns: minmax(0, 1fr) minmax(0, 120px) 32px; }
+}
 .finance-category-audit { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .finance-category-audit > div { display: flex; flex-direction: column; gap: 5px; }
 .finance-category-audit strong { font-size: 24px; }
@@ -3364,6 +3383,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
     padding: 12px;
   }
   .granter-stats .stat-card > div:first-child { min-width: 0; }
+  /* 손익 숫자 카드 — 「32,725,000원」 같은 큰 숫자가 칸을 밀어 휴대폰에서 가로로 넘쳤다. 칸이 줄 수 있게 하고 숫자는 줄바꿈 */
+  .finance-profit-stats.grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .finance-profit-stats .stat-card { min-width: 0; padding: 12px; }
+  .finance-profit-stats .stat-card > div:first-child { min-width: 0; }
+  .finance-profit-stats .stat-value { font-size: 20px; letter-spacing: 0; overflow-wrap: anywhere; }
   .granter-stats .stat-value {
     font-size: 20px;
     letter-spacing: 0;

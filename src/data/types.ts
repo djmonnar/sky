@@ -159,6 +159,22 @@ export interface Reservation {
   alimtalk?: ReservationAlimtalk;
 }
 
+/** 손익의 고정비 한 줄 — 임대료·관리비·공과금 등 (2026-10-30) */
+export interface FixedCostItem {
+  id: string;
+  name: string;
+  /** 원 */
+  amount: number;
+}
+
+/** 한 달 고정비. stores/{id}/fixedCosts/{YYYY-MM}. 관리자만 읽고 쓴다. */
+export interface FixedCostMonth {
+  month: string;
+  items: FixedCostItem[];
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface ReservationAlimtalk {
   /** sent: 오너비스타가 보내기로 넣었다 · skipped: 보낼 조건이 아니었다 · failed: 넘기지 못했다 */
   status: "sent" | "skipped" | "failed";

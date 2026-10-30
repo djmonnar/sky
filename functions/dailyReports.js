@@ -4,7 +4,7 @@
  * 매일 정한 시각에 나챗방(카카오톡 「나와의 채팅」) 등록된 곳 모두에 보내는 것.
  *
  *   오전 11:00  오늘 예약 — 시간순 «11:50 최미선 3명»
- *   오후 10:30  일일 정산 — 매출·이번 달 누적·매입·예약·체크리스트
+ *   오후 10:30  일일 정산 — 매출·이번 달 누적·매입·인건비(추정, 매출 대비 %)·예약·체크리스트
  *              (매장이 22시에 마친다 — 오너비스타의 22시 매출 수집을 30분 기다린 뒤 보낸다)
  *
  * (2026-10-19 사장님 요청.) 화면의 「시험으로 보내기」도 같은 글을 같은 곳에 보낸다 — 다만 시험은
@@ -121,20 +121,124 @@ function buildReservationsMemo({ date, reservations }) {
 
 /**
  * 일일 정산. 모르는 칸은 «아직 안 들어옴»·«없음»으로 적는다 — 0원으로 채우지 않는다.
- * 22시 수집 전 숫자면 매출 바로 밑에 밝힌다(넘쳐 잘려도 맨 끝 줄이 잘리게).
+ * 22시 수집 전 숫자면 매출 바로 밑에 밝힌다.
+ *
+ * 200자를 넘으면 글자를 자르지 않고 **덜 중요한 줄부터 뺀다** — 직접 입력 매출, 다음 이번 달 누적
+ * (인건비 줄이 더해지며 큰 숫자인 날 맨 끝 체크리스트가 잘려 나갔다). 그래도 넘치면 마지막 수단으로 자른다.
  */
-function buildSettlementMemo({ date, sales, collection, month, purchases, manualSales, reservations, checklist }) {
-  const lines = [`[하늘땅] ${md(date)} 일일 정산`];
-  lines.push(sales ? `매출 ${won(sales.amount)} (${SOURCE_LABEL[sales.source] || "POS"})` : "매출 아직 안 들어옴");
+function buildSettlementMemo({ date, sales, collection, month, purchases, labor, manualSales, reservations, checklist }) {
+  // drop: 넘칠 때 빼는 차례(작을수록 먼저). 없으면 안 뺀다.
+  const lines = [{ text: `[하늘땅] ${md(date)} 일일 정산` }];
+  lines.push({ text: sales ? `매출 ${won(sales.amount)} (${SOURCE_LABEL[sales.source] || "POS"})` : "매출 아직 안 들어옴" });
   const note = salesFreshnessNote({ date, sales, collection });
-  if (note) lines.push(note);
-  if (month && month.days > 0) lines.push(`이번 달 ${won(month.total)} · ${month.days}일`);
-  lines.push(purchases && purchases.count > 0 ? `매입 ${won(purchases.total)} · ${purchases.count}건` : "매입 없음");
-  if (manualSales > 0) lines.push(`직접 입력 매출 ${won(manualSales)}`);
+  if (note) lines.push({ text: note });
+  if (month && month.days > 0) lines.push({ text: `이번 달 ${won(month.total)} · ${month.days}일`, drop: 2 });
+  lines.push({ text: purchases && purchases.count > 0 ? `매입 ${won(purchases.total)} · ${purchases.count}건` : "매입 없음" });
+  const laborText = laborLine(labor, sales);
+  if (laborText) lines.push({ text: laborText });
+  if (manualSales > 0) lines.push({ text: `직접 입력 매출 ${won(manualSales)}`, drop: 1 });
   const noShow = reservations.noShow ? ` · 노쇼 ${reservations.noShow}` : "";
-  lines.push(reservations.teams > 0 ? `예약 ${reservations.teams}팀 ${reservations.people}명${noShow}` : `예약 없음${noShow}`);
-  if (checklist) lines.push(`체크리스트 ${checklist}`);
-  return lines.join("\n").slice(0, MEMO_TEXT_LIMIT);
+  lines.push({ text: reservations.teams > 0 ? `예약 ${reservations.teams}팀 ${reservations.people}명${noShow}` : `예약 없음${noShow}` });
+  if (checklist) lines.push({ text: `체크리스트 ${checklist}` });
+
+  let kept = lines;
+  const joined = () => kept.map((line) => line.text).join("\n");
+  for (const level of [1, 2]) {
+    if (joined().length <= MEMO_TEXT_LIMIT) break;
+    kept = kept.filter((line) => line.drop !== level);
+  }
+  return joined().slice(0, MEMO_TEXT_LIMIT);
+}
+
+/*
+  그날 인건비(추정) — 2026-10-30 사장님 요청으로 일일 정산에 「인건비 ○○원(매출의 ○%)」를 붙인다.
+
+  급여 화면(src/lib/payroll.ts)과 같은 세 갈래로 센다. 근무표가 기준이다(출퇴근 기록이 아니라).
+    - 월급(정직원·월급제): 그날 근무와 상관없이 하루 몫 = 월급 ÷ 그 달 날수
+    - 건별수당: 그날 근무표 슬롯 수 × 슬롯당 수당
+    - 시급: 그날 근무표 슬롯 시간(기본 오전 10:20~15:00·오후 16:30~21:30, 휴게 30분 빼고) × 시급
+  급여 정보가 없는 사람(직원 문서에 없는 이름, 수당·시급이 0)은 0원으로 치지 않고 «N명 모름»으로 센다.
+  4대보험 사업주 부담·주휴수당은 안 넣은 운영용 추정치다.
+*/
+const PERIOD_TIME = {
+  morning: { start: "10:20", end: "15:00", breakMin: 30 },
+  afternoon: { start: "16:30", end: "21:30", breakMin: 30 },
+};
+
+function minutesOf(hhmm) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ""));
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/** 근무표 한 칸의 일한 분 — 칸에 시각을 따로 적었으면 그것, 아니면 오전·오후 기본 */
+function shiftMinutes(shift) {
+  const base = PERIOD_TIME[shift.period] || PERIOD_TIME.morning;
+  const start = minutesOf(shift.start) ?? minutesOf(base.start);
+  const end = minutesOf(shift.end) ?? minutesOf(base.end);
+  const breakMin = Number.isFinite(Number(shift.breakMin)) && shift.breakMin !== undefined && shift.breakMin !== null
+    ? Number(shift.breakMin)
+    : base.breakMin;
+  return Math.max(0, end - start - breakMin);
+}
+
+function isMonthlyEmployee(employee) {
+  return employee.employmentType === "fullTime" || employee.salaryType === "monthly";
+}
+
+/**
+ * @returns {{ total: number, unknown: number }} total 은 원 단위 반올림. 셀 사람이 아무도 없으면 null.
+ */
+function laborCostOf({ date, shifts, employees }) {
+  const [year, month] = date.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const byId = new Map(employees.map((employee) => [Number(employee.id), employee]));
+  const unknown = new Set();
+  let total = 0;
+  let counted = 0;
+
+  for (const employee of employees) {
+    if (!isMonthlyEmployee(employee)) continue;
+    const salary = Number(employee.monthlySalary) || 0;
+    if (salary > 0) {
+      total += salary / daysInMonth;
+      counted += 1;
+    } else {
+      unknown.add(`emp:${employee.id}`);
+    }
+  }
+
+  const seen = new Set();
+  for (const shift of shifts) {
+    if (!shift || shift.off || shift.date !== date) continue;
+    const id = Number(shift.employeeId ?? shift.empId);
+    const key = `${id}_${shift.period}`;
+    if (seen.has(key)) continue; // 같은 사람이 같은 칸에 두 번(홀·주방) 적혀도 한 번
+    seen.add(key);
+    const employee = byId.get(id);
+    if (!employee) {
+      unknown.add(`name:${shift.employeeName || id}`);
+      continue;
+    }
+    if (isMonthlyEmployee(employee)) continue; // 위에서 하루 몫으로 셌다
+    if (employee.salaryType === "perSlot") {
+      const rate = Number(employee.slotRate) || 0;
+      if (rate > 0) { total += rate; counted += 1; } else unknown.add(`emp:${id}`);
+      continue;
+    }
+    const hourly = Number(employee.hourly) || 0;
+    if (hourly > 0) { total += (hourly * shiftMinutes(shift)) / 60; counted += 1; } else unknown.add(`emp:${id}`);
+  }
+
+  if (counted === 0 && unknown.size === 0) return null;
+  return { total: Math.round(total), unknown: unknown.size };
+}
+
+/** "인건비 412,000원(매출의 18%)" — 매출을 모르면 비율은 안 붙인다. 모르는 사람이 있으면 «· 2명 모름» */
+function laborLine(labor, sales) {
+  if (!labor) return null;
+  const ratio = sales && sales.amount > 0 ? `(매출의 ${Math.round((labor.total / sales.amount) * 100)}%)` : "";
+  const unknown = labor.unknown > 0 ? ` · ${labor.unknown}명 모름` : "";
+  return `인건비 ${won(labor.total)}${ratio}${unknown}`;
 }
 
 /** "오픈 4/4 · 마감 3/4" — 항목이 없으면 null */
@@ -194,7 +298,7 @@ function createDailyReports(deps) {
 
   async function gatherSettlement(date) {
     const monthStart = `${date.slice(0, 7)}-01`;
-    const [salesSnap, monthSnap, ordersSnap, closeSnap, reservations, templateSnap, daySnap] = await Promise.all([
+    const [salesSnap, monthSnap, ordersSnap, closeSnap, reservations, templateSnap, daySnap, shiftsSnap, employeesSnap] = await Promise.all([
       storeDoc("salesDailySummaries", date).get(),
       storeCol("salesDailySummaries").where("businessDate", ">=", monthStart).where("businessDate", "<=", date).get(),
       storeCol("purchaseOrders").get(),
@@ -202,6 +306,8 @@ function createDailyReports(deps) {
       reservationsOf(date),
       storeDoc("meta", "checklistTemplate").get(),
       storeDoc("checklistDays", date).get(),
+      storeCol("shifts").where("date", "==", date).get(),
+      storeCol("employees").get(),
     ]);
     const month = monthSnap.docs
       .map((doc) => effectiveSales(doc.data()))
@@ -217,6 +323,11 @@ function createDailyReports(deps) {
       sales: effectiveSales(salesSnap.exists ? salesSnap.data() : null),
       month,
       purchases: { total: todayOrders.reduce((sum, order) => sum + (Number(order.totalAmount) || 0), 0), count: todayOrders.length },
+      labor: laborCostOf({
+        date,
+        shifts: shiftsSnap.docs.map((doc) => doc.data()),
+        employees: employeesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+      }),
       manualSales: close ? (Number(close.cashSales) || 0) + (Number(close.transferSales) || 0) + (Number(close.otherSales) || 0) : 0,
       reservations: {
         teams: active.length,
@@ -274,5 +385,8 @@ module.exports = {
   salesFreshnessNote,
   checklistSummary,
   effectiveSales,
+  laborCostOf,
+  laborLine,
+  shiftMinutes,
   REPORTS,
 };

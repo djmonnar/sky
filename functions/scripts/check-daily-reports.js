@@ -13,6 +13,7 @@
 const assert = require("node:assert");
 const {
   createDailyReports, buildReservationsMemo, buildSettlementMemo, salesFreshnessNote, effectiveSales, checklistSummary,
+  laborCostOf, laborLine, shiftMinutes,
 } = require("../dailyReports");
 const { canRun, MEMO_TEXT_LIMIT } = require("../kakaoMemo");
 
@@ -107,6 +108,16 @@ function seed() {
     { id: "c2", section: "close", text: "쓰레기", days: [] },
   ] });
   put("checklistDays", DATE, { checks: { o1: { checked: true, text: "환기", section: "open" }, c1: { checked: true, text: "가스", section: "close" } } });
+  // 인건비: 월급 3,100,000 ÷ 31일 = 100,000 · 건별 60,000 × 2슬롯 = 120,000 · 시급 12,000 × 오전 250분 = 50,000
+  put("employees", "1", { id: 1, name: "정직원", employmentType: "fullTime", salaryType: "monthly", hourly: 0, monthlySalary: 3_100_000 });
+  put("employees", "2", { id: 2, name: "건별알바", employmentType: "partTime", salaryType: "perSlot", hourly: 0, slotRate: 60_000 });
+  put("employees", "3", { id: 3, name: "시급알바", employmentType: "partTime", salaryType: "hourly", hourly: 12_000 });
+  put("shifts", "a", { date: DATE, period: "morning", department: "hall", employeeId: 2, employeeName: "건별알바" });
+  put("shifts", "b", { date: DATE, period: "afternoon", department: "hall", employeeId: 2, employeeName: "건별알바" });
+  put("shifts", "c", { date: DATE, period: "morning", department: "kitchen", employeeId: 3, employeeName: "시급알바" });
+  put("shifts", "d", { date: DATE, period: "morning", department: "hall", employeeId: 3, employeeName: "시급알바" }); // 같은 칸 두 번
+  put("shifts", "e", { date: DATE, period: "morning", department: "hall", employeeId: 1, employeeName: "정직원" }); // 월급은 하루 몫으로
+  put("shifts", "f", { date: "2026-10-20", period: "morning", department: "hall", employeeId: 2, employeeName: "건별알바" }); // 다른 날
 }
 
 const results = [];
@@ -171,6 +182,32 @@ async function check(label, fn) {
     assert.strictEqual(checklistSummary([]), null);
   });
 
+  await check("인건비: 월급은 하루 몫, 건별은 슬롯 수, 시급은 슬롯 시간 — 같은 칸 두 번·쉬는 칸·다른 날은 안 센다", async () => {
+    const employees = [...db.entries()].filter(([k]) => k.startsWith("employees/")).map(([, v]) => v);
+    const shifts = [...db.entries()].filter(([k]) => k.startsWith("shifts/")).map(([, v]) => v);
+    assert.deepStrictEqual(laborCostOf({ date: DATE, shifts, employees }), { total: 270_000, unknown: 0 });
+    // 쉬는 칸은 빼고, 근무표에만 있고 직원이 아닌 이름·시급 0 인 사람은 «모름»
+    const more = [
+      ...shifts,
+      { date: DATE, period: "afternoon", employeeId: 3, off: true },
+      { date: DATE, period: "afternoon", employeeId: 99, employeeName: "도우미" },
+    ];
+    const withZero = [...employees, { id: 4, name: "시급미정", salaryType: "hourly", hourly: 0 }];
+    more.push({ date: DATE, period: "afternoon", employeeId: 4 });
+    assert.deepStrictEqual(laborCostOf({ date: DATE, shifts: more, employees: withZero }), { total: 270_000, unknown: 2 });
+    // 칸에 시각을 따로 적었으면 그것 — 17:00~22:00 휴게 0 = 300분
+    assert.strictEqual(shiftMinutes({ period: "afternoon", start: "17:00", end: "22:00", breakMin: 0 }), 300);
+    assert.strictEqual(shiftMinutes({ period: "afternoon" }), 270);
+    // 셀 사람이 아무도 없으면 줄을 안 만든다
+    assert.strictEqual(laborCostOf({ date: DATE, shifts: [], employees: [] }), null);
+  });
+
+  await check("인건비 줄: 매출을 알면 비율, 모르면 금액만, 모르는 사람은 «N명 모름»", async () => {
+    assert.strictEqual(laborLine({ total: 270_000, unknown: 0 }, { amount: 5_000_000, source: "naver" }), "인건비 270,000원(매출의 5%)");
+    assert.strictEqual(laborLine({ total: 270_000, unknown: 2 }, null), "인건비 270,000원 · 2명 모름");
+    assert.strictEqual(laborLine(null, { amount: 1 }), null);
+  });
+
   /* ── 모으기 ── */
 
   await check("정산 모으기: 이번 달만(OK포스 우선)·오늘 매입(취소 빼고)·직접 입력·예약·노쇼·체크리스트", async () => {
@@ -196,6 +233,7 @@ async function check(label, fn) {
       "매출 5,000,000원 (네이버)",
       "이번 달 12,503,100원 · 2일",
       "매입 90,000원 · 1건",
+      "인건비 270,000원(매출의 5%)",
       "직접 입력 매출 50,000원",
       "예약 3팀 11명 · 노쇼 1",
       "체크리스트 오픈 1/1 · 마감 1/2",
@@ -266,6 +304,7 @@ async function check(label, fn) {
       collection: { ok: true, collectedAt: "2026-10-18T12:10:00.000Z" },
       month: { total: 345_678_901, days: 31 },
       purchases: { total: 1_234_567, count: 12 },
+      labor: { total: 1_234_567, unknown: 2 },
       manualSales: 1_234_567,
       reservations: { teams: 25, people: 123, noShow: 3 },
       checklist: "오픈 12/12 · 마감 15/15",
@@ -273,6 +312,10 @@ async function check(label, fn) {
     assert.ok(text.length <= MEMO_TEXT_LIMIT, `${text.length}자`);
     assert.ok(text.includes("\n※ 22시 수집 전 숫자 · 마지막 수집 10/18(일) 21:10\n"), text);
     assert.ok(text.endsWith("체크리스트 오픈 12/12 · 마감 15/15"), text);
+    // 넘치면 글자를 자르지 않고 덜 중요한 줄(직접 입력 매출 → 이번 달 누적)부터 뺀다 — 인건비·예약은 남는다
+    assert.ok(text.includes("\n인건비 1,234,567원(매출의 10%) · 2명 모름\n"), text);
+    assert.ok(!text.includes("직접 입력 매출"), text);
+    assert.ok(text.includes("예약 25팀 123명 · 노쇼 3"), text);
   });
 
   await check("예약 보내기: 예약 버튼·예약 화면 링크, 정산처럼 매출을 받아 오지는 않는다", async () => {
