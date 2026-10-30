@@ -63,57 +63,74 @@ service cloud.firestore {
       return isManager(storeId) && managerPermissions(storeId)[key] == true;
     }
 
+    /*
+      실무자 권한 — 관리자 모드에서 사장님이 실무자에게 더 열어 준 화면(2026-10-30).
+      매니저 권한과 같은 열쇠를 쓰고, 아래 canManage* 가 매니저와 같은 자리에서 본다.
+      예약 지우기(reservations)는 실무자 열쇠에 없다 — 실무자 예약은 아래 reservations 규칙의 기본대로.
+      문서가 없으면 전부 꺼짐.
+    */
+    function staffCan(storeId, key) {
+      return isStaff(storeId)
+        && exists(/databases/$(database)/documents/stores/$(storeId)/meta/staffPermissions)
+        && get(/databases/$(database)/documents/stores/$(storeId)/meta/staffPermissions).data.get(key, false) == true;
+    }
+
+    /** 관리자가 아닌 사람(매니저·실무자)이 그 권한을 받았는가 */
+    function granted(storeId, key) {
+      return managerCan(storeId, key) || staffCan(storeId, key);
+    }
+
     function canManageReservations(storeId) {
       return isAdmin(storeId) || managerCan(storeId, "reservations");
     }
 
     function canManageSchedule(storeId) {
-      return isAdmin(storeId) || managerCan(storeId, "scheduleManage");
+      return isAdmin(storeId) || granted(storeId, "scheduleManage");
     }
 
     function canManageEmployees(storeId) {
-      return isAdmin(storeId) || managerCan(storeId, "employees");
+      return isAdmin(storeId) || granted(storeId, "employees");
     }
 
     function canManageSales(storeId) {
-      return isAdmin(storeId) || managerCan(storeId, "sales");
+      return isAdmin(storeId) || granted(storeId, "sales");
     }
 
     function canManageFinance(storeId) {
       return isAdmin(storeId)
-        || managerCan(storeId, "sales")
-        || managerCan(storeId, "settlements");
+        || granted(storeId, "sales")
+        || granted(storeId, "settlements");
     }
 
     function canManageVendors(storeId) {
-      return isAdmin(storeId) || managerCan(storeId, "vendors");
+      return isAdmin(storeId) || granted(storeId, "vendors");
     }
 
     function canReadVendors(storeId) {
       return isAdmin(storeId)
-        || managerCan(storeId, "vendors")
-        || managerCan(storeId, "inventory")
-        || managerCan(storeId, "settlements")
-        || managerCan(storeId, "recipes");
+        || granted(storeId, "vendors")
+        || granted(storeId, "inventory")
+        || granted(storeId, "settlements")
+        || granted(storeId, "recipes");
     }
 
     function canManageInventory(storeId) {
-      return isAdmin(storeId) || managerCan(storeId, "inventory") || managerCan(storeId, "vendors");
+      return isAdmin(storeId) || granted(storeId, "inventory") || granted(storeId, "vendors");
     }
 
     function canManagePurchaseOrders(storeId) {
       return isAdmin(storeId)
-        || managerCan(storeId, "vendors")
-        || managerCan(storeId, "inventory")
-        || managerCan(storeId, "settlements");
+        || granted(storeId, "vendors")
+        || granted(storeId, "inventory")
+        || granted(storeId, "settlements");
     }
 
     function canManageRecipes(storeId) {
-      return isAdmin(storeId) || managerCan(storeId, "recipes");
+      return isAdmin(storeId) || granted(storeId, "recipes");
     }
 
     function canManageNotices(storeId) {
-      return isAdmin(storeId) || managerCan(storeId, "notices");
+      return isAdmin(storeId) || granted(storeId, "notices");
     }
 
     function validManagerPermissions() {
@@ -132,6 +149,22 @@ service cloud.firestore {
           "dashboard", "reservations", "scheduleManage", "employees",
           "sales", "vendors", "inventory", "settlements", "recipes",
           "notices", "guide", "updatedAt"
+        ]);
+    }
+
+    function validStaffPermissions() {
+      return request.resource.data.scheduleManage is bool
+        && request.resource.data.employees is bool
+        && request.resource.data.sales is bool
+        && request.resource.data.vendors is bool
+        && request.resource.data.inventory is bool
+        && request.resource.data.settlements is bool
+        && request.resource.data.recipes is bool
+        && request.resource.data.notices is bool
+        && request.resource.data.guide is bool
+        && request.resource.data.keys().hasOnly([
+          "scheduleManage", "employees", "sales", "vendors", "inventory",
+          "settlements", "recipes", "notices", "guide", "updatedAt"
         ]);
     }
 
@@ -270,6 +303,11 @@ service cloud.firestore {
                       && docId == "managerPermissions"
                     )
                     || (
+                      // 실무자 권한 — 관리자가 고치고, 실무자는 메뉴·주소에 쓰려고 읽는다
+                      (isAdmin(storeId) || isStaff(storeId))
+                      && docId == "staffPermissions"
+                    )
+                    || (
                       // 체크리스트 항목 — 직원 모두 읽고 체크한다
                       inStore(storeId)
                       && docId == "checklistTemplate"
@@ -307,6 +345,11 @@ service cloud.firestore {
                        isAdmin(storeId)
                        && docId == "managerPermissions"
                        && validManagerPermissions()
+                     )
+                     || (
+                       isAdmin(storeId)
+                       && docId == "staffPermissions"
+                       && validStaffPermissions()
                      )
                      || (
                        // 체크리스트 항목은 사장님(관리자)만 고친다
@@ -524,7 +567,7 @@ service cloud.firestore {
 
       match /granterAccountTransactions/{id} {
         allow read: if canManageSales(storeId)
-                    || (managerCan(storeId, "settlements") && resource.data.direction == "out");
+                    || (granted(storeId, "settlements") && resource.data.direction == "out");
         allow write: if isAdmin(storeId);
       }
 
@@ -539,22 +582,22 @@ service cloud.firestore {
 
       match /financeMatches/{id} {
         allow read: if isAdmin(storeId)
-                    || (managerCan(storeId, "sales") && resource.data.kind == "salesDeposit")
-                    || (managerCan(storeId, "settlements") && resource.data.kind == "purchasePayment");
+                    || (granted(storeId, "sales") && resource.data.kind == "salesDeposit")
+                    || (granted(storeId, "settlements") && resource.data.kind == "purchasePayment");
         allow create: if isAdmin(storeId)
-                      || (managerCan(storeId, "sales") && request.resource.data.kind == "salesDeposit")
-                      || (managerCan(storeId, "settlements") && request.resource.data.kind == "purchasePayment");
+                      || (granted(storeId, "sales") && request.resource.data.kind == "salesDeposit")
+                      || (granted(storeId, "settlements") && request.resource.data.kind == "purchasePayment");
         allow update: if isAdmin(storeId)
                       || (
                         resource.data.kind == request.resource.data.kind
                         && (
-                          (managerCan(storeId, "sales") && request.resource.data.kind == "salesDeposit")
-                          || (managerCan(storeId, "settlements") && request.resource.data.kind == "purchasePayment")
+                          (granted(storeId, "sales") && request.resource.data.kind == "salesDeposit")
+                          || (granted(storeId, "settlements") && request.resource.data.kind == "purchasePayment")
                         )
                       );
         allow delete: if isAdmin(storeId)
-                      || (managerCan(storeId, "sales") && resource.data.kind == "salesDeposit")
-                      || (managerCan(storeId, "settlements") && resource.data.kind == "purchasePayment");
+                      || (granted(storeId, "sales") && resource.data.kind == "salesDeposit")
+                      || (granted(storeId, "settlements") && resource.data.kind == "purchasePayment");
       }
 
       match /notices/{id} {

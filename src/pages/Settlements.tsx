@@ -88,7 +88,7 @@ function createMatchId(): string {
 
 export default function Settlements() {
   const {
-    role, profile, authUser, managerPermissions, vendors, purchaseOrders, payroll,
+    role, profile, authUser, canAccess, vendors, purchaseOrders, payroll,
     salesDailySummaries, salesMenuReport, syncSales, saveOkposDays, clearOkposDays,
     financeDailyCloses,
     upsertPurchaseOrder,
@@ -104,8 +104,9 @@ export default function Settlements() {
   const [vendorFilter, setVendorFilter] = useState<number | "all">("all");
   const [query, setQuery] = useState("");
   const [settlementDrafts, setSettlementDrafts] = useState<Record<number, SettlementDraft>>({});
-  const canViewSales = role === "admin" || managerPermissions.sales;
-  const canViewPurchases = role === "admin" || managerPermissions.settlements;
+  // 관리자, 그 권한을 받은 매니저·실무자
+  const canViewSales = canAccess("sales");
+  const canViewPurchases = canAccess("settlements");
   const visibleTabs = useMemo(() => TABS.filter((tab) => {
     if (tab.id === "close") return canViewSales;
     if (tab.id === "purchases") return canViewPurchases;

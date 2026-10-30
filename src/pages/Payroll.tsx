@@ -5,6 +5,7 @@ import { won } from "../data";
 import type {
   Employee,
   ManagerPermissionKey,
+  StaffPermissionKey,
   OwnerSchedule,
   OwnerScheduleCategory,
   PayrollAdjustment,
@@ -26,6 +27,12 @@ import {
   MANAGER_PERMISSION_OPTIONS,
   normalizeManagerPermissions,
 } from "../config/managerPermissions";
+import {
+  DEFAULT_STAFF_PERMISSIONS,
+  STAFF_BASE_FEATURES,
+  STAFF_PERMISSION_OPTIONS,
+  normalizeStaffPermissions,
+} from "../config/staffPermissions";
 import ChatbotUsersPanel from "../components/ChatbotUsersPanel";
 import { fmtMinutes } from "../lib/attendance";
 
@@ -220,6 +227,7 @@ export default function Payroll() {
     payroll, records, shifts, updatePayroll, approveRecord, showToast, employees,
     getPayrollPassword, setPayrollPassword, ownerSchedules, upsertOwnerSchedule, deleteOwnerSchedule,
     managerPermissions, updateManagerPermissions,
+    staffPermissions, updateStaffPermissions,
     timesheetSubmissions, reviewTimesheet,
   } = useStore();
 
@@ -239,6 +247,9 @@ export default function Payroll() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [permissionDraft, setPermissionDraft] = useState(() => normalizeManagerPermissions(managerPermissions));
+  /** 권한 설정 탭에서 지금 고치는 역할 — 매니저 / 실무자 */
+  const [permissionRole, setPermissionRole] = useState<"manager" | "staff">("manager");
+  const [staffDraft, setStaffDraft] = useState(() => normalizeStaffPermissions(staffPermissions));
 
   const monthShifts = useMemo(
     () => shifts.filter((s) => s.date?.startsWith(selectedMonth)),
@@ -276,6 +287,10 @@ export default function Payroll() {
   useEffect(() => {
     setPermissionDraft(normalizeManagerPermissions(managerPermissions));
   }, [managerPermissions]);
+
+  useEffect(() => {
+    setStaffDraft(normalizeStaffPermissions(staffPermissions));
+  }, [staffPermissions]);
 
   const daySchedules = ownerSchedules.filter((item) => scheduleMatchesDate(item, scheduleDate));
   const monthScheduleCount = ownerSchedules.filter((item) => scheduleMatchesMonth(item, scheduleDate.slice(0, 7))).length;
@@ -465,6 +480,23 @@ export default function Payroll() {
 
   const resetManagerPermissions = () => {
     setPermissionDraft(normalizeManagerPermissions(DEFAULT_MANAGER_PERMISSIONS));
+  };
+
+  const toggleStaffPermission = (key: StaffPermissionKey) => {
+    setStaffDraft((prev) => normalizeStaffPermissions({ ...prev, [key]: !prev[key] }));
+  };
+
+  const saveStaffPermissions = async () => {
+    try {
+      await updateStaffPermissions(staffDraft);
+    } catch (e) {
+      console.error(e);
+      showToast("실무자 권한 저장에 실패했습니다");
+    }
+  };
+
+  const resetStaffPermissions = () => {
+    setStaffDraft(normalizeStaffPermissions(DEFAULT_STAFF_PERMISSIONS));
   };
 
   const renderScheduleItem = (item: OwnerSchedule) => (
@@ -1055,8 +1087,85 @@ export default function Payroll() {
     );
   };
 
+  /** 실무자 권한 — 기본 화면은 «기본»으로만 보이고, 더 열어 줄 화면을 체크한다 */
+  const renderStaffPermissions = () => (
+    <>
+      <Card title="실무자 권한 설정" icon="🛡️">
+        <p className="muted small" style={{ marginTop: 0 }}>
+          실무자는 아래 «기본» 화면을 늘 씁니다. 체크한 화면이 더 열리고, 실무자 계정의 사이드바와 ☰ 전체 메뉴에
+          나타납니다. 직접 주소로 들어가거나 데이터를 읽을 때도 같은 기준으로 막고 엽니다.
+        </p>
+        <div className="manager-permission-grid">
+          {STAFF_BASE_FEATURES.map((feature) => (
+            <label key={feature.label} className="manager-permission-card on locked">
+              <input type="checkbox" checked disabled readOnly />
+              <span className="checkbox checked">✓</span>
+              <span>
+                <strong>{feature.label} <small className="staff-base-tag">기본</small></strong>
+                <small>{feature.description}</small>
+              </span>
+            </label>
+          ))}
+          {STAFF_PERMISSION_OPTIONS.map((option) => {
+            const checked = staffDraft[option.key];
+            return (
+              <label key={option.key} className={`manager-permission-card ${checked ? "on" : ""}`}>
+                <input type="checkbox" checked={checked} onChange={() => toggleStaffPermission(option.key)} />
+                <span className={`checkbox ${checked ? "checked" : ""}`}>{checked ? "✓" : ""}</span>
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="manager-permission-actions">
+          <button className="btn btn-outline" onClick={resetStaffPermissions}>
+            기본값으로
+          </button>
+          <button className="btn btn-primary" onClick={() => void saveStaffPermissions()}>
+            권한 저장
+          </button>
+        </div>
+      </Card>
+
+      <Card title="현재 실무자에게 열린 화면" icon="👀">
+        <div className="chip-row">
+          {STAFF_BASE_FEATURES.map((feature) => (
+            <span className="chip" key={feature.label}>{feature.label}</span>
+          ))}
+          {STAFF_PERMISSION_OPTIONS.filter((option) => staffPermissions[option.key]).map((option) => (
+            <span className="chip on" key={option.key}>{option.label}</span>
+          ))}
+        </div>
+      </Card>
+    </>
+  );
+
   const renderPermissionsPanel = () => (
     <div className="stack">
+      {/* 매니저와 실무자 권한을 한 탭에서 — 고를 역할을 먼저 고른다 */}
+      <div className="segmented fill" role="tablist" aria-label="권한을 고칠 역할">
+        {([["manager", "매니저"], ["staff", "실무자"]] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={permissionRole === value}
+            className={permissionRole === value ? "on" : ""}
+            onClick={() => setPermissionRole(value)}
+          >
+            {label} 권한
+          </button>
+        ))}
+      </div>
+      {permissionRole === "staff" ? renderStaffPermissions() : renderManagerPermissions()}
+    </div>
+  );
+
+  const renderManagerPermissions = () => (
+    <>
       <Card title="매니저 권한 설정" icon="🛡️">
         <p className="muted small" style={{ marginTop: 0 }}>
           체크한 화면만 매니저 계정의 사이드바/모바일 플로팅 메뉴에 표시되고, 직접 주소로 들어가도 같은 기준으로 접근합니다.
@@ -1098,7 +1207,7 @@ export default function Payroll() {
           ))}
         </div>
       </Card>
-    </div>
+    </>
   );
 
   if (!unlocked) return renderPayrollLock();
@@ -1108,7 +1217,7 @@ export default function Payroll() {
       <div className="admin-mode-head">
         <div>
           <h2>관리자 모드</h2>
-          <p>재무 일정표, 급여, 매니저 권한, 카카오 챗봇 사용자처럼 민감한 관리자 업무를 한곳에서 처리합니다.</p>
+          <p>재무 일정표, 급여, 매니저·실무자 권한, 카카오 챗봇 사용자처럼 민감한 관리자 업무를 한곳에서 처리합니다.</p>
         </div>
         <div className="admin-mode-tabs" role="tablist" aria-label="관리자 모드">
           <button className={activeTab === "schedule" ? "on" : ""} onClick={() => setActiveTab("schedule")}>
@@ -1118,7 +1227,7 @@ export default function Payroll() {
             💰 급여 관리
           </button>
           <button className={activeTab === "permissions" ? "on" : ""} onClick={() => setActiveTab("permissions")}>
-            🛡️ 매니저 권한
+            🛡️ 권한 설정
           </button>
           <button className={activeTab === "chatbot" ? "on" : ""} onClick={() => setActiveTab("chatbot")}>
             💬 카카오 챗봇
