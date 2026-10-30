@@ -3,6 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Badge, Card, StatCard } from "../components/ui";
 import PosSalesBoard from "../components/PosSalesBoard";
+import FixedCostEditor from "../components/FixedCostEditor";
+import { useFixedCosts } from "../hooks/useFixedCosts";
+import { sumFixedCosts } from "../lib/fixedCosts";
 import type {
   FinanceDailyClose,
   PurchaseOrder,
@@ -234,9 +237,14 @@ export default function Settlements() {
     수밖에 없다. POS 가 이 매장 매출의 정본이므로 그것을 쓴다.
 
     직접 입력 마감분(현금·계좌이체·기타)은 POS 와 겹칠 수 있어 더하지 않고 따로 보여 준다.
-    고정·운영비는 그랜터 계좌 출금을 분류해 세던 값이라 지금은 셀 수 없다 — 0 으로
-    슬쩍 넣으면 이익이 그만큼 부풀어 보이므로, 아예 빼고 그렇게 말한다.
+    고정비(임대료·관리비·공과금)는 그랜터 계좌 출금을 분류해 세던 값이었는데, 연동을 보류해
+    이제 사장님이 달마다 적는다(아래 「고정비」 카드, 2026-10-30). **적은 달만** 뺀다 — 안 적은
+    달을 0 으로 빼면 이익이 그만큼 부풀어 보이므로 «미입력»이라고 말한다.
   */
+  const fixedCosts = useFixedCosts(month, role === "admin");
+  const monthFixed = fixedCosts.current && fixedCosts.current.items.length > 0
+    ? sumFixedCosts(fixedCosts.current.items)
+    : null;
   const monthPos = salesDailySummaries
     .filter((row) => row.businessDate.startsWith(month))
     .reduce((sum, row) => sum + row.netAmount, 0);
@@ -250,7 +258,7 @@ export default function Settlements() {
     .filter((row) => row.month ? row.month === month : month === TODAY_STR.slice(0, 7))
     .reduce((sum, row) => sum + Math.max(0, row.base + row.extra - row.deduct), 0);
   const monthSales = monthPos;
-  const estimatedProfit = monthSales - monthPurchaseAmount - monthPayroll;
+  const estimatedProfit = monthSales - monthPurchaseAmount - monthPayroll - (monthFixed ?? 0);
 
   return (
     <div className="stack finance-page">
@@ -380,25 +388,44 @@ export default function Settlements() {
           <Card title="월 손익 조회" icon="📅">
             <div className="finance-profit-toolbar"><label><span className="field-label">조회 월</span><input className="input" type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label><Badge tone="amber">추정 손익</Badge></div>
           </Card>
-          <div className="grid grid-4">
+          <div className="grid grid-4 finance-profit-stats">
             <StatCard label="총매출 (POS)" value={money.format(monthSales)} unit="원" trend={`${monthPosDays}일 집계`} trendUp icon="📈" />
             <StatCard label="식자재·매입" value={money.format(monthPurchaseAmount)} unit="원" trend={`${monthOrders.length}건`} trendUp={false} icon="🧾" tone="amber" />
             <StatCard label="인건비" value={money.format(monthPayroll)} unit="원" trend="급여 데이터 기준" trendUp={false} icon="👥" tone="blue" />
-            <StatCard label="직접 입력 매출" value={money.format(monthManualSales)} unit="원" trend="총매출에 더하지 않음" trendUp icon="✍️" tone="blue" />
+            {monthFixed === null ? (
+              <StatCard label="고정비" value="미입력" unit="" trend="아래 「고정비」에 적어 주세요" trendUp={false} icon="🏠" tone="amber" />
+            ) : (
+              <StatCard label="고정비" value={money.format(monthFixed)} unit="원" trend={`${fixedCosts.current?.items.length ?? 0}개 항목`} trendUp={false} icon="🏠" tone="blue" />
+            )}
           </div>
           <Card title="예상 영업이익" icon="📊">
             <div className={`finance-profit-total ${estimatedProfit < 0 ? "negative" : ""}`}>
               <div><span>{month} 예상 영업이익</span><strong>{amount(estimatedProfit)}</strong></div>
-              <div className="finance-profit-formula"><span>총매출 {amount(monthSales)}</span><span>− 매입 {amount(monthPurchaseAmount)}</span><span>− 인건비 {amount(monthPayroll)}</span></div>
+              <div className="finance-profit-formula">
+                <span>총매출 {amount(monthSales)}</span>
+                <span>− 매입 {amount(monthPurchaseAmount)}</span>
+                <span>− 인건비 {amount(monthPayroll)}</span>
+                {monthFixed === null ? <span className="finance-profit-missing">고정비 미입력</span> : <span>− 고정비 {amount(monthFixed)}</span>}
+              </div>
             </div>
             <div className="finance-profit-note">
               총매출은 POS 일 매출 합계입니다 — OK포스 엑셀을 올린 날은 OK포스 숫자, 아닌 날은 네이버 플레이스플러스 숫자입니다
-              {monthOkposDays > 0 ? ` (이 달 OK포스 ${monthOkposDays}일)` : ""}. 직접 입력 마감분은
-              POS 와 겹칠 수 있어 더하지 않았습니다. <strong>고정·운영비(임대료·공과금 등)는
-              빠져 있습니다</strong> — 계좌 출금을 분류해 세던 값인데 카드·계좌 연동을 보류해
-              지금은 셀 수 없습니다. 카드 수수료와 부가세도 빠진 운영용 추정치입니다.
+              {monthOkposDays > 0 ? ` (이 달 OK포스 ${monthOkposDays}일)` : ""}. 직접 입력 마감분
+              {monthManualSales > 0 ? ` ${amount(monthManualSales)}` : ""}은 POS 와 겹칠 수 있어 더하지 않았습니다.{" "}
+              {monthFixed === null
+                ? <><strong>이 달 고정비(임대료·관리비·공과금)는 아직 안 적었습니다</strong> — 아래에 적으면 손익에서 뺍니다.</>
+                : "고정비는 아래에 적은 이 달 금액입니다."}
+              {" "}카드 수수료와 부가세는 빠진 운영용 추정치입니다.
             </div>
           </Card>
+          <FixedCostEditor
+            month={month}
+            current={fixedCosts.current}
+            loaded={fixedCosts.loaded}
+            error={fixedCosts.error}
+            onSave={fixedCosts.save}
+            onLoad={fixedCosts.load}
+          />
         </>
       )}
     </div>

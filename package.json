@@ -13,7 +13,9 @@
     "test:okpos": "node scripts/check-okpos-daily.mjs",
     "test:checklist": "node scripts/check-checklist.mjs",
     "test:naver": "node scripts/check-naver-reservations.mjs",
-    "test:permissions": "node scripts/check-permissions.mjs"
+    "test:permissions": "node scripts/check-permissions.mjs",
+    "test:history": "node scripts/check-customer-history.mjs",
+    "test:fixedcost": "node scripts/check-fixed-costs.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",

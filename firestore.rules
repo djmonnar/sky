@@ -600,6 +600,20 @@ service cloud.firestore {
                       || (granted(storeId, "settlements") && resource.data.kind == "purchasePayment");
       }
 
+      /*
+        손익 고정비 — 달마다 한 장(fixedCosts/{YYYY-MM}). 손익 탭이 관리자 전용이라 관리자만 읽고 쓴다.
+        항목은 50개까지, 칸은 정해진 것만.
+      */
+      match /fixedCosts/{month} {
+        allow read: if isAdmin(storeId);
+        allow write: if isAdmin(storeId)
+                     && month.matches('^[0-9]{4}-[0-9]{2}$')
+                     && request.resource.data.month == month
+                     && request.resource.data.items is list
+                     && request.resource.data.items.size() <= 50
+                     && request.resource.data.keys().hasOnly(["month", "items", "updatedAt", "updatedBy"]);
+      }
+
       match /notices/{id} {
         allow read: if inStore(storeId);
         allow write: if canManageNotices(storeId);

@@ -9,6 +9,9 @@ import {
 import {
   isNaverReservation as isNaver, naverDuplicateFlags, markNotDuplicate, duplicateReasonText,
 } from "../lib/naverReservations";
+import {
+  buildCustomerIndex, customerHistory, historySummary, type CustomerHistory,
+} from "../lib/customerHistory";
 
 /** 네이버가 바꾸면 다시 덮어쓰는 칸. 직원이 고친 값은 네이버가 그 칸을 바꿀 때까지 남는다. */
 const NAVER_OWNED_NOTE =
@@ -24,6 +27,33 @@ const NAVER_DELETE_NOTE = "\n네이버 예약은 여기서 지우면 네이버�
 
 /** 「18:30 김하늘 2명」 — 겹쳐 보이는 예약을 짧게 가리킬 때. */
 const shortLabel = (r: Reservation) => `${r.time} ${r.name} ${r.people}명`;
+
+/**
+ * 이름 옆 손님 이력 꼬리표 — 단골(다녀감 3번 이상)·노쇼 이력. 이력이 없거나 둘 다 아니면 안 그린다.
+ * 자세한 숫자는 상세의 「손님 이력」 줄에 있다(src/lib/customerHistory.ts).
+ */
+function HistoryBadges({ history }: { history: CustomerHistory | null }) {
+  if (!history) return null;
+  return (
+    <>
+      {history.regular && <Badge tone="blue">단골 {history.visits}</Badge>}
+      {history.noShows > 0 && <Badge tone="red">노쇼 {history.noShows}</Badge>}
+    </>
+  );
+}
+
+/** 상세의 「손님 이력」 줄 — 번호를 못 읽으면 줄을 안 그리고, 다른 예약이 없으면 «처음 오시는 손님» */
+function HistoryLine({ history, phone }: { history: CustomerHistory | null; phone: string }) {
+  if (!history && !/\d{8,}/.test(phone.replace(/\D/g, ""))) return null;
+  return (
+    <div className="detail-line">
+      <span className="k">손님 이력</span>
+      <span className={`v resv-history ${history && history.noShows > 0 ? "noshow" : ""}`}>
+        {history ? historySummary(history, TODAY_STR) : "처음 오시는 손님"}
+      </span>
+    </div>
+  );
+}
 
 /** ISO 시각 → 「10/27 14:03」 (한국 시각) */
 function alimtalkWhen(iso?: string): string {
@@ -185,6 +215,10 @@ export default function Reservations() {
     duplicateFlags.byNaver.get(r.id) ?? duplicateFlags.byManual.get(r.id) ?? [];
   const naverSync = useNaverReservationSync();
   const currentNaverBusinessId = naverSync?.businessId ?? null;
+  // 손님 이력은 날짜와 상관없이 예약 전체에서 같은 번호를 찾는다
+  const customerIndex = useMemo(() => buildCustomerIndex(reservations), [reservations]);
+  const historyOf = (r: Reservation) => customerHistory(customerIndex, r.phone, TODAY_STR, r.id);
+  const formHistory = customerHistory(customerIndex, form.phone, TODAY_STR, editingId ?? undefined);
   const list = useMemo(() => {
     let l = [...dayReservations].sort((a, b) => a.time.localeCompare(b.time));
     const q = query.trim();
@@ -475,6 +509,14 @@ export default function Reservations() {
             <div>
               <label className="field-label">연락처 *</label>
               <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="010-0000-0000" />
+              {/* 번호를 적으면 그 손님의 지난 예약 — 노쇼 이력이 있으면 빨갛게 */}
+              {formHistory ? (
+                <div className={`small field-hint resv-history ${formHistory.noShows > 0 ? "noshow" : ""}`}>
+                  이 번호: {historySummary(formHistory, TODAY_STR)}{formHistory.regular ? " · 단골" : ""}
+                </div>
+              ) : form.phone.replace(/\D/g, "").length >= 10 ? (
+                <div className="small field-hint muted">처음 오시는 손님입니다</div>
+              ) : null}
             </div>
             <div>
               <label className="field-label">예약일</label>
@@ -584,6 +626,7 @@ export default function Reservations() {
                     <td className="bold resv-col-name" title={r.name}>
                       {r.name}{isWarn(r) && " !"}{" "}
                       <NaverBadges r={r} duplicateWith={duplicateWith(r)} otherStore={isFromOtherStore(r, currentNaverBusinessId)} />
+                      <HistoryBadges history={historyOf(r)} />
                     </td>
                     <td className="muted num">{r.phone}</td>
                     <td className="num">{r.people}명</td>
@@ -623,6 +666,7 @@ export default function Reservations() {
                       <span className="list-time" style={{ fontSize: 17 }}>{r.time}</span>
                       <span className="row" style={{ gap: 6 }}>
                         <NaverBadges r={r} duplicateWith={duplicateWith(r)} otherStore={isFromOtherStore(r, currentNaverBusinessId)} />
+                        <HistoryBadges history={historyOf(r)} />
                         {r.people >= 6 && r.status !== "단체" && <Badge tone="orange">{r.people}명</Badge>}
                         <StatusBadge status={r.status} />
                       </span>
@@ -643,6 +687,7 @@ export default function Reservations() {
                     </div>
                     <div className="detail-line"><span className="k">요청사항</span><span className="v">{r.request ?? "-"}</span></div>
                     <div className="detail-line"><span className="k">작성자</span><span className="v">{r.writer}</span></div>
+                    <HistoryLine history={historyOf(r)} phone={r.phone} />
                     <AlimtalkLine r={r} />
                     {duplicateWith(r).length > 0 && (
                       <div className="detail-line">
@@ -686,6 +731,7 @@ export default function Reservations() {
           {sel ? (
             <Card title={`${sel.time} · ${sel.name}`} action={<StatusBadge status={sel.status} />}>
               <div className="detail-line"><span className="k">연락처</span><span className="v">{sel.phone}</span></div>
+              <HistoryLine history={historyOf(sel)} phone={sel.phone} />
               <div className="detail-line"><span className="k">인원</span><span className="v">{sel.people}명</span></div>
               <div className="detail-line"><span className="k">좌석</span><span className="v">{sel.seat}</span></div>
               <div className="detail-line"><span className="k">요청사항</span><span className="v">{sel.request ?? "-"}</span></div>
