@@ -42,9 +42,10 @@ const ACTION_ROLES = {
   send: ["admin"],
   invite: ["admin"],
   unlink: ["admin"],
-  // 매일 자동으로 가는 것(오늘 예약 11시, 일일 정산 22시 30분)을 «시험으로 보내기»
+  // 자동으로 가는 것(오늘 예약 11시, 일일 정산 22시 30분, 주간 보고 월요일 9시)을 «시험으로 보내기»
   sendReservations: ["admin"],
   sendSettlement: ["admin"],
+  sendWeekly: ["admin"],
 };
 
 function canRun(action, role) {

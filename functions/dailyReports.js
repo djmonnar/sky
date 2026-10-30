@@ -24,12 +24,15 @@
  */
 
 const { checklistRows, MEMO_TEXT_LIMIT } = require("./kakaoMemo");
+// 같은 손님 = 같은 전화 열쇠 — 네이버 중복 확인·손님 이력과 같은 규칙
+const { phoneKey } = require("./naverReservationSync");
 
 const DOW = ["월", "화", "수", "목", "금", "토", "일"];
 
 const REPORTS = {
   reservations: { label: "오늘 예약", time: "11:00", buttonTitle: "예약 보기", path: "/reservations" },
   settlement: { label: "일일 정산", time: "22:30", buttonTitle: "정산 보기", path: "/finance?tab=close" },
+  weekly: { label: "주간 보고", time: "월 09:00", buttonTitle: "손익 보기", path: "/finance?tab=profit" },
 };
 
 function weekdayOf(date) {
@@ -185,10 +188,8 @@ function isMonthlyEmployee(employee) {
   return employee.employmentType === "fullTime" || employee.salaryType === "monthly";
 }
 
-/**
- * @returns {{ total: number, unknown: number }} total 은 원 단위 반올림. 셀 사람이 아무도 없으면 null.
- */
-function laborCostOf({ date, shifts, employees }) {
+/** 하루치 — 반올림 전 합계와 «모름» 사람 열쇠(여러 날을 합칠 때 같은 사람을 한 번만 세려고) */
+function laborDayDetail({ date, shifts, employees }) {
   const [year, month] = date.split("-").map(Number);
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const byId = new Map(employees.map((employee) => [Number(employee.id), employee]));
@@ -228,7 +229,27 @@ function laborCostOf({ date, shifts, employees }) {
     const hourly = Number(employee.hourly) || 0;
     if (hourly > 0) { total += (hourly * shiftMinutes(shift)) / 60; counted += 1; } else unknown.add(`emp:${id}`);
   }
+  return { total, counted, unknown };
+}
 
+/**
+ * @returns {{ total: number, unknown: number }} total 은 원 단위 반올림. 셀 사람이 아무도 없으면 null.
+ */
+function laborCostOf({ date, shifts, employees }) {
+  return laborCostOfDates({ dates: [date], shifts, employees });
+}
+
+/** 여러 날(주간 보고) — 날마다 세어 더하고, 모르는 사람은 한 주에 한 번만 센다 */
+function laborCostOfDates({ dates, shifts, employees }) {
+  let total = 0;
+  let counted = 0;
+  const unknown = new Set();
+  for (const date of dates) {
+    const day = laborDayDetail({ date, shifts, employees });
+    total += day.total;
+    counted += day.counted;
+    day.unknown.forEach((key) => unknown.add(key));
+  }
   if (counted === 0 && unknown.size === 0) return null;
   return { total: Math.round(total), unknown: unknown.size };
 }
@@ -239,6 +260,110 @@ function laborLine(labor, sales) {
   const ratio = sales && sales.amount > 0 ? `(매출의 ${Math.round((labor.total / sales.amount) * 100)}%)` : "";
   const unknown = labor.unknown > 0 ? ` · ${labor.unknown}명 모름` : "";
   return `인건비 ${won(labor.total)}${ratio}${unknown}`;
+}
+
+/* ── 주간 보고 (매주 월요일 오전 9시, 2026-10-30 사장님 요청) ─────────────────────
+   지난주(월~일) 한 주를 한 번에: 매출·전주 대비, 매입·인건비율, 고정비를 뺀 이익 추정, 예약·노쇼율·재방문.
+   숫자 규칙은 일일 정산·손익 화면과 같다 — 매출은 OK포스 우선(effectiveSales), 인건비는 근무표 기준,
+   고정비는 손익 탭에 적은 달 금액을 날수로 나눈 그 주 몫. 모르는 칸은 0 이 아니라 «미입력»·«아직 안 들어옴». */
+
+function addDays(date, days) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** date 기준 «지난주» 월~일. 월요일에 보내면 바로 앞 주, 다른 요일에 시험으로 보내도 다 끝난 앞 주. */
+function lastWeekOf(date) {
+  const start = addDays(addDays(date, -weekdayOf(date)), -7);
+  return { start, end: addDays(start, 6) };
+}
+
+function datesBetween(start, end) {
+  const dates = [];
+  for (let d = start; d <= end; d = addDays(d, 1)) dates.push(d);
+  return dates;
+}
+
+/** 그 주 고정비 몫 — 날마다 (그달 고정비 ÷ 그달 날수). 걸친 달 중 하나라도 안 적었으면 null(«미입력») */
+function fixedCostShare(dates, fixedByMonth) {
+  let sum = 0;
+  for (const date of dates) {
+    const month = date.slice(0, 7);
+    const total = fixedByMonth.get(month);
+    if (total === null || total === undefined) return null;
+    const [year, mon] = month.split("-").map(Number);
+    sum += total / new Date(Date.UTC(year, mon, 0)).getUTCDate();
+  }
+  return Math.round(sum);
+}
+
+const VISITED_STATUSES = new Set(["방문완료", "예약확정", "단체"]);
+
+/**
+ * 그 주 예약 — 취소 빼고 팀·인원, 노쇼, 재방문(그 주에 다녀간 예약 가운데 같은 번호로 그 전에 다녀간 적이 있는 팀).
+ * 다녀감은 손님 이력(src/lib/customerHistory.ts)과 같다 — 지난 날짜의 방문완료·예약확정·단체. 같은 손님은 전화번호로만.
+ */
+function weekReservationStats({ start, end, reservations, phoneKey }) {
+  const inWeek = reservations.filter((r) => r.date >= start && r.date <= end && r.status !== "취소");
+  const visitsByPhone = new Map();
+  for (const r of reservations) {
+    if (!VISITED_STATUSES.has(r.status)) continue;
+    const key = phoneKey(r.phone);
+    if (!key) continue;
+    const dates = visitsByPhone.get(key) || [];
+    dates.push(r.date);
+    visitsByPhone.set(key, dates);
+  }
+  let revisit = 0;
+  for (const r of inWeek) {
+    if (!VISITED_STATUSES.has(r.status)) continue;
+    const key = phoneKey(r.phone);
+    if (key && (visitsByPhone.get(key) || []).some((date) => date < r.date)) revisit += 1;
+  }
+  return {
+    teams: inWeek.length,
+    people: inWeek.reduce((sum, r) => sum + (Number(r.people) || 0), 0),
+    noShow: inWeek.filter((r) => r.status === "노쇼").length,
+    revisit,
+  };
+}
+
+function signedPercent(now, before) {
+  const pct = Math.round(((now - before) / before) * 100);
+  return `${pct > 0 ? "+" : ""}${pct}%`;
+}
+
+/** 주간 보고 글 (200자 안) */
+function buildWeeklyMemo({ start, end, sales, purchases, labor, fixed, reservations }) {
+  const lines = [`[하늘땅] 주간 보고 ${md(start)}~${md(end)}`];
+  if (sales.days > 0) {
+    const days = sales.days < 7 ? ` · ${sales.days}일` : "";
+    const change = sales.prevDays > 0 && sales.prevTotal > 0 ? ` · 전주 대비 ${signedPercent(sales.total, sales.prevTotal)}` : "";
+    lines.push(`매출 ${won(sales.total)}${days}${change}`);
+  } else {
+    lines.push("매출 아직 안 들어옴");
+  }
+  const laborText = laborLine(labor, sales.days > 0 ? { amount: sales.total } : null);
+  lines.push(`매입 ${won(purchases.total)}${laborText ? ` · ${laborText}` : ""}`);
+  if (fixed === null) {
+    lines.push("고정비 미입력(손익 탭에 적으면 이익도 알려 드림)");
+  } else if (sales.days > 0) {
+    const profit = sales.total - purchases.total - (labor ? labor.total : 0) - fixed;
+    lines.push(`고정비 ${won(fixed)} → 이익 추정 ${won(profit)}`);
+  } else {
+    lines.push(`고정비 ${won(fixed)}`);
+  }
+  if (reservations.teams > 0) {
+    const noShow = reservations.noShow > 0
+      ? ` · 노쇼 ${reservations.noShow}팀(${Math.round((reservations.noShow / reservations.teams) * 100)}%)`
+      : " · 노쇼 없음";
+    const revisit = reservations.revisit > 0 ? ` · 재방문 ${reservations.revisit}팀` : "";
+    lines.push(`예약 ${reservations.teams}팀 ${reservations.people}명${noShow}${revisit}`);
+  } else {
+    lines.push("예약 없음");
+  }
+  return lines.join("\n").slice(0, MEMO_TEXT_LIMIT);
 }
 
 /** "오픈 4/4 · 마감 3/4" — 항목이 없으면 null */
@@ -351,6 +476,8 @@ function createDailyReports(deps) {
     if (type === "settlement") {
       const collection = await refreshSales();
       text = buildSettlementMemo({ ...(await gatherSettlement(date)), collection });
+    } else if (type === "weekly") {
+      text = buildWeeklyMemo(await gatherWeekly(date));
     } else {
       text = buildReservationsMemo({ date, reservations: await reservationsOf(date) });
     }
@@ -375,7 +502,52 @@ function createDailyReports(deps) {
     return result;
   }
 
-  return { send, runScheduled, gatherSettlement };
+  /** 지난주(월~일) 한 주 — 매출(그 주 + 전주), 매입, 인건비, 고정비 몫, 예약 */
+  async function gatherWeekly(date) {
+    const { start, end } = lastWeekOf(date);
+    const prevStart = addDays(start, -7);
+    const dates = datesBetween(start, end);
+    const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
+    const [salesSnap, ordersSnap, shiftsSnap, employeesSnap, reservationsSnap, ...fixedSnaps] = await Promise.all([
+      storeCol("salesDailySummaries").where("businessDate", ">=", prevStart).where("businessDate", "<=", end).get(),
+      storeCol("purchaseOrders").get(),
+      storeCol("shifts").where("date", ">=", start).where("date", "<=", end).get(),
+      storeCol("employees").get(),
+      storeCol("reservations").get(),
+      ...months.map((month) => storeDoc("fixedCosts", month).get()),
+    ]);
+
+    const sales = { total: 0, days: 0, prevTotal: 0, prevDays: 0 };
+    for (const doc of salesSnap.docs) {
+      const data = doc.data();
+      const effective = effectiveSales(data);
+      if (!effective) continue;
+      if (data.businessDate >= start) { sales.total += effective.amount; sales.days += 1; } else { sales.prevTotal += effective.amount; sales.prevDays += 1; }
+    }
+    const orders = ordersSnap.docs
+      .map((doc) => doc.data())
+      .filter((order) => order.status !== "canceled" && orderBaseDate(order) >= start && orderBaseDate(order) <= end);
+    const fixedByMonth = new Map(months.map((month, i) => {
+      const snap = fixedSnaps[i];
+      const items = snap.exists && Array.isArray(snap.data().items) ? snap.data().items : [];
+      return [month, items.length > 0 ? items.reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0) : null];
+    }));
+    return {
+      start,
+      end,
+      sales,
+      purchases: { total: orders.reduce((sum, order) => sum + (Number(order.totalAmount) || 0), 0), count: orders.length },
+      labor: laborCostOfDates({
+        dates,
+        shifts: shiftsSnap.docs.map((doc) => doc.data()),
+        employees: employeesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+      }),
+      fixed: fixedCostShare(dates, fixedByMonth),
+      reservations: weekReservationStats({ start, end, reservations: reservationsSnap.docs.map((doc) => doc.data()), phoneKey }),
+    };
+  }
+
+  return { send, runScheduled, gatherSettlement, gatherWeekly };
 }
 
 module.exports = {
@@ -386,7 +558,12 @@ module.exports = {
   checklistSummary,
   effectiveSales,
   laborCostOf,
+  laborCostOfDates,
   laborLine,
   shiftMinutes,
+  buildWeeklyMemo,
+  lastWeekOf,
+  fixedCostShare,
+  weekReservationStats,
   REPORTS,
 };

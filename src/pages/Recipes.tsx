@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { Badge, Card } from "../components/ui";
+import PriceWatchCard from "../components/PriceWatchCard";
 import type { Recipe, RecipeIngredient, RecipeKind } from "../data/types";
 import { UNITS, UNIT_LABELS, type Unit, convertQuantity, convertUnitCost, normalizeUnit } from "../data/units";
 import {
@@ -641,7 +642,7 @@ function RecipeEditor({
    ============================================================ */
 
 export default function Recipes() {
-  const { recipes, vendors, upsertRecipe, deleteRecipe, showToast } = useStore();
+  const { recipes, vendors, upsertRecipe, deleteRecipe, showToast, purchaseOrders } = useStore();
   const [kind, setKind] = useState<RecipeKind>("menu");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("전체");
@@ -741,6 +742,16 @@ export default function Recipes() {
           <small>수량·단가·하위 레시피 확인</small>
         </div>
       </div>
+
+      {/* 거래처 값이 바뀌었는데 레시피 단가가 그대로면 원가율이 실제보다 낮게 보인다 — 발주 내역과 견줘 알린다 */}
+      <PriceWatchCard
+        recipes={recipes}
+        orders={purchaseOrders}
+        onApply={(updated, change) => {
+          updated.forEach((recipe) => upsertRecipe(recipe));
+          showToast(`${change.name} 단가를 레시피 ${updated.length}개에 반영했습니다`);
+        }}
+      />
 
       <Card className="recipe-list-card">
         <div className="recipe-toolbar">
