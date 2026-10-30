@@ -33,13 +33,14 @@ function Splash({ text }: { text: string }) {
 }
 
 export default function App() {
-  const { mode, role, authLoading, authUser, profile, managerPermissions } = useStore();
+  const { mode, role, authLoading, authUser, profile, canAccess } = useStore();
   const location = useLocation();
-  const canManager = (key: ManagerPermissionKey) => role === "manager" && managerPermissions[key];
-  const canAdminOrManager = (key: ManagerPermissionKey) => role === "admin" || canManager(key);
+  // 관리자는 전부, 매니저는 매니저 권한, 실무자는 실무자 권한(관리자 모드 → 권한 설정)
+  const canAdminOrManager = (key: ManagerPermissionKey) => canAccess(key);
   const canUseManagerDashboard = role === "admin" || role === "manager";
-  const canUseReservations = role === "admin" || role === "staff" || canManager("reservations");
-  const canUseFinance = role === "admin" || canManager("sales") || canManager("settlements");
+  // 실무자는 「오늘 예약」이 기본이다 — 권한과 상관없이 연다
+  const canUseReservations = role === "staff" || canAccess("reservations");
+  const canUseFinance = canAccess("sales") || canAccess("settlements");
 
   // 라이브 모드: 인증 게이트
   if (mode === "live") {

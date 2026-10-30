@@ -363,3 +363,17 @@ cd functions && npm run test:naver  # 네이버 예약 동기화 (무엇을 지�
 
 - **실무자**: 오늘 오전/오후 슬롯 확인, 출/퇴근(attendanceLogs 기록), 예약 확인·상태 변경, 슬롯 기준 근무기록 작성, 전달사항
 - **관리자**: 대시보드 KPI, 예약 등록/수정, 주간 슬롯 근무표 편집(요일별 오전/오후·홀/주방), 근무기록 승인, 급여 승인/확정
+
+### 매니저·실무자 권한 (관리자 모드 → 🛡️ 권한 설정)
+
+- **매니저 권한**(`meta/managerPermissions`)과 **실무자 권한**(`meta/staffPermissions`)을 같은 탭에서 고른다. 열쇠는 같은 이름
+  (scheduleManage·employees·sales·vendors·inventory·settlements·recipes·notices·guide)이고, 메뉴·주소·데이터 구독은
+  `canAccess(열쇠)`(= `src/config/staffPermissions.ts` 의 `roleCan`) 하나로, Firestore 규칙은 `granted(storeId, 열쇠)`(매니저 또는 실무자)로 본다.
+- 실무자 **기본 화면**(대시보드·오늘 예약·근무표(본인)·근무기록·체크리스트)은 끌 수 없고, 실무자 권한은 그 위에 화면을 **더 연다**. 처음엔 전부 꺼짐.
+- 실무자 열쇠에는 `dashboard`·`reservations` 가 없다 — 실무자가 예약을 지우게 되는 길은 없다(지우기는 관리자·예약 권한 매니저).
+- 「근무표 관리」를 받은 실무자는 매니저처럼 전체 근무표를 본다(안 받으면 본인 것만). 「직원 관리」는 주민등록번호·계좌가 보이니 주의.
+- 열어 준 화면은 실무자 사이드바와 ☰ 전체 메뉴에 붙는다(휴대폰 아래 탭은 기본 다섯 개 그대로).
+
+```bash
+npm run test:permissions   # 역할별로 열리는 화면, 실무자에게 예약 지우기 없음, 화면 열쇠 = 규칙 열쇠
+```

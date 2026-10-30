@@ -24,6 +24,20 @@ const STAFF_NAV: NavDef[] = [
   { to: "/checklist", icon: "✅", label: "체크리스트", title: "체크리스트", mobile: true, mobileLabel: "체크" },
 ];
 
+/**
+ * 관리자 모드 → 권한 설정에서 실무자에게 열어 준 화면. 실무자 기본 메뉴 뒤에 붙는다.
+ * 휴대폰 아래 탭은 기본 다섯 개로 차 있어서 이것들은 「☰ 전체 메뉴」에 나온다.
+ */
+const STAFF_EXTRA_NAV: NavDef[] = [
+  { to: "/schedule-manage", icon: "🗓️", label: "근무표 관리", title: "근무표 관리", mobile: false, managerPermission: "scheduleManage" },
+  { to: "/employees", icon: "👥", label: "직원 관리", title: "직원 관리", mobile: false, managerPermission: "employees" },
+  { to: "/finance", icon: "📊", label: "매출·매입", title: "매출·매입 관리", mobile: false, managerPermissions: ["sales", "settlements"] },
+  { to: "/vendors", icon: "🏢", label: "거래처 관리", title: "거래처 관리", mobile: false, managerPermission: "vendors" },
+  { to: "/inventory", icon: "📦", label: "재고 관리", title: "재고 관리", mobile: false, managerPermission: "inventory" },
+  { to: "/recipes", icon: "🥘", label: "레시피 원가", title: "레시피 원가계산", mobile: false, managerPermission: "recipes" },
+  { to: "/guide", icon: "📖", label: "가이드북", title: "사용 가이드북", mobile: false, managerPermission: "guide" },
+];
+
 const ADMIN_NAV: NavDef[] = [
   { to: "/", icon: "🏠", label: "대시보드", title: "관리자 대시보드", mobile: true, mobileLabel: "홈" },
   { to: "/reservations", icon: "📋", label: "예약 관리", title: "예약 관리", mobile: true, mobileLabel: "예약" },
@@ -54,18 +68,19 @@ const MANAGER_NAV: NavDef[] = [
 export default function Layout({ children }: { children: ReactNode }) {
   const {
     mode, demoReason, role, setRole, toast, loading, error,
-    profile, authUser, logout, currentEmployee, managerPermissions,
+    profile, authUser, logout, currentEmployee, canAccess,
   } = useStore();
   const loc = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // 권한 열쇠가 붙은 메뉴는 지금 역할의 권한(매니저 권한·실무자 권한)으로 거른다
+  const allowed = (item: NavDef) =>
+    (!item.managerPermission || canAccess(item.managerPermission))
+    && (!item.managerPermissions || item.managerPermissions.some((key) => canAccess(key)));
   const nav = role === "admin"
     ? ADMIN_NAV
     : role === "manager"
-      ? MANAGER_NAV.filter((item) =>
-          (!item.managerPermission || managerPermissions[item.managerPermission])
-          && (!item.managerPermissions || item.managerPermissions.some((key) => managerPermissions[key]))
-        )
-      : STAFF_NAV;
+      ? MANAGER_NAV.filter(allowed)
+      : [...STAFF_NAV, ...STAFF_EXTRA_NAV.filter(allowed)];
   const current = nav.find((n) => n.to === loc.pathname);
   const title = current?.title ?? (loc.pathname === "/profile" ? "내 정보 수정" : "하늘땅 매장관리");
 

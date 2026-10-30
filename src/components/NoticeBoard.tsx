@@ -18,8 +18,9 @@ function keyOf(notice: Notice): string {
 }
 
 export default function NoticeBoard() {
-  const { notices, upsertNotice, deleteNotice, role, managerPermissions, showToast } = useStore();
-  const canManage = role === "admin" || (role === "manager" && managerPermissions.notices);
+  const { notices, upsertNotice, deleteNotice, canAccess, showToast } = useStore();
+  // 관리자, 「공지사항」 권한을 받은 매니저·실무자
+  const canManage = canAccess("notices");
   const [draft, setDraft] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");

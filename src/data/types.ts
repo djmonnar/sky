@@ -65,6 +65,14 @@ export type ManagerPermissionKey =
 
 export type ManagerPermissions = Record<ManagerPermissionKey, boolean>;
 
+/**
+ * 실무자에게 **더 열어 줄 수 있는** 화면. 매니저 권한과 같은 열쇠를 쓴다(규칙·화면이 같은 이름으로 본다).
+ * 대시보드·오늘 예약(보기·등록·상태 변경)·근무표(본인)·근무기록·체크리스트는 실무자 기본이라 여기 없다 —
+ * 그래서 「reservations」를 켜서 실무자가 예약을 지우게 되는 일은 없다.
+ */
+export type StaffPermissionKey = Exclude<ManagerPermissionKey, "dashboard" | "reservations">;
+export type StaffPermissions = Record<StaffPermissionKey, boolean>;
+
 export type ResvStatus =
   | "예약확정"
   | "방문완료"

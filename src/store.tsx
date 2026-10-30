@@ -8,7 +8,7 @@ import {
   Notice, Employee, Vendor, InventoryCategoryItem, InventoryItem, PurchaseOrder, StockLog, Recipe, SalesOrder, SalesSyncRun, SalesDailySummary, SalesMenuReport, GranterSyncRun,
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch,
-  OwnerSchedule, ManagerPermissions, ManagerPermissionKey,
+  OwnerSchedule, ManagerPermissions, ManagerPermissionKey, StaffPermissions,
   OkposDailyReport,
 } from "./data/types";
 import { withOkpos } from "./lib/okposDaily";
@@ -51,9 +51,11 @@ import {
   fsUpsertFinanceDailyClose, fsUpsertFinanceMatch, fsDeleteFinanceMatch,
   fsUpdateMyProfile,
   subscribeManagerPermissions, fsSetManagerPermissions,
+  subscribeStaffPermissions, fsSetStaffPermissions,
 } from "./services/firestore";
 import { sortShifts } from "./lib/shifts";
 import { DEFAULT_MANAGER_PERMISSIONS, normalizeManagerPermissions } from "./config/managerPermissions";
+import { DEFAULT_STAFF_PERMISSIONS, normalizeStaffPermissions, roleCan } from "./config/staffPermissions";
 import { canPunch, foldAttendanceDay, foldAttendanceMonth, monthTotals } from "./lib/attendance";
 import { BATCH_UNIT, isSubRecipeRow } from "./lib/recipeCost";
 
@@ -76,6 +78,15 @@ function loadDemoManagerPermissions(): ManagerPermissions {
   }
 }
 
+function loadDemoStaffPermissions(): StaffPermissions {
+  try {
+    const raw = window.localStorage.getItem("haneulttang.staffPermissions");
+    return normalizeStaffPermissions(raw ? JSON.parse(raw) as Partial<StaffPermissions> : null);
+  } catch {
+    return DEFAULT_STAFF_PERMISSIONS;
+  }
+}
+
 interface Store {
   mode: AppMode;
   /** 데모 모드 사유 안내 (배너용). live면 null */
@@ -86,6 +97,11 @@ interface Store {
   managerPermissions: ManagerPermissions;
   updateManagerPermissions: (next: ManagerPermissions) => Promise<void>;
   canManagerAccess: (key: ManagerPermissionKey) => boolean;
+  /** 실무자에게 더 열어 준 화면 (관리자 모드 → 권한 설정) */
+  staffPermissions: StaffPermissions;
+  updateStaffPermissions: (next: StaffPermissions) => Promise<void>;
+  /** 지금 역할이 이 화면을 쓸 수 있는가 — 관리자 전부, 매니저는 매니저 권한, 실무자는 실무자 권한 */
+  canAccess: (key: ManagerPermissionKey) => boolean;
 
   // 인증 (live 모드)
   authUser: AuthUser | null;
@@ -262,6 +278,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [managerPermissions, setManagerPermissions] = useState<ManagerPermissions>(() =>
     loadDemoManagerPermissions()
   );
+  const [staffPermissions, setStaffPermissions] = useState<StaffPermissions>(() =>
+    loadDemoStaffPermissions()
+  );
   // 회원가입 중에는 auth 리스너가 프로필을 먼저 조회하지 않도록 막음
   // (계정 생성 → users 문서 생성 사이의 레이스 방지)
   const signupInProgress = useRef(false);
@@ -321,6 +340,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setAuthUser(null);
         setProfile(null);
         setManagerPermissions(DEFAULT_MANAGER_PERMISSIONS);
+        setStaffPermissions(DEFAULT_STAFF_PERMISSIONS);
         setAuthLoading(false);
         setLoading(true);
         return;
@@ -378,6 +398,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, [profile]);
 
+  // 실무자 권한 — 관리자는 고치려고, 실무자는 메뉴·주소에 쓰려고 읽는다. 매니저에게는 상관없다.
+  useEffect(() => {
+    if (APP_MODE !== "live" || !profile || (profile.role !== "admin" && profile.role !== "staff")) return;
+    return subscribeStaffPermissions(
+      setStaffPermissions,
+      (e) => {
+        console.error("[staffPermissions]", e);
+        // 규칙을 아직 안 올렸으면 읽기가 거절된다 — 실무자는 기본 화면만 쓰면 되니 화면 전체를 오류로 만들지 않는다.
+        setStaffPermissions(DEFAULT_STAFF_PERMISSIONS);
+      }
+    );
+  }, [profile]);
+
   /* ---------- 라이브 모드: Firestore 실시간 구독 ---------- */
   useEffect(() => {
     if (APP_MODE !== "live" || !profile) return;
@@ -389,13 +422,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     };
 
-    // staff는 본인 근무표/근무기록만, admin은 전체 (Security Rules와 일치)
-    const empFilter =
-      profile.role === "staff" ? profile.employeeId : undefined;
     const isAdminRole = profile.role === "admin";
     const isStaffRole = profile.role === "staff";
+    // 관리자가 아닌 사람(매니저·실무자)에게 열어 준 화면. 이름은 예전 그대로 두었다 — 실무자 권한도 같은 열쇠다.
     const managerCan = (key: ManagerPermissionKey) =>
-      profile.role === "manager" && managerPermissions[key] === true;
+      !isAdminRole && roleCan(profile.role, key, managerPermissions, staffPermissions);
+    // staff는 본인 근무표/근무기록만, admin은 전체 (Security Rules와 일치).
+    // 「근무표 관리」를 받은 실무자는 매니저처럼 전체를 본다.
+    const empFilter =
+      isStaffRole && !managerCan("scheduleManage") ? profile.employeeId : undefined;
     const canReservationData = isAdminRole || isStaffRole || managerCan("reservations");
     const canScheduleData = isAdminRole || isStaffRole || managerCan("scheduleManage");
     const canUserProfileData = isAdminRole || managerCan("employees");
@@ -498,13 +533,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribeGranterAccountTransactions(
               setGranterAccountTransactions,
               onErr,
-              profile.role === "manager" && !managerCan("sales") ? "out" : undefined
+              !isAdminRole && !managerCan("sales") ? "out" : undefined
             ),
             subscribeGranterFinanceCategories(setGranterFinanceCategories, onErr),
             subscribeFinanceMatches(
               setFinanceMatches,
               onErr,
-              profile.role === "manager" && managerCan("sales") !== managerCan("settlements")
+              !isAdminRole && managerCan("sales") !== managerCan("settlements")
                 ? (managerCan("sales") ? "salesDeposit" : "purchasePayment")
                 : undefined
             ),
@@ -513,7 +548,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ];
     return () => unsubs.forEach((u) => u());
     // attendanceMonth 가 바뀌면 그 달 기록을 다시 받아야 한다.
-  }, [profile, managerPermissions, attendanceMonth]);
+  }, [profile, managerPermissions, staffPermissions, attendanceMonth]);
 
   const currentEmployee = useMemo<Employee | null>(() => {
     const targetId =
@@ -1200,6 +1235,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return managerPermissions[key] === true;
   }, [managerPermissions]);
 
+  const updateStaffPermissions = useCallback(async (next: StaffPermissions) => {
+    const normalized = normalizeStaffPermissions(next);
+    if (APP_MODE === "live") {
+      await fsSetStaffPermissions(normalized);
+    } else {
+      window.localStorage.setItem("haneulttang.staffPermissions", JSON.stringify(normalized));
+    }
+    setStaffPermissions(normalized);
+    showToast("실무자 권한 설정을 저장했습니다");
+  }, [showToast]);
+
+  const canAccess = useCallback(
+    (key: ManagerPermissionKey) => roleCan(role, key, managerPermissions, staffPermissions),
+    [role, managerPermissions, staffPermissions],
+  );
+
   const updateUserRole = useCallback(async (uid: string, nextRole: Role) => {
     if (nextRole === "admin") {
       throw new Error("관리자 권한은 Firebase 콘솔에서 직접 부여해주세요.");
@@ -1459,6 +1510,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       mode: APP_MODE, demoReason,
       role, setRole, managerPermissions, updateManagerPermissions, canManagerAccess,
+      staffPermissions, updateStaffPermissions, canAccess,
       authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
       loading, error,
       employees, upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, deactivateUserProfile,
@@ -1491,6 +1543,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toast, showToast,
     }),
     [demoReason, role, setRole, managerPermissions, updateManagerPermissions, canManagerAccess,
+     staffPermissions, updateStaffPermissions, canAccess,
      authUser, profile, authLoading, login, signup, completeProfile, updateMyProfile, logout,
      loading, error, employees, userProfiles, updateUserRole, currentEmployee,
      reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns, granterSyncRuns,

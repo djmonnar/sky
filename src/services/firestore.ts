@@ -25,7 +25,7 @@ import type {
   GranterFinanceCategory, GranterFinanceDomain, GranterFinanceItem,
   FinanceDailyClose, FinanceMatch, FinanceMatchKind,
   OwnerSchedule,
-  SettlementMethod, SettlementStatus, ManagerPermissions, ChatbotUser,
+  SettlementMethod, SettlementStatus, ManagerPermissions, StaffPermissions, ChatbotUser,
   AttendanceLog, TimesheetSubmission, ChatbotMemory, ChatConversation,
   OkposDailyReport, OkposPayments,
   NaverReservationSyncState,
@@ -34,6 +34,7 @@ import { OKPOS_PAYMENT_KEYS, withOkpos } from "../lib/okposDaily";
 import type { AttendanceLogDoc, TimesheetSubmissionDoc, UserProfileDoc } from "../types/firestore";
 import { PERIOD_TIME, sortShifts } from "../lib/shifts";
 import { normalizeManagerPermissions } from "../config/managerPermissions";
+import { normalizeStaffPermissions } from "../config/staffPermissions";
 import { normalizeUnit } from "../data/units";
 import { BATCH_UNIT, isSubRecipeRow } from "../lib/recipeCost";
 
@@ -841,6 +842,15 @@ export function subscribeManagerPermissions(cb: (v: ManagerPermissions) => void,
   );
 }
 
+/** 실무자 권한(meta/staffPermissions). 관리자가 고치고, 실무자가 읽어 메뉴·주소에 쓴다. 없으면 전부 꺼짐. */
+export function subscribeStaffPermissions(cb: (v: StaffPermissions) => void, onError: ErrCb): Unsub {
+  return onSnapshot(
+    metaDoc("staffPermissions"),
+    (snap) => cb(normalizeStaffPermissions(snap.exists() ? snap.data() as Partial<StaffPermissions> : null)),
+    (e) => onError(new Error(`staffPermissions: ${e.message}`))
+  );
+}
+
 /** 카카오 챗봇 사용자 (stores/{id}/chatbotUsers). 규칙상 admin 만 읽고 쓸 수 있다. */
 export function subscribeChatbotUsers(cb: (v: ChatbotUser[]) => void, onError: ErrCb): Unsub {
   return subscribe(
@@ -1296,6 +1306,17 @@ export async function fsSetManagerPermissions(next: ManagerPermissions): Promise
     metaDoc("managerPermissions"),
     {
       ...normalizeManagerPermissions(next),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function fsSetStaffPermissions(next: StaffPermissions): Promise<void> {
+  await setDoc(
+    metaDoc("staffPermissions"),
+    {
+      ...normalizeStaffPermissions(next),
       updatedAt: serverTimestamp(),
     },
     { merge: true }
