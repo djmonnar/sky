@@ -105,6 +105,22 @@ check("복사 글과 엑셀 표 — 숫자만, 이름·전화번호 없음", () 
   assert.deepEqual(days[5].slice(0, 4), ["2026-10-05", "월", 1, 1234]);
 });
 
+check("「예약 목록」 — 예약자명·연락처, 합계와 같은 예약(그 달·취소 빼고), 날짜·시간 순", () => {
+  const rows = mr.reservationListRows([
+    resv("2026-10-09", "18:00", 2, { name: "나중", phone: "010-2222-0000" }),
+    naver("2026-10-09", "11:30", 4, { name: "먼저", phone: "01011110000", seat: "룸1", request: "아기의자" }),
+    resv("2026-10-01", "12:00", 3, { name: "첫날" }),
+    resv("2026-10-02", "12:00", 5, { name: "취소손님", status: "취소" }),
+    resv("2026-11-01", "12:00", 7, { name: "다음달" }),
+  ], "2026-10");
+  assert.deepEqual(rows[0], ["날짜", "요일", "시간", "예약자명", "연락처", "인원", "상태", "출처", "좌석", "요청사항"]);
+  assert.deepEqual(rows.slice(1).map((r) => r[3]), ["첫날", "먼저", "나중"]);
+  assert.deepEqual(rows[2], ["2026-10-09", "금", "11:30", "먼저", "01011110000", 4, "방문완료", "네이버", "룸1", "아기의자"]);
+  assert.equal(typeof rows[2][4], "string", "연락처가 숫자로 바뀌면 앞의 0이 사라진다");
+  const s = mr.summarizeMonth([resv("2026-10-01", "12:00", 3), resv("2026-10-02", "12:00", 5, { status: "취소" })], "2026-10");
+  assert.equal(mr.reservationListRows([resv("2026-10-01", "12:00", 3), resv("2026-10-02", "12:00", 5, { status: "취소" })], "2026-10").length - 1, s.total.teams);
+});
+
 check("달 넘기기 · 요일 · 달 초에는 지난달", () => {
   assert.equal(mr.shiftMonth("2026-01", -1), "2025-12");
   assert.equal(mr.shiftMonth("2026-12", 1), "2027-01");

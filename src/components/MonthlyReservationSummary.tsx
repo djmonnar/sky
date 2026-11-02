@@ -2,19 +2,23 @@ import { useMemo, useState } from "react";
 import { Card } from "./ui";
 import type { Reservation } from "../data/types";
 import {
-  daySheetRows, defaultSummaryMonth, dowOf, monthLabel, monthSummaryText, shiftMonth, summarizeMonth, summarySheetRows, tallyText,
+  daySheetRows, defaultSummaryMonth, dowOf, monthLabel, monthSummaryText, reservationListRows, shiftMonth, summarizeMonth,
+  summarySheetRows, tallyText,
 } from "../lib/monthlyReservations";
 
 /*
   예약 화면 「📊 월별 집계」 — 월마감 때 그 달 예약 건수·인원을 직접 뽑는다(src/lib/monthlyReservations.ts, 2026-11-02).
-  글로 복사(카톡에 붙여 넣기)와 엑셀(요약·날짜별, 이름·전화번호 없음)을 낸다.
+  글로 복사(카톡에 붙여 넣기)와 엑셀(요약·날짜별)을 낸다. 예약 권한이 있는 사람(관리자·예약 권한 매니저)의 엑셀에는
+  「예약 목록」(예약자명·연락처) 시트가 더 들어간다 — 실무자는 숫자만.
 */
 
 export default function MonthlyReservationSummary({
-  reservations, today, onClose, showToast,
+  reservations, today, includeList, onClose, showToast,
 }: {
   reservations: Reservation[];
   today: string;
+  /** 엑셀에 「예약 목록」(예약자명·연락처)을 넣을지 — 예약 권한(canAccess("reservations"))이 있는 사람만 */
+  includeList: boolean;
   onClose: () => void;
   showToast: (message: string) => void;
 }) {
@@ -45,6 +49,11 @@ export default function MonthlyReservationSummary({
       byDay["!cols"] = [{ wch: 12 }, { wch: 5 }, ...Array.from({ length: 9 }, () => ({ wch: 10 }))];
       XLSX.utils.book_append_sheet(book, summary, "요약");
       XLSX.utils.book_append_sheet(book, byDay, "날짜별");
+      if (includeList) {
+        const list = XLSX.utils.aoa_to_sheet(reservationListRows(reservations, month));
+        list["!cols"] = [{ wch: 12 }, { wch: 5 }, { wch: 7 }, { wch: 12 }, { wch: 15 }, { wch: 6 }, { wch: 10 }, { wch: 9 }, { wch: 10 }, { wch: 30 }];
+        XLSX.utils.book_append_sheet(book, list, "예약 목록");
+      }
       XLSX.writeFile(book, `하늘땅_예약집계_${month}.xlsx`);
     } catch {
       showToast("엑셀을 만들지 못했습니다. 다시 눌러 주세요");
@@ -137,7 +146,10 @@ export default function MonthlyReservationSummary({
 
       <p className="muted small month-resv-note">
         예약일 기준입니다. 「취소」 상태 예약은 빼고{s.canceled.teams > 0 ? `(${tallyText(s.canceled)})` : ""}, 노쇼는 넣어 셉니다.
-        네이버에서 취소된 예약과 목록에서 지운 예약은 남아 있지 않아 세지 못합니다. 엑셀에는 이름·전화번호가 들어가지 않습니다.
+        네이버에서 취소된 예약과 목록에서 지운 예약은 남아 있지 않아 세지 못합니다.
+        {includeList
+          ? " 엑셀 「예약 목록」 시트에 예약자명·연락처가 들어갑니다 — 파일을 보낼 때 받는 사람을 꼭 확인해 주세요."
+          : " 엑셀에는 숫자만 들어갑니다(예약자 목록은 관리자·예약 권한 매니저만)."}
       </p>
     </Card>
   );

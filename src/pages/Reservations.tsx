@@ -192,7 +192,7 @@ function addDays(value: string, amount: number): string {
 export default function Reservations() {
   const {
     reservations, upsertReservation, deleteReservation, deleteReservations,
-    showToast, mode, profile, currentEmployee,
+    showToast, mode, profile, currentEmployee, canAccess,
   } = useStore();
   const writerName =
     mode === "live" ? profile?.name ?? "직원" : currentEmployee?.name ?? "직원";
@@ -488,6 +488,7 @@ export default function Reservations() {
         <MonthlyReservationSummary
           reservations={reservations}
           today={TODAY_STR}
+          includeList={canAccess("reservations")}
           onClose={() => setShowMonthly(false)}
           showToast={showToast}
         />
