@@ -12,7 +12,8 @@ import { MORNING_CUTOFF } from "./scheduleLoad";
    - 점심·저녁은 15:00 로 가른다 — 근무표 오전 칸이 15:00 에 끝나는 것과 같은 경계(scheduleLoad.ts).
    - 네이버 예약과 손으로 적은 예약이 같은 손님일 수 있으면(예약 화면 「중복 확인 필요」와 같은 규칙)
      그 수를 따로 알린다. 확인하면 합계가 줄 수 있다.
-   - 내보내는 표에는 이름·전화번호를 넣지 않는다 — 날짜별 숫자만.
+   - 엑셀 「요약」·「날짜별」은 숫자만. 「예약 목록」(예약자명·연락처, 2026-11-02 사장님 요청)은 예약 권한이 있는
+     사람(관리자·예약 권한 매니저)에게만 넣는다 — 화면이 고른다. 목록은 합계와 같은 예약(취소 상태 빼고)이다.
    ============================================================ */
 
 export interface Tally {
@@ -187,6 +188,23 @@ export function summarySheetRows(s: MonthlyReservationSummary): (string | number
   }
   rows.push([], ["※ 네이버에서 취소된 예약과 화면에서 지운 예약은 남아 있지 않아 세지 못합니다."]);
   return rows;
+}
+
+/**
+ * 엑셀 「예약 목록」 — 예약자명·연락처가 들어간다. 합계와 같은 예약(그 달 예약일, 취소 상태 빼고)을
+ * 날짜·시간 순으로. 누구에게 넣을지는 부르는 쪽(화면)이 정한다.
+ */
+export function reservationListRows(reservations: Reservation[], month: string): (string | number)[][] {
+  const rows = reservations
+    .filter((r) => String(r.date ?? "").startsWith(`${month}-`) && r.status !== "취소")
+    .sort((a, b) => a.date.localeCompare(b.date) || String(a.time ?? "").localeCompare(String(b.time ?? "")) || a.id - b.id);
+  return [
+    ["날짜", "요일", "시간", "예약자명", "연락처", "인원", "상태", "출처", "좌석", "요청사항"],
+    ...rows.map((r) => [
+      r.date, dowOf(r.date), r.time ?? "", r.name ?? "", String(r.phone ?? ""), peopleOf(r), r.status ?? "",
+      isNaverReservation(r) ? "네이버" : "직접 입력", r.seat ?? "", r.request ?? "",
+    ]),
+  ];
 }
 
 /** 엑셀 「날짜별」 시트 — 이름·전화번호 없이 숫자만 */
