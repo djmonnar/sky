@@ -1813,6 +1813,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .reservation-actions-row .search-wrap {
   min-width: 220px;
 }
+/* 「📊 월별 집계」가 들어오면서 버튼 글자가 세로로 꺾이지 않게 — 좁으면 줄을 바꾼다 */
+.reservation-actions-row { flex-wrap: wrap; }
+.reservation-actions-row .btn { white-space: nowrap; flex-shrink: 0; }
 
 .filter-chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
 .filter-chips::-webkit-scrollbar { display: none; }
@@ -2521,6 +2524,35 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .price-watch-recipes { margin: 8px 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
 .price-watch-recipes li { display: flex; justify-content: space-between; gap: 10px; word-break: keep-all; }
 .price-watch-high { color: var(--red-tx); font-weight: 800; }
+
+/* 예약 화면 「월별 집계」 (MonthlyReservationSummary) — 월마감 때 그 달 예약 건수·인원 */
+.month-resv-card { margin-bottom: 14px; }
+.month-resv-open.on { background: var(--bg-soft); }
+.month-resv-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.month-resv-step { display: flex; align-items: center; gap: 8px; }
+.month-resv-step strong { font-size: 16px; min-width: 104px; text-align: center; }
+.month-resv-actions { display: flex; gap: 8px; }
+.month-resv-total { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.month-resv-total span { font-weight: 700; color: var(--muted); }
+.month-resv-total strong { font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: -0.4px; }
+.month-resv-total small { font-size: 14px; font-weight: 700; margin: 0 2px; }
+.month-resv-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.month-resv-grid > div { display: flex; flex-direction: column; gap: 2px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+.month-resv-grid span { font-size: 12px; color: var(--muted); word-break: keep-all; }
+.month-resv-grid b { font-variant-numeric: tabular-nums; word-break: keep-all; }
+.month-resv-status { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.month-resv-chip { padding: 4px 10px; border-radius: 999px; background: var(--bg-soft); font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.month-resv-chip.bad { background: var(--red-bg); color: var(--red-tx); }
+.month-resv-warn { margin: 0 0 8px; padding: 9px 12px; border-radius: 10px; background: var(--amber-bg); color: var(--amber-tx); font-size: 12.5px; font-weight: 700; line-height: 1.55; word-break: keep-all; }
+.month-resv-note { margin: 6px 0 0; word-break: keep-all; line-height: 1.55; }
+.month-resv-empty { margin: 4px 0 0; }
+.month-resv-days-toggle { margin-top: 4px; }
+.month-resv-days { margin-top: 8px; max-height: 360px; overflow-y: auto; }
+.month-resv-days .table tbody tr { cursor: default; }
+@media (max-width: 720px) {
+  .month-resv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .month-resv-total strong { font-size: 22px; }
+}
 
 /* 1회 제공량을 g·kg로 적었는데 산출량으로 못 나눌 때 — 1회 원가가 «계산 안 됨»인 까닭 */
 .recipe-serving-issue { color: var(--amber-tx); font-weight: 700; word-break: keep-all; }
@@ -3371,6 +3403,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
   }
   .reservation-actions-row .btn-primary {
     flex: 1 1 100%;
+  }
+  .reservation-actions-row .month-resv-open,
+  .reservation-actions-row .month-resv-open + .btn-primary {
+    flex: 1 1 40%;
   }
   .day-tabs {
     display: flex; overflow-x: auto; gap: 7px; padding-bottom: 2px;

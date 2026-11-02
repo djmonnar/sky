@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useStore } from "../store";
 import { Card, StatusBadge, Badge } from "../components/ui";
 import NaverSyncStatus, { useNaverReservationSync } from "../components/NaverSyncStatus";
+import MonthlyReservationSummary from "../components/MonthlyReservationSummary";
 import {
   Reservation, ResvStatus, RESV_STATUSES,
   TODAY_STR, DOW_KO, dowIndex, fmtDate,
@@ -208,6 +209,7 @@ export default function Reservations() {
   const [formPeriod, setFormPeriod] = useState<TimePeriod>(initialTime.period);
   const [formClock, setFormClock] = useState(initialTime.clock);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [showMonthly, setShowMonthly] = useState(false);
 
   const dayReservations = reservations.filter((r) => r.date === selectedDate && r.status !== "취소");
   const duplicateFlags = naverDuplicateFlags(dayReservations);
@@ -466,6 +468,14 @@ export default function Reservations() {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
+          <button
+            type="button"
+            className={`btn btn-outline month-resv-open${showMonthly ? " on" : ""}`}
+            onClick={() => setShowMonthly((v) => !v)}
+            aria-pressed={showMonthly}
+          >
+            📊 월별 집계
+          </button>
           <button className="btn btn-primary" onClick={openCreateForm}>
             ＋ 예약 등록
           </button>
@@ -473,6 +483,15 @@ export default function Reservations() {
       </div>
 
       <NaverSyncStatus state={naverSync} />
+
+      {showMonthly && (
+        <MonthlyReservationSummary
+          reservations={reservations}
+          today={TODAY_STR}
+          onClose={() => setShowMonthly(false)}
+          showToast={showToast}
+        />
+      )}
 
       <div className="grid grid-4 resv-stats">
         <div className="stat-card">
