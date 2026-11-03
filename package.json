@@ -18,7 +18,8 @@
     "test:fixedcost": "node scripts/check-fixed-costs.mjs",
     "test:scheduleload": "node scripts/check-schedule-load.mjs",
     "test:pricewatch": "node scripts/check-price-watch.mjs",
-    "test:monthresv": "node scripts/check-monthly-reservations.mjs"
+    "test:monthresv": "node scripts/check-monthly-reservations.mjs",
+    "test:loadwindow": "node scripts/check-load-window.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",

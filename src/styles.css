@@ -2525,6 +2525,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; }
 .price-watch-recipes li { display: flex; justify-content: space-between; gap: 10px; word-break: keep-all; }
 .price-watch-high { color: var(--red-tx); font-weight: 800; }
 
+/* 화면을 들어갈 때 받는 동안 (App.tsx Suspense) */
+.page-loading { padding: 40px 0; text-align: center; }
+
 /* 예약 화면 「월별 집계」 (MonthlyReservationSummary) — 월마감 때 그 달 예약 건수·인원 */
 .month-resv-card { margin-bottom: 14px; }
 .month-resv-open.on { background: var(--bg-soft); }

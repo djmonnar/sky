@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store";
+import { addDaysTo } from "../lib/loadWindow";
 import { Card, Badge } from "../components/ui";
 import { TODAY, TODAY_DOW, DOW_KO, weekDates } from "../data";
 import type { Department, Employee, Shift, ShiftPeriod } from "../data/types";
@@ -77,9 +78,12 @@ const shiftAssignmentId = (
     : `${date}_${period}_${department}_${employeeId}`;
 
 export default function ScheduleManage() {
-  const { shifts, setShift, deleteShift, showToast, employees, userProfiles, role, reservations, canAccess } = useStore();
+  const { shifts, setShift, deleteShift, showToast, employees, userProfiles, role, reservations, canAccess, ensureShiftsFrom } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const week = useMemo(() => weekDates(weekBase(weekOffset)), [weekOffset]);
+  // 근무표는 지난달 1일부터만 받아 둔다 — 더 앞 주로 가면 그 주의 한 주 전(「지난주 복사」)부터 더 받는다
+  const weekStart = shiftDateForDay(week, 0);
+  useEffect(() => { ensureShiftsFrom(addDaysTo(weekStart, -7)); }, [ensureShiftsFrom, weekStart]);
   /*
     날짜·시간대마다 예약 인원 — 사람을 몇 명 넣을지 정할 때 보이게(2026-10-30). 예약을 못 읽는 사람
     (예약 권한 없는 매니저)에게는 «예약 없음»이 거짓말이 되므로 아예 안 그린다.
