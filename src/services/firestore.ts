@@ -208,11 +208,16 @@ function normalizeShift(d: DocumentData, id: string): Shift {
   };
 }
 
-/** empId를 주면 본인 것만 구독 (staff), 없으면 전체 (admin) */
+/**
+ * empId를 주면 본인 것만 구독 (staff), 없으면 전체 (admin).
+ * 전체일 때 `fromDate`(YYYY-MM-DD)를 주면 그날부터만 받는다 — 처음 열 때 몇 달 치를 다 받지 않게
+ * (src/lib/loadWindow.ts). 본인 것은 많지 않아 범위를 두지 않는다.
+ */
 export function subscribeShifts(
   empId: number | undefined,
   cb: (v: Shift[]) => void,
-  onError: ErrCb
+  onError: ErrCb,
+  fromDate?: string,
 ): Unsub {
   if (empId !== undefined) {
     const byEmployeeId = new Map<string, Shift>();
@@ -246,6 +251,7 @@ export function subscribeShifts(
     normalizeShift,
     (items) => cb(items.sort(sortShifts)),
     onError,
+    ...(fromDate ? [where("date", ">=", fromDate)] : []),
   );
 }
 

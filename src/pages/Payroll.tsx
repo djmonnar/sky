@@ -228,7 +228,7 @@ export default function Payroll() {
     getPayrollPassword, setPayrollPassword, ownerSchedules, upsertOwnerSchedule, deleteOwnerSchedule,
     managerPermissions, updateManagerPermissions,
     staffPermissions, updateStaffPermissions,
-    timesheetSubmissions, reviewTimesheet,
+    timesheetSubmissions, reviewTimesheet, ensureShiftsFrom,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<AdminTab>("schedule");
@@ -250,6 +250,9 @@ export default function Payroll() {
   /** 권한 설정 탭에서 지금 고치는 역할 — 매니저 / 실무자 */
   const [permissionRole, setPermissionRole] = useState<"manager" | "staff">("manager");
   const [staffDraft, setStaffDraft] = useState(() => normalizeStaffPermissions(staffPermissions));
+
+  // 근무표는 지난달 1일부터만 받아 둔다 — 더 옛날 달을 고르면 그 달부터 더 받는다(src/lib/loadWindow.ts)
+  useEffect(() => { ensureShiftsFrom(`${selectedMonth}-01`); }, [ensureShiftsFrom, selectedMonth]);
 
   const monthShifts = useMemo(
     () => shifts.filter((s) => s.date?.startsWith(selectedMonth)),

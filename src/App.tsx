@@ -1,25 +1,35 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import { useStore } from "./store";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import CompleteProfile from "./pages/CompleteProfile";
-import StaffDashboard from "./pages/StaffDashboard";
-import AdminDashboard from "./pages/AdminDashboard";
-import Reservations from "./pages/Reservations";
-import WorkLog from "./pages/WorkLog";
-import SchedulePage from "./pages/SchedulePage";
-import ScheduleManage from "./pages/ScheduleManage";
-import Payroll from "./pages/Payroll";
-import EmployeeList from "./pages/EmployeeList";
-import Guide from "./pages/Guide";
-import Vendors from "./pages/Vendors";
-import Inventory from "./pages/Inventory";
-import Recipes from "./pages/Recipes";
-import Settlements from "./pages/Settlements";
-import MyProfile from "./pages/MyProfile";
-import Checklist from "./pages/Checklist";
 import type { ManagerPermissionKey } from "./data/types";
+
+/*
+  화면은 들어갈 때 받는다(2026-11-04 — 「대시보드 로딩이 너무 길다」). 전에는 열다섯 화면을 한 파일(559KB)로
+  묶어 첫 화면 전에 다 받았다. 로그인·가입 화면은 로그인 전에 바로 떠야 해서 그대로 둔다.
+*/
+const StaffDashboard = lazy(() => import("./pages/StaffDashboard"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const Reservations = lazy(() => import("./pages/Reservations"));
+const WorkLog = lazy(() => import("./pages/WorkLog"));
+const SchedulePage = lazy(() => import("./pages/SchedulePage"));
+const ScheduleManage = lazy(() => import("./pages/ScheduleManage"));
+const Payroll = lazy(() => import("./pages/Payroll"));
+const EmployeeList = lazy(() => import("./pages/EmployeeList"));
+const Guide = lazy(() => import("./pages/Guide"));
+const Vendors = lazy(() => import("./pages/Vendors"));
+const Inventory = lazy(() => import("./pages/Inventory"));
+const Recipes = lazy(() => import("./pages/Recipes"));
+const Settlements = lazy(() => import("./pages/Settlements"));
+const MyProfile = lazy(() => import("./pages/MyProfile"));
+const Checklist = lazy(() => import("./pages/Checklist"));
+
+function PageLoading() {
+  return <p className="muted page-loading">화면을 여는 중…</p>;
+}
 
 function Splash({ text }: { text: string }) {
   return (
@@ -55,6 +65,7 @@ export default function App() {
 
   return (
     <Layout>
+      <Suspense fallback={<PageLoading />}>
       <Routes>
         <Route path="/" element={canUseManagerDashboard ? <AdminDashboard /> : <StaffDashboard />} />
         <Route path="/reservations" element={canUseReservations ? <Reservations /> : <Navigate to="/" replace />} />
@@ -80,6 +91,7 @@ export default function App() {
         <Route path="/signup" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </Layout>
   );
 }

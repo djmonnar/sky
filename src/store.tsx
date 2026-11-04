@@ -14,6 +14,7 @@ import {
 import { withOkpos } from "./lib/okposDaily";
 import { CURRENT_STAFF_ID } from "./data/mock";
 import { TODAY_STR, fmtDate } from "./lib/time";
+import { shiftsWindowStart, widenWindow } from "./lib/loadWindow";
 import { repository } from "./data/repository";
 import { normalizeUnit } from "./data/units";
 import { firebaseConfigured, STORE_ID } from "./lib/firebase";
@@ -44,10 +45,9 @@ import {
   fsUpsertPurchaseOrder, fsDeletePurchaseOrder, fsReceivePurchaseOrder,
   subscribeSalesOrders, subscribeSalesSyncRuns, subscribeSalesDailySummaries, subscribeSalesMenuReport, fsSyncOwnervistaSales,
   fsSaveOkposDays, fsClearOkposDays,
-  subscribeGranterSyncRuns, subscribeGranterCardSales, subscribeGranterAccountTransactions,
-  subscribeGranterFinanceCategories, fsSyncGranterFinance,
+  fsSyncGranterFinance,
   fsClassifyGranterFinanceItems, fsUpsertGranterFinanceCategory, fsDeleteGranterFinanceCategory,
-  subscribeFinanceDailyCloses, subscribeFinanceMatches,
+  subscribeFinanceDailyCloses,
   fsUpsertFinanceDailyClose, fsUpsertFinanceMatch, fsDeleteFinanceMatch,
   fsUpdateMyProfile,
   subscribeManagerPermissions, fsSetManagerPermissions,
@@ -216,6 +216,11 @@ interface Store {
   /** 근무내역을 볼 달. YYYY-MM. */
   attendanceMonth: string;
   setAttendanceMonth: (month: string) => void;
+  /**
+   * 전체 근무표는 지난달 1일부터만 받아 온다(src/lib/loadWindow.ts). 더 옛날을 보는 화면은 이걸 불러
+   * 그날부터 받게 넓힌다 — 급여 지난 달, 근무표 몇 주 전.
+   */
+  ensureShiftsFrom: (date: string) => void;
   /** 이번 달 근무내역을 관리자에게 보낸다. */
   submitTimesheet: (note?: string) => Promise<void>;
   /** 제출된 근무내역 (관리자만 채워진다). */
@@ -268,6 +273,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
   const [attendanceMonth, setAttendanceMonth] = useState(() => TODAY_STR.slice(0, 7));
+  const [shiftsFrom, setShiftsFrom] = useState(() => shiftsWindowStart(TODAY_STR));
+  const ensureShiftsFrom = useCallback((date: string) => {
+    setShiftsFrom((current) => widenWindow(current, date));
+  }, []);
   const [timesheetSubmissions, setTimesheetSubmissions] = useState<TimesheetSubmission[]>([]);
   // 근무중 표시를 1분마다 새로 그린다 (경과 시간이 멈춰 보이지 않게).
   const [clock, setClock] = useState(() => nowHHMM());
@@ -482,12 +491,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const unsubs = [
       subscribeEmployees((v) => { setEmployees(v); markLoaded(); }, onErr),
       ...(canReservationData ? [subscribeReservations(setReservations, onErr)] : []),
-      ...(canScheduleData
-        ? [
-            subscribeShifts(empFilter, setShifts, onErr),
-            subscribeRecords(empFilter, setRecords, onErr),
-          ]
-        : []),
+      // 근무표(shifts)는 아래 따로 구독한다 — 받아 오는 범위(shiftsFrom)가 넓어질 때 이것만 다시 받게.
+      ...(canScheduleData ? [subscribeRecords(empFilter, setRecords, onErr)] : []),
       subscribeNotices(setNotices, onErr),
       subscribeHandovers(setHandovers, onErr),
       // 급여는 관리자만 구독 (staff는 Rules상 본인 문서만 허용, 화면도 없음)
@@ -521,34 +526,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             subscribeSalesMenuReport(setSalesMenuReport, onErr),
           ]
         : []),
-      ...(canCardFinanceData
-        ? [
-            subscribeGranterSyncRuns(setGranterSyncRuns, onErr),
-            subscribeGranterCardSales(setGranterCardSales, onErr),
-            subscribeFinanceDailyCloses(setFinanceDailyCloses, onErr),
-          ]
-        : []),
-      ...(canFinanceData
-        ? [
-            subscribeGranterAccountTransactions(
-              setGranterAccountTransactions,
-              onErr,
-              !isAdminRole && !managerCan("sales") ? "out" : undefined
-            ),
-            subscribeGranterFinanceCategories(setGranterFinanceCategories, onErr),
-            subscribeFinanceMatches(
-              setFinanceMatches,
-              onErr,
-              !isAdminRole && managerCan("sales") !== managerCan("settlements")
-                ? (managerCan("sales") ? "salesDeposit" : "purchasePayment")
-                : undefined
-            ),
-          ]
-        : []),
+      /*
+        그랜터(카드 매출·계좌 거래)는 2026-09 보류한 뒤로 어느 화면에도 안 나온다(Sales.tsx 는 라우트에 없다).
+        그런데 카드 3,233건·계좌 779건을 대시보드를 열 때마다 다 받아 와서 첫 화면이 몇 초씩 늦었다
+        (2026-11-04). 다시 켤 때 그 화면에서 구독한다 — 데이터·규칙·함수는 그대로 있다.
+      */
+      ...(canCardFinanceData ? [subscribeFinanceDailyCloses(setFinanceDailyCloses, onErr)] : []),
     ];
     return () => unsubs.forEach((u) => u());
     // attendanceMonth 가 바뀌면 그 달 기록을 다시 받아야 한다.
   }, [profile, managerPermissions, staffPermissions, attendanceMonth]);
+
+  /* ---------- 라이브 모드: 근무표 — 전체는 shiftsFrom 부터만 (src/lib/loadWindow.ts) ---------- */
+  useEffect(() => {
+    if (APP_MODE !== "live" || !profile) return;
+    const isAdminRole = profile.role === "admin";
+    const isStaffRole = profile.role === "staff";
+    const managerCan = (key: ManagerPermissionKey) =>
+      !isAdminRole && roleCan(profile.role, key, managerPermissions, staffPermissions);
+    // 위 구독과 같은 규칙: 실무자는 본인 것만(「근무표 관리」를 받으면 전체), 관리자·근무표 권한 매니저는 전체
+    const canScheduleData = isAdminRole || isStaffRole || managerCan("scheduleManage");
+    if (!canScheduleData) return;
+    const empFilter =
+      isStaffRole && !managerCan("scheduleManage") ? profile.employeeId : undefined;
+    return subscribeShifts(empFilter, setShifts, (e: Error) => {
+      console.error("[firestore]", e);
+      setError(`데이터를 불러오지 못했습니다: ${e.message}`);
+    }, shiftsFrom);
+  }, [profile, managerPermissions, staffPermissions, shiftsFrom]);
 
   const currentEmployee = useMemo<Employee | null>(() => {
     const targetId =
@@ -1538,7 +1543,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       punchInAt: today.inAt,
       punchOutAt: today.outAt,
       punchIn, punchOut, breakStart, breakEnd,
-      attendanceLogs, attendanceMonth, setAttendanceMonth,
+      attendanceLogs, attendanceMonth, setAttendanceMonth, ensureShiftsFrom,
       submitTimesheet, timesheetSubmissions, reviewTimesheet,
       toast, showToast,
     }),
@@ -1549,7 +1554,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      reservations, shifts, records, payroll, ownerSchedules, notices, handovers, vendors, inventoryCategories, inventoryItems, purchaseOrders, recipes, salesOrders, salesSyncRuns, granterSyncRuns,
      granterCardSales, granterAccountTransactions, granterFinanceCategories,
      financeDailyCloses, financeMatches,
-     today, attendanceLogs, attendanceMonth, timesheetSubmissions, toast,
+     today, attendanceLogs, attendanceMonth, ensureShiftsFrom, timesheetSubmissions, toast,
      upsertEmployee, createEmployeeFromUserProfile, deleteEmployee, deactivateUserProfile,
      upsertReservation, deleteReservation, deleteReservations,
      setShift, deleteShift, addRecord, approveRecord, updatePayroll,
